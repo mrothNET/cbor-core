@@ -28,7 +28,6 @@
 //! |------|------|
 //! | [`Array`] | Wrapper around `Vec<Value>` for flexible array construction. |
 //! | [`Map`] | Wrapper around `BTreeMap<Value, Value>` for flexible map construction. |
-//! | [`Integer`] | Integer representation including big integers (tags 2/3). |
 //! | [`Float`] | IEEE 754 float stored in shortest CBOR form (f16, f32, or f64). |
 //!
 //! # Quick start
@@ -77,12 +76,12 @@ pub use array::Array;
 pub use data_type::DataType;
 pub use error::{Error, Result};
 pub use float::Float;
-pub use integer::Integer;
 pub use map::Map;
 pub use simple_value::SimpleValue;
 pub use value::Value;
 
 use consts::*;
+use integer::*;
 
 #[cfg(test)]
 mod tests;

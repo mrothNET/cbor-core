@@ -7,21 +7,9 @@ enum Inner {
     BigInt(u64, Vec<u8>),
 }
 
-/// Helper for integer construction, including big integers.
-///
-/// Represents unsigned, negative, or big integer values (tags 2/3 for
-/// values beyond the u64/i64 range). Normally created implicitly
-/// through [`Value::integer`] or the `From` conversions on [`Value`].
-/// Rarely used directly.
-///
-/// ```
-/// use cbor_core::{Value, Integer};
-///
-/// let big = Value::integer(u128::MAX);
-/// assert!(big.data_type().is_integer());
-/// ```
+/// Internal helper for integer construction, including big integers.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Integer(Inner);
+pub(crate) struct Integer(Inner);
 
 impl Integer {
     pub(crate) fn big(tag_number: u64, bytes: impl Iterator<Item = u8>) -> Self {

@@ -695,12 +695,6 @@ impl Value {
         }
     }
 
-    /// Create a CBOR integer. Accepts any Rust integer type.
-    /// Values beyond the u64/i64 range are encoded as big integers (tags 2/3).
-    pub fn integer(value: impl Into<Integer>) -> Self {
-        value.into().into_value()
-    }
-
     /// Create a CBOR float. The value is stored in the shortest
     /// IEEE 754 form (f16, f32, or f64) that preserves it exactly.
     pub fn float(value: impl Into<Float>) -> Self {
