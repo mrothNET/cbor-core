@@ -2,7 +2,7 @@
 
 //! Deterministic CBOR encoder and decoder following the
 //! [CBOR::Core](https://www.ietf.org/archive/id/draft-rundgren-cbor-core-25.html)
-//! profile (draft-rundgren-cbor-core-25).
+//! profile (`draft-rundgren-cbor-core-25`).
 //!
 //! This crate works with CBOR as an owned data structure rather than as a
 //! serialization layer. Values can be constructed, inspected, modified, and
@@ -47,7 +47,7 @@
 //! assert_eq!(value, decoded);
 //!
 //! // Access inner data
-//! let greeting = decoded.as_map().unwrap()[&Value::from(1)].as_str().unwrap();
+//! let greeting = decoded.as_map().unwrap()[&1.into()].as_str().unwrap();
 //! assert_eq!(greeting, "hello");
 //! ```
 //!

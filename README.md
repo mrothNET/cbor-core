@@ -3,31 +3,38 @@
 A Rust implementation of [CBOR::Core](https://www.ietf.org/archive/id/draft-rundgren-cbor-core-25.html),
 the deterministic subset of CBOR (RFC 8949).
 
-This crate encodes and decodes CBOR using owned data structures rather than
-Serde traits. Values can be constructed, inspected, and modified directly,
+This crate encodes and decodes CBOR using owned data structures.
+Values can be constructed, inspected, and modified directly,
 which is a better fit when the goal is to work with CBOR as a data format
-in its own right rather than as a serialization layer for Rust types.
+in its own right.
 
-This is the first public review of the library. The API is not yet stable
-and may change in future releases.
+This library is in development. The API is not stable yet and may change
+in future releases.
 
 ## Status
 
-The implementation targets draft-rundgren-cbor-core-25 and passes all
-test vectors from Appendix A of that specification, including rejection
-of non-deterministic encodings.
+The implementation currently targets `draft-rundgren-cbor-core-25` (this
+might change in the future) and passes all test vectors from Appendix A
+of that specification, including rejection of non-deterministic encodings.
 
-Supported types: integers (including arbitrary-precision via tags 2 and 3),
-IEEE 754 floats (half, single, double), byte strings, text strings,
-arrays, maps, tagged values, and simple values (null, booleans).
+Supported types: integers and big integers, IEEE 754 floats (half, single,
+double), byte strings, text strings, arrays, maps, tagged values, and
+simple values (null, booleans).
+
+Arrays and maps are heterogeneous and keys can be any CBOR types including
+arrays and maps themselves.
 
 Encoding is deterministic: integers and floats use their shortest form,
-and map keys are sorted in canonical order. NaN values, including
-signaling NaNs and custom payloads, are preserved through round-trips.
+and map keys are encoded in sorted canonical order.
+Decoding rejects non-deterministic data as stated in the CBOR::Core draft.
+NaN values, including signaling NaNs and custom payloads, are preserved
+through round-trips.
 
 Not yet implemented: CBOR::Core diagnostic notation,
-Int53, DateTime/EpochTime wrappers, and optional integrations with
-external crates (num_bigint, half, time, chrono).
+and DateTime/EpochTime wrappers.
+
+Undecided: Int53 and optional integrations with external crates
+(num_bigint, half, time, chrono) etc.
 
 ## Usage
 

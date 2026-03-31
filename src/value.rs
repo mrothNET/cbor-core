@@ -91,7 +91,6 @@ fn read_vec(reader: &mut impl io::Read, len: u64) -> Result<Vec<u8>> {
 /// |---|---|
 /// | [`Value::null()`] | Null simple value |
 /// | [`Value::simple_value(v)`](Value::simple_value) | Arbitrary simple value |
-/// | [`Value::integer(v)`](Value::integer) | Integer (including big integers) |
 /// | [`Value::float(v)`](Value::float) | Float in shortest CBOR form |
 /// | [`Value::array(v)`](Value::array) | Array from slice, `Vec`, or fixed-size array |
 /// | [`Value::map(v)`](Value::map) | Map from `BTreeMap`, `HashMap`, slice of pairs, etc. |
@@ -153,12 +152,14 @@ fn read_vec(reader: &mut impl io::Read, len: u64) -> Result<Vec<u8>> {
 ///
 /// ## Integers
 ///
-/// CBOR has two integer types (unsigned and negative) with different
-/// internal representations. The `to_*` accessors perform checked
+/// CBOR has effectively four integer types (unsigned or negative, and
+/// normal or big integer) with different internal representations.
+/// This is handled transparently by the API.
+///
+/// The `to_*` accessors perform checked
 /// narrowing into any Rust integer type, returning `Err(Overflow)` if
 /// the value does not fit, or `Err(NegativeUnsigned)` when extracting a
-/// negative value into an unsigned type. Big integers (tags 2 and 3)
-/// are handled transparently.
+/// negative value into an unsigned type.
 ///
 /// | Method | Returns |
 /// |---|---|
@@ -180,10 +181,12 @@ fn read_vec(reader: &mut impl io::Read, len: u64) -> Result<Vec<u8>> {
 ///
 /// ## Floats
 ///
-/// Floats are stored internally in their shortest CBOR encoding (f16,
-/// f32, or f64). [`to_f64`](Self::to_f64) always succeeds since every
-/// float can widen to f64. [`to_f32`](Self::to_f32) fails with
-/// `Err(Precision)` if the value is stored as f64.
+/// Floats are stored internally in their shortest CBOR encoding (`f16`,
+/// `f32`, or `f64`). [`to_f64`](Self::to_f64) always succeeds since every
+/// float can widen to `f64`. [`to_f32`](Self::to_f32) fails with
+/// `Err(Precision)` if the value is stored as `f64`.
+/// A float internally stored as `f16` can always be converted to either
+/// an `f32` or `f64` for obvious reasons.
 ///
 /// | Method | Returns |
 /// |---|---|
@@ -263,7 +266,7 @@ fn read_vec(reader: &mut impl io::Read, len: u64) -> Result<Vec<u8>> {
 ///
 /// // Modify in place
 /// let mut v = array![1, 2];
-/// v.as_array_mut().unwrap().push(Value::from(3));
+/// v.as_array_mut().unwrap().push(3.into());
 /// assert_eq!(v.as_array().unwrap().len(), 3);
 /// ```
 ///
@@ -283,13 +286,13 @@ fn read_vec(reader: &mut impl io::Read, len: u64) -> Result<Vec<u8>> {
 /// use cbor_core::{Value, map};
 ///
 /// let v = map! { "name" => "Alice", "age" => 30 };
-/// let name = &v.as_map().unwrap()[&Value::from("name")];
+/// let name = &v.as_map().unwrap()[&"name".into()];
 /// assert_eq!(name.as_str().unwrap(), "Alice");
 ///
 /// // Modify in place
 /// let mut v = map! { "count" => 1 };
-/// v.as_map_mut().unwrap().insert(Value::from("count"), Value::from(2));
-/// assert_eq!(v.as_map().unwrap()[&Value::from("count")].to_u32().unwrap(), 2);
+/// v.as_map_mut().unwrap().insert("count".into(), 2.into());
+/// assert_eq!(v.as_map().unwrap()[&"count".into()].to_u32().unwrap(), 2);
 /// ```
 ///
 /// ## Tags
@@ -333,9 +336,9 @@ fn read_vec(reader: &mut impl io::Read, len: u64) -> Result<Vec<u8>> {
 /// Note that some CBOR types depend on their tag for interpretation.
 /// Big integers, for example, are tagged byte strings (tags 2 and 3).
 /// The integer accessors (`to_u128`, `to_i128`, etc.) recognise these
-/// tags and decode the bytes automatically. If the tag is removed —
+/// tags and decode the bytes automatically. If the tag is removed
 /// via `remove_tag`, `remove_all_tags`, or by consuming through
-/// `into_tag` — the value becomes a plain byte string and can no
+/// `into_tag`, the value becomes a plain byte string and can no
 /// longer be read as an integer.
 ///
 /// # Type introspection
@@ -361,6 +364,7 @@ pub enum Value {
 
     /// Unsigned integer (major type 0). Stores values 0 through 2^64-1.
     Unsigned(u64),
+
     /// Negative integer (major type 1). The actual value is -1 - n,
     /// covering -1 through -2^64.
     Negative(u64),
@@ -370,11 +374,13 @@ pub enum Value {
 
     /// Byte string (major type 2).
     ByteString(Vec<u8>),
+
     /// UTF-8 text string (major type 3).
     TextString(String),
 
     /// Array of data items (major type 4).
     Array(Vec<Value>),
+
     /// Map of key-value pairs in canonical order (major type 5).
     Map(BTreeMap<Value, Value>),
 
@@ -695,8 +701,25 @@ impl Value {
         }
     }
 
-    /// Create a CBOR float. The value is stored in the shortest
-    /// IEEE 754 form (f16, f32, or f64) that preserves it exactly.
+    /// Create a CBOR float.
+    ///
+    /// Via the [`Float`] type floats can be created out of integers and booleans too.
+    ///
+    /// ```
+    /// use cbor_core::Value;
+    ///
+    /// let f1 = Value::float(1.0);
+    /// assert!(f1.to_f64() == Ok(1.0));
+    ///
+    /// let f2 = Value::float(2_u32);
+    /// assert!(f2.to_f64() == Ok(2.0));
+    ///
+    /// let f3 = Value::float(true);
+    /// assert!(f3.to_f64() == Ok(1.0));
+    /// ```
+    ///
+    /// The value is stored in the shortest IEEE 754 form (f16, f32,
+    /// or f64) that preserves it exactly.
     pub fn float(value: impl Into<Float>) -> Self {
         Self::Float(value.into())
     }
