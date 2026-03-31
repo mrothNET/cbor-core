@@ -419,17 +419,17 @@ mod tests {
 
     #[test]
     fn to_f32_min_positive_normal() {
-        assert_eq!(f16_to_f32(0x0400), 0.00006103515625_f32);
+        assert_eq!(f16_to_f32(0x0400), 0.000061035156_f32);
     }
 
     #[test]
     fn to_f32_min_positive_subnormal() {
-        assert_eq!(f16_to_f32(0x0001), 5.960464477539063e-8_f32);
+        assert_eq!(f16_to_f32(0x0001), 5.9604645e-8_f32);
     }
 
     #[test]
     fn to_f32_max_subnormal() {
-        assert_eq!(f16_to_f32(0x03ff), 0.00006097555160522461_f32);
+        assert_eq!(f16_to_f32(0x03ff), 0.00006097555_f32);
     }
 
     #[test]
