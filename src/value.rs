@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
+use std::ops::{Index, IndexMut};
 use std::{cmp, io};
 
 use crate::{ArgLength, Array, CtrlByte, DataType, Error, Float, Integer, Major, Map, Result, SimpleValue, Tag};
@@ -293,6 +294,23 @@ fn read_vec(reader: &mut impl io::Read, len: u64) -> Result<Vec<u8>> {
 /// let mut v = map! { "count" => 1 };
 /// v.as_map_mut().unwrap().insert("count".into(), 2.into());
 /// assert_eq!(v.as_map().unwrap()[&"count".into()].to_u32().unwrap(), 2);
+/// ```
+///
+/// ## Indexing
+///
+/// Arrays and maps support `Index` and `IndexMut` with any type that
+/// converts into `Value`. For arrays the index is converted to `usize`;
+/// for maps it is used as a key lookup. Panics on type mismatch or
+/// missing key, just like `Vec` and `BTreeMap`.
+///
+/// ```
+/// use cbor_core::{Value, array, map};
+///
+/// let a = array![10, 20, 30];
+/// assert_eq!(a[1_u32].to_u32().unwrap(), 20);
+///
+/// let m = map! { "x" => 10, "y" => 20 };
+/// assert_eq!(m["x"].to_u32().unwrap(), 10);
 /// ```
 ///
 /// ## Tags
@@ -1460,6 +1478,39 @@ impl From<Map> for Value {
 impl From<BTreeMap<Value, Value>> for Value {
     fn from(value: BTreeMap<Value, Value>) -> Self {
         Self::Map(value)
+    }
+}
+
+// --------- Index ---------
+
+impl<I: Into<Value>> Index<I> for Value {
+    type Output = Value;
+
+    fn index(&self, index: I) -> &Value {
+        let key = index.into();
+        match self.untagged() {
+            Value::Array(arr) => {
+                let idx = key.to_usize().expect("array index must be a valid usize integer");
+                &arr[idx]
+            }
+            Value::Map(map) => map.get(&key).expect("key not found in map"),
+            _ => panic!("cannot index into {:?}", self.data_type()),
+        }
+    }
+}
+
+impl<I: Into<Value>> IndexMut<I> for Value {
+    fn index_mut(&mut self, index: I) -> &mut Value {
+        let key = index.into();
+        let data_type = self.untagged().data_type();
+        match self.untagged_mut() {
+            Value::Array(arr) => {
+                let idx = key.to_usize().expect("array index must be a valid usize integer");
+                &mut arr[idx]
+            }
+            Value::Map(map) => map.get_mut(&key).expect("key not found in map"),
+            _ => panic!("cannot index into {:?}", data_type),
+        }
     }
 }
 

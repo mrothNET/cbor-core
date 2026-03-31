@@ -380,6 +380,84 @@ fn custom_tags_2_and_3_bigint() {
     assert!(v.as_bytes().is_ok());
 }
 
+// ===== Indexing =====
+
+#[test]
+fn index_array_by_integer() {
+    let a = array![10, 20, 30];
+    assert_eq!(a[0].to_u32(), Ok(10));
+    assert_eq!(a[1].to_u32(), Ok(20));
+    assert_eq!(a[2].to_u32(), Ok(30));
+}
+
+#[test]
+fn index_array_by_signed_integer() {
+    let a = array!["a", "b", "c"];
+    assert_eq!(a[0].as_str(), Ok("a"));
+    assert_eq!(a[2].as_str(), Ok("c"));
+}
+
+#[test]
+fn index_map_by_string() {
+    let m = map! { "x" => 10, "y" => 20 };
+    assert_eq!(m["x"].to_u32(), Ok(10));
+    assert_eq!(m["y"].to_u32(), Ok(20));
+}
+
+#[test]
+fn index_map_by_integer_key() {
+    let m = map! { 1 => "one", 2 => "two" };
+    assert_eq!(m[1].as_str(), Ok("one"));
+    assert_eq!(m[2].as_str(), Ok("two"));
+}
+
+#[test]
+fn index_mut_array() {
+    let mut a = array![1, 2, 3];
+    a[1_u32] = Value::from(99);
+    assert_eq!(a[1].to_u32(), Ok(99));
+}
+
+#[test]
+fn index_mut_map() {
+    let mut m = map! { "key" => 1 };
+    m["key"] = Value::from(42);
+    assert_eq!(m["key"].to_u32(), Ok(42));
+}
+
+#[test]
+fn index_tagged_array() {
+    let a = Value::tag(100, array![10, 20, 30]);
+    assert_eq!(a[1].to_u32(), Ok(20));
+}
+
+#[test]
+fn index_tagged_map() {
+    let m = Value::tag(100, map! { "key" => "value" });
+    assert_eq!(m["key"].as_str(), Ok("value"));
+}
+
+#[test]
+#[should_panic(expected = "key not found")]
+fn index_map_missing_key() {
+    let m = map! { "x" => 1 };
+    let _ = &m["missing"];
+}
+
+#[test]
+#[should_panic]
+fn index_array_out_of_bounds() {
+    let a = array![1, 2];
+    let _ = &a[5];
+}
+
+#[test]
+#[should_panic(expected = "cannot index into")]
+fn index_non_collection() {
+    let v = Value::from(42);
+    let _ = &v[0_u32];
+}
+
 // ===== Type mismatch errors =====
 
 #[test]
