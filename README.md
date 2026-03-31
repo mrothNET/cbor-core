@@ -24,6 +24,9 @@ simple values (null, booleans).
 Arrays and maps are heterogeneous and keys can be any CBOR types including
 arrays and maps themselves.
 
+Accessor methods see through tags transparently, including custom tags
+wrapping big integers (tags 2/3).
+
 Encoding is deterministic: integers and floats use their shortest form,
 and map keys are encoded in sorted canonical order.
 Decoding rejects non-deterministic data as stated in the CBOR::Core draft.

@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, i128, u128};
 
 use crate::{DataType, Error, Integer, SimpleValue, Value, array, map};
 // ===== Construction & type checks =====
@@ -231,6 +231,153 @@ fn remove_all_tags() {
     let tags = v.remove_all_tags();
     assert_eq!(tags, vec![10, 20]);
     assert_eq!(v.as_str(), Ok("data"));
+}
+
+// ===== Accessor see-through tags =====
+
+#[test]
+fn tagged_integer_accessor() {
+    let v = Value::tag(100, 42_u32);
+    assert_eq!(v.to_u32(), Ok(42));
+    assert_eq!(v.to_i64(), Ok(42));
+}
+
+#[test]
+fn tagged_negative_accessor() {
+    let v = Value::tag(100, -7);
+    assert_eq!(v.to_i32(), Ok(-7));
+    assert_eq!(v.to_u32(), Err(Error::NegativeUnsigned));
+}
+
+#[test]
+fn tagged_float_accessor() {
+    let v = Value::tag(55799, 0.42);
+    assert_eq!(v.to_f64(), Ok(0.42));
+}
+
+#[test]
+fn tagged_text_accessor() {
+    let v = Value::tag(32, "https://example.com");
+    assert_eq!(v.as_str(), Ok("https://example.com"));
+}
+
+#[test]
+fn tagged_bytes_accessor() {
+    let v = Value::tag(100, vec![0xCA, 0xFE]);
+    assert_eq!(v.as_bytes(), Ok(&[0xCA, 0xFE][..]));
+}
+
+#[test]
+fn tagged_array_accessor() {
+    let v = Value::tag(100, Value::array([1_u32, 2, 3]));
+    assert_eq!(v.as_array().unwrap().len(), 3);
+}
+
+#[test]
+fn tagged_map_accessor() {
+    let inner = map! { "key" => 1 };
+    let v = Value::tag(100, inner);
+    assert_eq!(v.as_map().unwrap().len(), 1);
+}
+
+#[test]
+fn tagged_bool_accessor() {
+    let v = Value::tag(100, true);
+    assert_eq!(v.to_bool(), Ok(true));
+}
+
+#[test]
+fn nested_tags_accessor() {
+    let v = Value::tag(100, Value::tag(200, 42_u32));
+    assert_eq!(v.to_u32(), Ok(42));
+    assert_eq!(v.as_str(), Err(Error::IncompatibleType));
+}
+
+#[test]
+fn nested_tags_text_accessor() {
+    let v = Value::tag(100, Value::tag(200, "hello"));
+    assert_eq!(v.as_str(), Ok("hello"));
+}
+
+#[test]
+fn tagged_mut_accessor() {
+    let mut v = Value::tag(100, vec![1_u8, 2, 3]);
+    v.as_bytes_mut().unwrap().push(4);
+    assert_eq!(v.as_bytes(), Ok(&[1, 2, 3, 4][..]));
+    // Tag is preserved
+    assert_eq!(v.tag_number(), Ok(100));
+}
+
+#[test]
+fn tagged_into_accessor() {
+    let v = Value::tag(100, "hello");
+    assert_eq!(v.into_string(), Ok("hello".to_string()));
+}
+
+// ===== Custom tags on big integer values =====
+
+#[test]
+fn custom_tag_on_big_int_reads_as_integer() {
+    // A big positive integer (tag 2 over byte string) wrapped in a custom tag.
+    // The integer accessors should see through the custom tag and still
+    // recognise the big integer.
+    let big: u128 = u64::MAX as u128 + 1;
+    let big_int = Value::from(big);
+    let v = Value::tag(100, big_int);
+    assert_eq!(v.to_u128(), Ok(big));
+    assert_eq!(v.to_i128(), Ok(big as i128));
+}
+
+#[test]
+fn custom_tag_on_big_neg_int_reads_as_integer() {
+    let big_neg: i128 = -(u64::MAX as i128) - 2;
+    let big_int = Value::from(big_neg);
+    let v = Value::tag(100, big_int);
+    assert_eq!(v.to_i128(), Ok(big_neg));
+    assert_eq!(v.to_u128(), Err(Error::NegativeUnsigned));
+}
+
+#[test]
+fn custom_tag_on_big_int_as_bytes_returns_payload() {
+    // as_bytes() on a big integer (even when custom-tagged) should return
+    // the raw big integer byte string, since tags are transparent.
+    let big: u128 = u64::MAX as u128 + 1;
+    let big_int = Value::from(big);
+    let v = Value::tag(100, big_int);
+    // The inner value is Tag(2, ByteString(...)), so as_bytes sees through both tags.
+    assert!(v.as_bytes().is_ok());
+}
+
+#[test]
+fn double_custom_tag_on_big_int() {
+    let big: u128 = u64::MAX as u128 + 42;
+    let big_int = Value::from(big);
+    let v = Value::tag(100, Value::tag(200, big_int));
+    assert_eq!(v.to_u128(), Ok(big));
+}
+
+#[test]
+fn custom_tags_2_and_3_on_non_bigint() {
+    // Tags 2 and 3 on a non-byte-string value should still allow
+    // accessor see-through to the inner value.
+    let v = Value::tag(2, 42_u32);
+    assert_eq!(v.to_u32(), Ok(42));
+
+    let v = Value::tag(3, "hello");
+    assert_eq!(v.as_str(), Ok("hello"));
+}
+
+#[test]
+fn custom_tags_2_and_3_bigint() {
+    // (Additional) tags 2 and 3 on bigint should still allow
+    // accessor see-through to the inner value.
+    let v = Value::tag(2, u128::MAX);
+    assert_eq!(v.to_u128(), Ok(u128::MAX));
+    assert!(v.as_bytes().is_ok());
+
+    let v = Value::tag(3, i128::MIN);
+    assert_eq!(v.to_i128(), Ok(i128::MIN));
+    assert!(v.as_bytes().is_ok());
 }
 
 // ===== Type mismatch errors =====

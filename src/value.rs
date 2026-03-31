@@ -333,13 +333,31 @@ fn read_vec(reader: &mut impl io::Read, len: u64) -> Result<Vec<u8>> {
 /// assert_eq!(uri.as_str().unwrap(), "https://example.com");
 /// ```
 ///
-/// Note that some CBOR types depend on their tag for interpretation.
-/// Big integers, for example, are tagged byte strings (tags 2 and 3).
-/// The integer accessors (`to_u128`, `to_i128`, etc.) recognise these
-/// tags and decode the bytes automatically. If the tag is removed
-/// via `remove_tag`, `remove_all_tags`, or by consuming through
-/// `into_tag`, the value becomes a plain byte string and can no
-/// longer be read as an integer.
+/// Accessor methods see through tags transparently: calling `as_str()`
+/// on a tagged text string works without manually unwrapping the tag
+/// first. This applies to all accessors (`to_*`, `as_*`, `into_*`).
+///
+/// ```
+/// use cbor_core::Value;
+///
+/// let uri = Value::tag(32, "https://example.com");
+/// assert_eq!(uri.as_str().unwrap(), "https://example.com");
+///
+/// // Nested tags are also transparent
+/// let nested = Value::tag(100, Value::tag(200, 42_u32));
+/// assert_eq!(nested.to_u32().unwrap(), 42);
+/// ```
+///
+/// Big integers are internally represented as tagged byte strings
+/// (tags 2 and 3). The integer accessors recognise these tags and
+/// decode the bytes automatically, even when wrapped in additional
+/// custom tags. Byte-level accessors like `as_bytes()` also see
+/// through tags, so calling `as_bytes()` on a big integer returns
+/// the raw payload bytes.
+///
+/// If a tag is removed via `remove_tag`, `remove_all_tags`, or by
+/// consuming through `into_tag`, the value becomes a plain byte
+/// string and can no longer be read as an integer.
 ///
 /// # Type introspection
 ///
@@ -768,10 +786,16 @@ impl Value {
         }
     }
 
+    /// Internal shortcut helper
+    const fn is_bytes(&self) -> bool {
+        self.data_type().is_bytes()
+    }
+
     /// Extract a boolean. Returns `Err` for non-boolean values.
     pub const fn to_bool(&self) -> Result<bool> {
         match self {
             Self::SimpleValue(sv) => sv.to_bool(),
+            Self::Tag(_number, content) => content.untagged().to_bool(),
             _ => Err(Error::IncompatibleType),
         }
     }
@@ -780,6 +804,7 @@ impl Value {
     pub const fn to_simple_value(&self) -> Result<u8> {
         match self {
             Self::SimpleValue(sv) => Ok(sv.0),
+            Self::Tag(_number, content) => content.untagged().to_simple_value(),
             _ => Err(Error::IncompatibleType),
         }
     }
@@ -790,8 +815,9 @@ impl Value {
             Self::Unsigned(x) if *x <= u8::MAX as u64 => Ok(*x as u8),
             Self::Unsigned(_) => Err(Error::Overflow),
             Self::Negative(_) => Err(Error::NegativeUnsigned),
-            Self::Tag(Tag::POS_BIG_INT, content) if content.data_type().is_bytes() => Err(Error::Overflow),
-            Self::Tag(Tag::NEG_BIG_INT, content) if content.data_type().is_bytes() => Err(Error::NegativeUnsigned),
+            Self::Tag(Tag::POS_BIG_INT, content) if content.is_bytes() => Err(Error::Overflow),
+            Self::Tag(Tag::NEG_BIG_INT, content) if content.is_bytes() => Err(Error::NegativeUnsigned),
+            Self::Tag(_other_number, content) => content.peeled().to_u8(),
             _ => Err(Error::IncompatibleType),
         }
     }
@@ -802,8 +828,9 @@ impl Value {
             Self::Unsigned(x) if *x <= u16::MAX as u64 => Ok(*x as u16),
             Self::Unsigned(_) => Err(Error::Overflow),
             Self::Negative(_) => Err(Error::NegativeUnsigned),
-            Self::Tag(Tag::POS_BIG_INT, content) if content.data_type().is_bytes() => Err(Error::Overflow),
-            Self::Tag(Tag::NEG_BIG_INT, content) if content.data_type().is_bytes() => Err(Error::NegativeUnsigned),
+            Self::Tag(Tag::POS_BIG_INT, content) if content.is_bytes() => Err(Error::Overflow),
+            Self::Tag(Tag::NEG_BIG_INT, content) if content.is_bytes() => Err(Error::NegativeUnsigned),
+            Self::Tag(_other_number, content) => content.peeled().to_u16(),
             _ => Err(Error::IncompatibleType),
         }
     }
@@ -814,8 +841,9 @@ impl Value {
             Self::Unsigned(x) if *x <= u32::MAX as u64 => Ok(*x as u32),
             Self::Unsigned(_) => Err(Error::Overflow),
             Self::Negative(_) => Err(Error::NegativeUnsigned),
-            Self::Tag(Tag::POS_BIG_INT, content) if content.data_type().is_bytes() => Err(Error::Overflow),
-            Self::Tag(Tag::NEG_BIG_INT, content) if content.data_type().is_bytes() => Err(Error::NegativeUnsigned),
+            Self::Tag(Tag::POS_BIG_INT, content) if content.is_bytes() => Err(Error::Overflow),
+            Self::Tag(Tag::NEG_BIG_INT, content) if content.is_bytes() => Err(Error::NegativeUnsigned),
+            Self::Tag(_other_number, content) => content.peeled().to_u32(),
             _ => Err(Error::IncompatibleType),
         }
     }
@@ -825,8 +853,9 @@ impl Value {
         match self {
             Self::Unsigned(x) => Ok(*x),
             Self::Negative(_) => Err(Error::NegativeUnsigned),
-            Self::Tag(Tag::POS_BIG_INT, content) if content.data_type().is_bytes() => Err(Error::Overflow),
-            Self::Tag(Tag::NEG_BIG_INT, content) if content.data_type().is_bytes() => Err(Error::NegativeUnsigned),
+            Self::Tag(Tag::POS_BIG_INT, content) if content.is_bytes() => Err(Error::Overflow),
+            Self::Tag(Tag::NEG_BIG_INT, content) if content.is_bytes() => Err(Error::NegativeUnsigned),
+            Self::Tag(_other_number, content) => content.peeled().to_u64(),
             _ => Err(Error::IncompatibleType),
         }
     }
@@ -836,8 +865,9 @@ impl Value {
         match self {
             Self::Unsigned(x) => Ok(*x as u128),
             Self::Negative(_) => Err(Error::NegativeUnsigned),
-            Self::Tag(Tag::POS_BIG_INT, content) => u128_from_bytes(content.as_bytes()?),
-            Self::Tag(Tag::NEG_BIG_INT, content) if content.data_type().is_bytes() => Err(Error::NegativeUnsigned),
+            Self::Tag(Tag::POS_BIG_INT, content) if content.is_bytes() => u128_from_bytes(content.as_bytes()?),
+            Self::Tag(Tag::NEG_BIG_INT, content) if content.is_bytes() => Err(Error::NegativeUnsigned),
+            Self::Tag(_other_number, content) => content.peeled().to_u128(),
             _ => Err(Error::IncompatibleType),
         }
     }
@@ -849,8 +879,9 @@ impl Value {
             Self::Unsigned(x) if *x <= u32::MAX as u64 => Ok(*x as usize),
             Self::Unsigned(_) => Err(Error::Overflow),
             Self::Negative(_) => Err(Error::NegativeUnsigned),
-            Self::Tag(TAG_POS_BIG_INT, content) if content.data_type().is_bytes() => Err(Error::Overflow),
-            Self::Tag(TAG_NEG_BIG_INT, content) if content.data_type().is_bytes() => Err(Error::NegativeUnsigned),
+            Self::Tag(Tag::POS_BIG_INT, content) if content.is_bytes() => Err(Error::Overflow),
+            Self::Tag(Tag::NEG_BIG_INT, content) if content.is_bytes() => Err(Error::NegativeUnsigned),
+            Self::Tag(_other_number, content) => content.peeled().to_usize(),
             _ => Err(Error::IncompatibleType),
         }
     }
@@ -861,8 +892,9 @@ impl Value {
         match self {
             Self::Unsigned(x) => Ok(*x as usize),
             Self::Negative(_) => Err(Error::NegativeUnsigned),
-            Self::Tag(Tag::POS_BIG_INT, content) if content.data_type().is_bytes() => Err(Error::Overflow),
-            Self::Tag(Tag::NEG_BIG_INT, content) if content.data_type().is_bytes() => Err(Error::NegativeUnsigned),
+            Self::Tag(Tag::POS_BIG_INT, content) if content.is_bytes() => Err(Error::Overflow),
+            Self::Tag(Tag::NEG_BIG_INT, content) if content.is_bytes() => Err(Error::NegativeUnsigned),
+            Self::Tag(_other_number, content) => content.peeled().to_usize(),
             _ => Err(Error::IncompatibleType),
         }
     }
@@ -874,8 +906,9 @@ impl Value {
             Self::Unsigned(_) => Err(Error::Overflow),
             Self::Negative(x) if *x <= i8::MAX as u64 => Ok((!*x) as i8),
             Self::Negative(_) => Err(Error::Overflow),
-            Self::Tag(Tag::POS_BIG_INT, content) if content.data_type().is_bytes() => Err(Error::Overflow),
-            Self::Tag(Tag::NEG_BIG_INT, content) if content.data_type().is_bytes() => Err(Error::Overflow),
+            Self::Tag(Tag::POS_BIG_INT, content) if content.is_bytes() => Err(Error::Overflow),
+            Self::Tag(Tag::NEG_BIG_INT, content) if content.is_bytes() => Err(Error::Overflow),
+            Self::Tag(_other_number, content) => content.peeled().to_i8(),
             _ => Err(Error::IncompatibleType),
         }
     }
@@ -887,8 +920,9 @@ impl Value {
             Self::Unsigned(_) => Err(Error::Overflow),
             Self::Negative(x) if *x <= i16::MAX as u64 => Ok((!*x) as i16),
             Self::Negative(_) => Err(Error::Overflow),
-            Self::Tag(Tag::POS_BIG_INT, content) if content.data_type().is_bytes() => Err(Error::Overflow),
-            Self::Tag(Tag::NEG_BIG_INT, content) if content.data_type().is_bytes() => Err(Error::Overflow),
+            Self::Tag(Tag::POS_BIG_INT, content) if content.is_bytes() => Err(Error::Overflow),
+            Self::Tag(Tag::NEG_BIG_INT, content) if content.is_bytes() => Err(Error::Overflow),
+            Self::Tag(_other_number, content) => content.peeled().to_i16(),
             _ => Err(Error::IncompatibleType),
         }
     }
@@ -900,8 +934,9 @@ impl Value {
             Self::Unsigned(_) => Err(Error::Overflow),
             Self::Negative(x) if *x <= i32::MAX as u64 => Ok((!*x) as i32),
             Self::Negative(_) => Err(Error::Overflow),
-            Self::Tag(Tag::POS_BIG_INT, content) if content.data_type().is_bytes() => Err(Error::Overflow),
-            Self::Tag(Tag::NEG_BIG_INT, content) if content.data_type().is_bytes() => Err(Error::Overflow),
+            Self::Tag(Tag::POS_BIG_INT, content) if content.is_bytes() => Err(Error::Overflow),
+            Self::Tag(Tag::NEG_BIG_INT, content) if content.is_bytes() => Err(Error::Overflow),
+            Self::Tag(_other_number, content) => content.peeled().to_i32(),
             _ => Err(Error::IncompatibleType),
         }
     }
@@ -913,8 +948,9 @@ impl Value {
             Self::Unsigned(_) => Err(Error::Overflow),
             Self::Negative(x) if *x <= i64::MAX as u64 => Ok((!*x) as i64),
             Self::Negative(_) => Err(Error::Overflow),
-            Self::Tag(Tag::POS_BIG_INT, content) if content.data_type().is_bytes() => Err(Error::Overflow),
-            Self::Tag(Tag::NEG_BIG_INT, content) if content.data_type().is_bytes() => Err(Error::Overflow),
+            Self::Tag(Tag::POS_BIG_INT, content) if content.is_bytes() => Err(Error::Overflow),
+            Self::Tag(Tag::NEG_BIG_INT, content) if content.is_bytes() => Err(Error::Overflow),
+            Self::Tag(_other_number, content) => content.peeled().to_i64(),
             _ => Err(Error::IncompatibleType),
         }
     }
@@ -925,15 +961,25 @@ impl Value {
             Self::Unsigned(x) => Ok(*x as i128),
             Self::Negative(x) => Ok(!(*x as i128)),
 
-            Self::Tag(Tag::POS_BIG_INT, content) => match u128_from_bytes(content.as_bytes()?)? {
-                value if value <= i128::MAX as u128 => Ok(value as i128),
-                _ => Err(Error::Overflow),
-            },
+            Self::Tag(Tag::POS_BIG_INT, content) if content.is_bytes() => {
+                let value = u128_from_bytes(content.as_bytes()?)?;
+                if value <= i128::MAX as u128 {
+                    Ok(value as i128)
+                } else {
+                    Err(Error::Overflow)
+                }
+            }
 
-            Self::Tag(Tag::NEG_BIG_INT, content) => match u128_from_bytes(content.as_bytes()?)? {
-                value if value <= i128::MAX as u128 => Ok((!value) as i128),
-                _ => Err(Error::Overflow),
-            },
+            Self::Tag(Tag::NEG_BIG_INT, content) if content.is_bytes() => {
+                let value = u128_from_bytes(content.as_bytes()?)?;
+                if value <= i128::MAX as u128 {
+                    Ok((!value) as i128)
+                } else {
+                    Err(Error::Overflow)
+                }
+            }
+
+            Self::Tag(_other_number, content) => content.peeled().to_i128(),
 
             _ => Err(Error::IncompatibleType),
         }
@@ -941,14 +987,15 @@ impl Value {
 
     /// Narrow to `isize`.
     #[cfg(target_pointer_width = "32")]
-    pub const fn to_isize(&self) -> Result<isize> {
+    pub const fn to_isize_(&self) -> Result<isize> {
         match self {
             Self::Unsigned(x) if *x <= i32::MAX as u64 => Ok(*x as isize),
             Self::Unsigned(_) => Err(Error::Overflow),
             Self::Negative(x) if *x <= i32::MAX as u64 => Ok((!*x) as isize),
             Self::Negative(_) => Err(Error::Overflow),
-            Self::Tag(TAG_POS_BIG_INT, content) if content.is_bytes() => Err(Error::Overflow),
-            Self::Tag(TAG_NEG_BIG_INT, content) if content.is_bytes() => Err(Error::Overflow),
+            Self::Tag(Tag::POS_BIG_INT, content) if content.is_bytes() => Err(Error::Overflow),
+            Self::Tag(Tag::NEG_BIG_INT, content) if content.is_bytes() => Err(Error::Overflow),
+            Self::Tag(_other_number, content) => content.peeled().to_isize(),
             _ => Err(Error::IncompatibleType),
         }
     }
@@ -961,8 +1008,9 @@ impl Value {
             Self::Unsigned(_) => Err(Error::Overflow),
             Self::Negative(x) if *x <= i64::MAX as u64 => Ok((!*x) as isize),
             Self::Negative(_) => Err(Error::Overflow),
-            Self::Tag(Tag::POS_BIG_INT, content) if content.data_type().is_bytes() => Err(Error::Overflow),
-            Self::Tag(Tag::NEG_BIG_INT, content) if content.data_type().is_bytes() => Err(Error::Overflow),
+            Self::Tag(Tag::POS_BIG_INT, content) if content.is_bytes() => Err(Error::Overflow),
+            Self::Tag(Tag::NEG_BIG_INT, content) if content.is_bytes() => Err(Error::Overflow),
+            Self::Tag(_other_number, content) => content.peeled().to_isize(),
             _ => Err(Error::IncompatibleType),
         }
     }
@@ -971,6 +1019,7 @@ impl Value {
     pub fn to_f32(&self) -> Result<f32> {
         match self {
             Self::Float(float) => float.to_f32(),
+            Self::Tag(_number, content) => content.untagged().to_f32(),
             _ => Err(Error::IncompatibleType),
         }
     }
@@ -979,6 +1028,7 @@ impl Value {
     pub fn to_f64(&self) -> Result<f64> {
         match self {
             Self::Float(float) => Ok(float.to_f64()),
+            Self::Tag(_number, content) => content.untagged().to_f64(),
             _ => Err(Error::IncompatibleType),
         }
     }
@@ -987,6 +1037,7 @@ impl Value {
     pub fn as_bytes(&self) -> Result<&[u8]> {
         match self {
             Self::ByteString(vec) => Ok(vec.as_slice()),
+            Self::Tag(_number, content) => content.untagged().as_bytes(),
             _ => Err(Error::IncompatibleType),
         }
     }
@@ -995,6 +1046,7 @@ impl Value {
     pub const fn as_bytes_mut(&mut self) -> Result<&mut Vec<u8>> {
         match self {
             Self::ByteString(vec) => Ok(vec),
+            Self::Tag(_number, content) => content.untagged_mut().as_bytes_mut(),
             _ => Err(Error::IncompatibleType),
         }
     }
@@ -1003,6 +1055,7 @@ impl Value {
     pub fn into_bytes(self) -> Result<Vec<u8>> {
         match self {
             Self::ByteString(vec) => Ok(vec),
+            Self::Tag(_number, content) => content.into_untagged().into_bytes(),
             _ => Err(Error::IncompatibleType),
         }
     }
@@ -1011,6 +1064,7 @@ impl Value {
     pub fn as_str(&self) -> Result<&str> {
         match self {
             Self::TextString(s) => Ok(s.as_str()),
+            Self::Tag(_number, content) => content.untagged().as_str(),
             _ => Err(Error::IncompatibleType),
         }
     }
@@ -1019,6 +1073,7 @@ impl Value {
     pub const fn as_string_mut(&mut self) -> Result<&mut String> {
         match self {
             Self::TextString(s) => Ok(s),
+            Self::Tag(_number, content) => content.untagged_mut().as_string_mut(),
             _ => Err(Error::IncompatibleType),
         }
     }
@@ -1027,6 +1082,7 @@ impl Value {
     pub fn into_string(self) -> Result<String> {
         match self {
             Self::TextString(s) => Ok(s),
+            Self::Tag(_number, content) => content.into_untagged().into_string(),
             _ => Err(Error::IncompatibleType),
         }
     }
@@ -1035,6 +1091,7 @@ impl Value {
     pub fn as_array(&self) -> Result<&[Value]> {
         match self {
             Self::Array(v) => Ok(v.as_slice()),
+            Self::Tag(_number, content) => content.untagged().as_array(),
             _ => Err(Error::IncompatibleType),
         }
     }
@@ -1043,6 +1100,7 @@ impl Value {
     pub const fn as_array_mut(&mut self) -> Result<&mut Vec<Value>> {
         match self {
             Self::Array(v) => Ok(v),
+            Self::Tag(_number, content) => content.untagged_mut().as_array_mut(),
             _ => Err(Error::IncompatibleType),
         }
     }
@@ -1051,6 +1109,7 @@ impl Value {
     pub fn into_array(self) -> Result<Vec<Value>> {
         match self {
             Self::Array(v) => Ok(v),
+            Self::Tag(_number, content) => content.into_untagged().into_array(),
             _ => Err(Error::IncompatibleType),
         }
     }
@@ -1059,6 +1118,7 @@ impl Value {
     pub const fn as_map(&self) -> Result<&BTreeMap<Value, Value>> {
         match self {
             Self::Map(m) => Ok(m),
+            Self::Tag(_number, content) => content.untagged().as_map(),
             _ => Err(Error::IncompatibleType),
         }
     }
@@ -1067,6 +1127,7 @@ impl Value {
     pub const fn as_map_mut(&mut self) -> Result<&mut BTreeMap<Value, Value>> {
         match self {
             Self::Map(m) => Ok(m),
+            Self::Tag(_number, content) => content.untagged_mut().as_map_mut(),
             _ => Err(Error::IncompatibleType),
         }
     }
@@ -1075,6 +1136,7 @@ impl Value {
     pub fn into_map(self) -> Result<BTreeMap<Value, Value>> {
         match self {
             Self::Map(m) => Ok(m),
+            Self::Tag(_number, content) => content.into_untagged().into_map(),
             _ => Err(Error::IncompatibleType),
         }
     }
@@ -1149,12 +1211,25 @@ impl Value {
         tags
     }
 
+    /// Skip all tag wrappers except the innermost one.
+    /// Returns `self` unchanged if not tagged or only single-tagged.
+    #[must_use]
+    const fn peeled(&self) -> &Self {
+        let mut result = self;
+        while let Self::Tag(_, content) = result
+            && content.data_type().is_tag()
+        {
+            result = content;
+        }
+        result
+    }
+
     /// Borrow the innermost non-tag value, skipping all tag wrappers.
     #[must_use]
     pub const fn untagged(&self) -> &Self {
         let mut result = self;
-        while let Self::Tag(_, data_item) = result {
-            result = data_item;
+        while let Self::Tag(_, content) = result {
+            result = content;
         }
         result
     }
@@ -1162,8 +1237,8 @@ impl Value {
     /// Mutable version of [`untagged`](Self::untagged).
     pub const fn untagged_mut(&mut self) -> &mut Self {
         let mut result = self;
-        while let Self::Tag(_, data_item) = result {
-            result = data_item;
+        while let Self::Tag(_, content) = result {
+            result = content;
         }
         result
     }
