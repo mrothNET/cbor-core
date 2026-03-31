@@ -492,6 +492,78 @@ fn take_from_nested_structure() {
     assert!(m.as_map().unwrap()[&"key".into()].data_type().is_null());
 }
 
+// ===== Hex encoding/decoding =====
+
+#[test]
+fn encode_hex_integer() {
+    assert_eq!(Value::from(0).encode_hex(), "00");
+    assert_eq!(Value::from(42).encode_hex(), "182a");
+    assert_eq!(Value::from(1000).encode_hex(), "1903e8");
+}
+
+#[test]
+fn encode_hex_text() {
+    let v = Value::from("hello");
+    assert_eq!(v.encode_hex(), "6568656c6c6f");
+}
+
+#[test]
+fn decode_hex_roundtrip() {
+    let values = [
+        Value::from(42),
+        Value::from(-1),
+        Value::from("hello"),
+        Value::from(vec![0xDE, 0xAD]),
+        array![1, 2, 3],
+        map! { "a" => 1 },
+        Value::tag(1, 100),
+        Value::null(),
+        Value::from(true),
+    ];
+
+    for v in &values {
+        let hex = v.encode_hex();
+        let decoded = Value::decode_hex(&hex).unwrap();
+        assert_eq!(*v, decoded);
+    }
+}
+
+#[test]
+fn decode_hex_uppercase() {
+    let v = Value::decode_hex("182A").unwrap();
+    assert_eq!(v.to_u32(), Ok(42));
+}
+
+#[test]
+fn decode_hex_mixed_case() {
+    let v = Value::decode_hex("182a").unwrap();
+    assert_eq!(v, Value::decode_hex("182A").unwrap());
+}
+
+#[test]
+fn decode_hex_odd_length() {
+    assert!(Value::decode_hex("18a").is_err());
+}
+
+#[test]
+fn decode_hex_invalid_char() {
+    assert!(Value::decode_hex("zz").is_err());
+}
+
+#[test]
+fn write_hex_to_stream() {
+    let mut buf = Vec::new();
+    Value::from(42).write_hex_to(&mut buf).unwrap();
+    assert_eq!(buf, b"182a");
+}
+
+#[test]
+fn read_hex_from_stream() {
+    let mut hex = "182a".as_bytes();
+    let v = Value::read_hex_from(&mut hex).unwrap();
+    assert_eq!(v.to_u32(), Ok(42));
+}
+
 // ===== Type mismatch errors =====
 
 #[test]

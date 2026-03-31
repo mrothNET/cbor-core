@@ -510,7 +510,9 @@ impl Value {
         std::mem::replace(self, value)
     }
 
-    /// Encode this value to CBOR bytes.
+    /// Encode this value to binary CBOR bytes.
+    ///
+    /// This is a convenience wrapper around [`write_to`](Self::write_to).
     ///
     /// ```
     /// use cbor_core::Value;
@@ -526,9 +528,30 @@ impl Value {
         bytes
     }
 
-    /// Decode a CBOR data item from a byte slice.
+    /// Encode this value to a hex-encoded CBOR string.
     ///
+    /// This is a convenience wrapper around [`write_hex_to`](Self::write_hex_to).
+    ///
+    /// ```
+    /// use cbor_core::Value;
+    /// let hex = Value::from(42).encode_hex();
+    /// assert_eq!(hex, "182a");
+    /// ```
+    #[must_use]
+    pub fn encode_hex(&self) -> String {
+        let len2 = self.cbor_len() * 2;
+        let mut hex = Vec::with_capacity(len2);
+        self.write_hex_to(&mut hex).unwrap();
+        debug_assert_eq!(hex.len(), len2);
+        String::from_utf8(hex).unwrap()
+    }
+
+    /// Decode a CBOR data item from binary bytes.
+    ///
+    /// Accepts any byte source (`&[u8]`, `&str`, `String`, `Vec<u8>`, etc.).
     /// Returns `Err` if the encoding is not canonical.
+    ///
+    /// This is a convenience wrapper around [`read_from`](Self::read_from).
     ///
     /// ```
     /// use cbor_core::Value;
@@ -540,7 +563,32 @@ impl Value {
         Self::read_from(&mut bytes)
     }
 
-    /// Read a single CBOR data item from a stream.
+    /// Decode a CBOR data item from hex-encoded bytes.
+    ///
+    /// Accepts any byte source (`&[u8]`, `&str`, `String`, `Vec<u8>`, etc.).
+    /// Both uppercase and lowercase hex digits are accepted.
+    /// Returns `Err` if the encoding is not canonical.
+    ///
+    /// This is a convenience wrapper around [`read_hex_from`](Self::read_hex_from).
+    ///
+    /// ```
+    /// use cbor_core::Value;
+    /// let v = Value::decode_hex("182a").unwrap();
+    /// assert_eq!(v.to_u32().unwrap(), 42);
+    /// ```
+    pub fn decode_hex(hex: impl AsRef<[u8]>) -> Result<Self> {
+        let mut bytes = hex.as_ref();
+        Self::read_hex_from(&mut bytes)
+    }
+
+    /// Read a single CBOR data item from a binary stream.
+    ///
+    /// ```
+    /// use cbor_core::Value;
+    /// let mut bytes: &[u8] = &[0x18, 42];
+    /// let v = Value::read_from(&mut bytes).unwrap();
+    /// assert_eq!(v.to_u32().unwrap(), 42);
+    /// ```
     pub fn read_from(reader: &mut impl io::Read) -> Result<Self> {
         let ctrl_byte = {
             let mut buf = [0];
@@ -663,7 +711,52 @@ impl Value {
         Ok(this)
     }
 
-    /// Write this value as CBOR to a stream.
+    /// Read a single CBOR data item from a hex-encoded stream.
+    ///
+    /// Each byte of CBOR is expected as two hex digits (uppercase or
+    /// lowercase).
+    ///
+    /// ```
+    /// use cbor_core::Value;
+    /// let mut hex = "182a".as_bytes();
+    /// let v = Value::read_hex_from(&mut hex).unwrap();
+    /// assert_eq!(v.to_u32().unwrap(), 42);
+    /// ```
+    pub fn read_hex_from(reader: impl io::Read) -> Result<Self> {
+        struct HexReader<R>(R);
+
+        impl<R: io::Read> io::Read for HexReader<R> {
+            fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+                fn nibble(char: u8) -> io::Result<u8> {
+                    match char {
+                        b'0'..=b'9' => Ok(char - b'0'),
+                        b'a'..=b'f' => Ok(char - b'a' + 10),
+                        b'A'..=b'F' => Ok(char - b'A' + 10),
+                        _ => Err(io::ErrorKind::InvalidData.into()),
+                    }
+                }
+
+                for byte in buf.iter_mut() {
+                    let mut hex = [0; 2];
+                    self.0.read_exact(&mut hex)?;
+                    *byte = nibble(hex[0])? << 4 | nibble(hex[1])?;
+                }
+
+                Ok(buf.len())
+            }
+        }
+
+        Self::read_from(&mut HexReader(reader))
+    }
+
+    /// Write this value as binary CBOR to a stream.
+    ///
+    /// ```
+    /// use cbor_core::Value;
+    /// let mut buf = Vec::new();
+    /// Value::from(42_u32).write_to(&mut buf).unwrap();
+    /// assert_eq!(buf, [0x18, 42]);
+    /// ```
     pub fn write_to(&self, writer: &mut impl io::Write) -> Result<()> {
         let major = self.cbor_major();
         let (info, argument) = self.cbor_argument();
@@ -703,6 +796,35 @@ impl Value {
         }
 
         Ok(())
+    }
+
+    /// Write this value as hex-encoded CBOR to a stream.
+    ///
+    /// Each binary byte is written as two lowercase hex digits. The
+    /// adapter encodes on the fly without buffering the full output.
+    ///
+    /// ```
+    /// use cbor_core::Value;
+    /// let mut buf = Vec::new();
+    /// Value::from(42_u32).write_hex_to(&mut buf).unwrap();
+    /// assert_eq!(buf, b"182a");
+    /// ```
+    pub fn write_hex_to(&self, writer: impl io::Write) -> Result<()> {
+        struct HexWriter<W>(W);
+
+        impl<W: io::Write> io::Write for HexWriter<W> {
+            fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+                for &byte in buf {
+                    write!(self.0, "{byte:02x}")?;
+                }
+                Ok(buf.len())
+            }
+            fn flush(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+
+        self.write_to(&mut HexWriter(writer))
     }
 
     fn cbor_major(&self) -> u8 {
