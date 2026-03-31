@@ -1,0 +1,262 @@
+use std::collections::BTreeMap;
+
+use crate::{DataType, Error, Integer, SimpleValue, Value, array, map};
+// ===== Construction & type checks =====
+
+#[test]
+fn null() {
+    let v = Value::null();
+    assert!(v.data_type().is_null());
+    assert_eq!(v.data_type(), DataType::Null);
+    assert_eq!(v, Value::default());
+}
+
+#[test]
+fn bool() {
+    let t = Value::from(true);
+    let f = Value::from(false);
+    assert!(t.data_type().is_bool());
+    assert!(f.data_type().is_bool());
+    assert_eq!(t.to_bool(), Ok(true));
+    assert_eq!(f.to_bool(), Ok(false));
+}
+
+#[test]
+fn simple_value() {
+    let v = Value::simple_value(0);
+    assert_eq!(v.to_simple_value(), Ok(0));
+}
+
+#[test]
+#[should_panic(expected = "Invalid simple value")]
+fn simple_value_invalid() {
+    Value::simple_value(24);
+}
+
+// ===== Unsigned integers =====
+
+#[test]
+fn unsigned_small() {
+    let v = Value::from(42_u8);
+    assert!(v.data_type().is_integer());
+    assert_eq!(v.to_u8(), Ok(42));
+    assert_eq!(v.to_u16(), Ok(42));
+    assert_eq!(v.to_u32(), Ok(42));
+    assert_eq!(v.to_u64(), Ok(42));
+}
+
+#[test]
+fn unsigned_overflow() {
+    let v = Value::from(u64::MAX);
+    assert_eq!(v.to_u64(), Ok(u64::MAX));
+    assert_eq!(v.to_u32(), Err(Error::Overflow));
+    assert_eq!(v.to_u16(), Err(Error::Overflow));
+    assert_eq!(v.to_u8(), Err(Error::Overflow));
+}
+
+#[test]
+fn u128_fits_in_u64() {
+    let v = Value::from(1000_u128);
+    assert_eq!(v.to_u64(), Ok(1000));
+}
+
+#[test]
+fn u128_bigint() {
+    let big: u128 = u64::MAX as u128 + 1;
+    let v = Value::from(big);
+    assert!(v.data_type() == DataType::BigInt);
+    assert_eq!(v.to_u128(), Ok(big));
+}
+
+// ===== Signed integers =====
+
+#[test]
+fn positive_signed() {
+    let v = Value::from(100);
+    assert_eq!(v.to_i32(), Ok(100));
+    assert_eq!(v.to_u32(), Ok(100));
+}
+
+#[test]
+fn negative_signed() {
+    let v = Value::from(-1);
+    assert_eq!(v.to_i8(), Ok(-1));
+    assert_eq!(v.to_i16(), Ok(-1));
+    assert_eq!(v.to_i32(), Ok(-1));
+    assert_eq!(v.to_i64(), Ok(-1));
+    assert_eq!(v.to_u8(), Err(Error::NegativeUnsigned));
+}
+
+#[test]
+fn negative_boundary() {
+    let v = Value::from(-128_i8);
+    assert_eq!(v.to_i8(), Ok(-128));
+    assert_eq!(v.to_i16(), Ok(-128));
+
+    let v = Value::from(-129_i16);
+    assert_eq!(v.to_i8(), Err(Error::Overflow));
+    assert_eq!(v.to_i16(), Ok(-129));
+}
+
+#[test]
+fn positive_overflow_for_signed() {
+    let v = Value::from(128_u16);
+    assert_eq!(v.to_i8(), Err(Error::Overflow));
+    assert_eq!(v.to_i16(), Ok(128));
+}
+
+// ===== From traits =====
+
+#[test]
+fn from_integers() {
+    assert_eq!(Value::from(42_u8), Value::from(42));
+    assert_eq!(Value::from(42_u16), Value::from(42));
+    assert_eq!(Value::from(42_u32), Value::from(42));
+    assert_eq!(Value::from(42_u64), Value::from(42));
+    assert_eq!(Value::from(-1_i8), Value::from(-1));
+    assert_eq!(Value::from(-1_i32), Value::from(-1));
+    assert_eq!(Value::from(-1_i64), Value::from(-1));
+}
+
+#[test]
+fn from_integer_struct() {
+    let i = Integer::from(42_u64);
+    assert_eq!(Value::from(i), Value::from(42));
+
+    let i = Integer::from(-1_i64);
+    assert_eq!(Value::from(i), Value::from(-1));
+}
+
+#[test]
+fn from_simple_value_struct() {
+    assert_eq!(Value::from(SimpleValue::NULL), Value::null());
+    assert_eq!(Value::from(SimpleValue::TRUE), Value::from(true));
+}
+
+// ===== Text & byte string accessors =====
+
+#[test]
+fn text_string() {
+    let v = Value::from("hello");
+    assert!(v.data_type().is_text());
+    assert_eq!(v.as_str(), Ok("hello"));
+}
+
+#[test]
+fn byte_string() {
+    let v = Value::from(vec![0xDE, 0xAD]);
+    assert!(v.data_type().is_bytes());
+    assert_eq!(v.as_bytes(), Ok(&[0xDE, 0xAD][..]));
+}
+
+// ===== Arrays & maps =====
+
+#[test]
+fn array() {
+    let v = Value::array([1_u32, 2, 3]);
+    assert!(v.data_type().is_array());
+    assert_eq!(v.as_array().unwrap().len(), 3);
+}
+
+#[test]
+fn cbor_array_macro() {
+    let v = array!["text", 42_u8, true];
+    assert!(v.data_type().is_array());
+    let slice = v.as_array().unwrap();
+    assert_eq!(slice.len(), 3);
+    assert_eq!(slice[0].as_str(), Ok("text"));
+    assert_eq!(slice[1].to_u8(), Ok(42));
+    assert_eq!(slice[2].to_bool(), Ok(true));
+}
+
+#[test]
+fn map_operations() {
+    let mut v = Value::Map(BTreeMap::new());
+    assert!(v.data_type().is_map());
+    v.as_map_mut().unwrap().insert("key".into(), 42_u32.into());
+    assert_eq!(v.as_map().unwrap().len(), 1);
+    v.as_map_mut().unwrap().remove(&"key".into());
+    assert_eq!(v.as_map().unwrap().len(), 0);
+}
+
+#[test]
+fn cbor_map_macro() {
+    let m = map! {
+        "name" => "Alice",
+        "age" => 30_u32,
+        "active" => true,
+    };
+    let map = m.as_map().unwrap();
+    assert_eq!(map.len(), 3);
+    assert_eq!(map.get(&Value::from("name")), Some(&Value::from("Alice")));
+    assert_eq!(map.get(&Value::from("age")), Some(&Value::from(30_u32)));
+    assert_eq!(map.get(&Value::from("active")), Some(&Value::from(true)));
+}
+
+// ===== Tags =====
+
+#[test]
+fn tag_basic() {
+    let v = Value::tag(1, "content");
+    assert!(v.data_type().is_tag());
+    assert_eq!(v.tag_number(), Ok(1));
+    assert_eq!(v.tag_content().unwrap().as_str(), Ok("content"));
+}
+
+#[test]
+fn tag_split() {
+    let v = Value::tag(1, 42_u32);
+    let (num, content) = v.into_tag().unwrap();
+    assert_eq!(num, 1);
+    assert_eq!(content.to_u32(), Ok(42));
+}
+
+#[test]
+fn tag_nested_untagged() {
+    let v = Value::tag(1, Value::tag(2, 99_u32));
+    let inner = v.untagged();
+    assert_eq!(inner.to_u32(), Ok(99));
+}
+
+#[test]
+fn into_untagged() {
+    let v = Value::tag(1, Value::tag(2, "hello"));
+    let inner = v.into_untagged();
+    assert_eq!(inner.as_str(), Ok("hello"));
+}
+
+#[test]
+fn remove_all_tags() {
+    let mut v = Value::tag(10, Value::tag(20, "data"));
+    let tags = v.remove_all_tags();
+    assert_eq!(tags, vec![10, 20]);
+    assert_eq!(v.as_str(), Ok("data"));
+}
+
+// ===== Type mismatch errors =====
+
+#[test]
+fn incompatible_type_errors() {
+    let v = Value::from("hello");
+    assert_eq!(v.to_u8(), Err(Error::IncompatibleType));
+    assert_eq!(v.to_bool(), Err(Error::IncompatibleType));
+    assert_eq!(v.to_simple_value(), Err(Error::IncompatibleType));
+    assert_eq!(v.as_bytes(), Err(Error::IncompatibleType));
+    assert_eq!(v.tag_number(), Err(Error::IncompatibleType));
+}
+
+// ===== Decode error cases =====
+
+#[test]
+fn decode_invalid_info_byte() {
+    // info = 28 is reserved/invalid
+    assert!(Value::decode(&[0x1C]).is_err());
+}
+
+#[test]
+fn decode_truncated_input() {
+    // Two-byte unsigned, but only header present
+    assert!(Value::decode(&[0x19, 0x01]).is_err());
+    // Empty input
+    assert!(Value::decode(&[]).is_err());
+}
