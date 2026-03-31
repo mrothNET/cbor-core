@@ -13,7 +13,6 @@ keywords = [
     "decoding",
     "serialization",
     "deterministic",
-    "canonical",
 ]
 categories = ["encoding", "data-structures"]
 exclude = [".*"]
