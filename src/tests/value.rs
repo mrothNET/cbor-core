@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, i128, u128};
+use std::collections::BTreeMap;
 
 use crate::{DataType, Error, Integer, SimpleValue, Value, array, map};
 // ===== Construction & type checks =====
@@ -509,13 +509,13 @@ fn incompatible_type_errors() {
 #[test]
 fn decode_invalid_info_byte() {
     // info = 28 is reserved/invalid
-    assert!(Value::decode(&[0x1C]).is_err());
+    assert!(Value::decode([0x1C]).is_err());
 }
 
 #[test]
 fn decode_truncated_input() {
     // Two-byte unsigned, but only header present
-    assert!(Value::decode(&[0x19, 0x01]).is_err());
+    assert!(Value::decode([0x19, 0x01]).is_err());
     // Empty input
-    assert!(Value::decode(&[]).is_err());
+    assert!(Value::decode([]).is_err());
 }

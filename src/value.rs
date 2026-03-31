@@ -519,8 +519,10 @@ impl Value {
     /// ```
     #[must_use]
     pub fn encode(&self) -> Vec<u8> {
-        let mut bytes = Vec::new();
+        let len = self.cbor_len();
+        let mut bytes = Vec::with_capacity(len);
         self.write_to(&mut bytes).unwrap();
+        debug_assert_eq!(bytes.len(), len);
         bytes
     }
 
@@ -533,7 +535,8 @@ impl Value {
     /// let v = Value::decode(&[0x18, 42]).unwrap();
     /// assert_eq!(v.to_u32().unwrap(), 42);
     /// ```
-    pub fn decode(mut bytes: &[u8]) -> Result<Self> {
+    pub fn decode(bytes: impl AsRef<[u8]>) -> Result<Self> {
+        let mut bytes = bytes.as_ref();
         Self::read_from(&mut bytes)
     }
 
@@ -742,6 +745,31 @@ impl Value {
             Value::SimpleValue(value) => arg(value.0.into()),
             Value::Float(float) => float.cbor_argument(),
         }
+    }
+
+    /// Encoded length
+    fn cbor_len(&self) -> usize {
+        let (info, _) = self.cbor_argument();
+
+        let header_len = match info {
+            0..ArgLength::U8 => 1,
+            ArgLength::U8 => 2,
+            ArgLength::U16 => 3,
+            ArgLength::U32 => 5,
+            ArgLength::U64 => 9,
+            _ => unreachable!(),
+        };
+
+        let data_len = match self {
+            Self::ByteString(bytes) => bytes.len(),
+            Self::TextString(text) => text.len(),
+            Self::Array(vec) => vec.iter().map(Self::cbor_len).sum(),
+            Self::Map(map) => map.iter().map(|(k, v)| k.cbor_len() + v.cbor_len()).sum(),
+            Self::Tag(_, content) => content.cbor_len(),
+            _ => 0,
+        };
+
+        header_len + data_len
     }
 
     // ------------------- constructors -------------------

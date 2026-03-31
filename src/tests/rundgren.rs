@@ -169,7 +169,7 @@ fn float_zero() {
 fn float_neg_zero() {
     let v = Value::from(-0.0);
     assert_eq!(v.encode(), [0xf9, 0x80, 0x00]);
-    let decoded = Value::decode(&[0xf9, 0x80, 0x00]).unwrap();
+    let decoded = Value::decode([0xf9, 0x80, 0x00]).unwrap();
     assert!(matches!(decoded, Value::Float(f) if f.to_f64().to_bits() == (-0.0_f64).to_bits()));
 }
 
