@@ -482,6 +482,34 @@ impl Hash for Value {
 }
 
 impl Value {
+    /// Take the value out, leaving `null` in its place.
+    ///
+    /// ```
+    /// use cbor_core::Value;
+    ///
+    /// let mut v = Value::from(42);
+    /// let taken = v.take();
+    /// assert_eq!(taken.to_u32().unwrap(), 42);
+    /// assert!(v.data_type().is_null());
+    /// ```
+    pub fn take(&mut self) -> Self {
+        std::mem::take(self)
+    }
+
+    /// Replace the value, returning the old one.
+    ///
+    /// ```
+    /// use cbor_core::Value;
+    ///
+    /// let mut v = Value::from("hello");
+    /// let old = v.replace(Value::from("world"));
+    /// assert_eq!(old.as_str().unwrap(), "hello");
+    /// assert_eq!(v.as_str().unwrap(), "world");
+    /// ```
+    pub fn replace(&mut self, value: Self) -> Self {
+        std::mem::replace(self, value)
+    }
+
     /// Encode this value to CBOR bytes.
     ///
     /// ```

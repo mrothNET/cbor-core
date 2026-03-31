@@ -458,6 +458,40 @@ fn index_non_collection() {
     let _ = &v[0_u32];
 }
 
+// ===== Take & Replace =====
+
+#[test]
+fn take_leaves_null() {
+    let mut v = Value::from(42);
+    let taken = v.take();
+    assert_eq!(taken.to_u32(), Ok(42));
+    assert!(v.data_type().is_null());
+}
+
+#[test]
+fn take_from_null_is_null() {
+    let mut v = Value::null();
+    let taken = v.take();
+    assert!(taken.data_type().is_null());
+    assert!(v.data_type().is_null());
+}
+
+#[test]
+fn replace_returns_old() {
+    let mut v = Value::from("hello");
+    let old = v.replace(Value::from(99));
+    assert_eq!(old.as_str(), Ok("hello"));
+    assert_eq!(v.to_u32(), Ok(99));
+}
+
+#[test]
+fn take_from_nested_structure() {
+    let mut m = map! { "key" => array![1, 2, 3] };
+    let arr = m.as_map_mut().unwrap().get_mut(&"key".into()).unwrap().take();
+    assert_eq!(arr.as_array().unwrap().len(), 3);
+    assert!(m.as_map().unwrap()[&"key".into()].data_type().is_null());
+}
+
 // ===== Type mismatch errors =====
 
 #[test]
