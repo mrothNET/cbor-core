@@ -36,9 +36,6 @@ through round-trips.
 Not yet implemented: CBOR::Core diagnostic notation,
 and DateTime/EpochTime wrappers.
 
-Undecided: Int53 and optional integrations with external crates
-(num_bigint, half, time, chrono) etc.
-
 ## Usage
 
 ```rust
@@ -58,6 +55,9 @@ Arrays and maps can also be built from standard Rust collections
 (`Vec`, `BTreeMap`, `HashMap`, slices of pairs), and values can be
 modified in place through the `as_*_mut()` accessors. See the
 documentation on `Value` for the full API.
+
+For detailed notes on design decisions and trade-offs, see
+[DESIGN-NOTES.md](DESIGN-NOTES.md).
 
 ## License
 
