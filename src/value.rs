@@ -287,13 +287,12 @@ fn read_vec(reader: &mut impl io::Read, len: u64) -> Result<Vec<u8>> {
 /// use cbor_core::{Value, map};
 ///
 /// let v = map! { "name" => "Alice", "age" => 30 };
-/// let name = &v.as_map().unwrap()[&"name".into()];
-/// assert_eq!(name.as_str().unwrap(), "Alice");
+/// assert_eq!(v["name"].as_str().unwrap(), "Alice");
 ///
 /// // Modify in place
 /// let mut v = map! { "count" => 1 };
 /// v.as_map_mut().unwrap().insert("count".into(), 2.into());
-/// assert_eq!(v.as_map().unwrap()[&"count".into()].to_u32().unwrap(), 2);
+/// assert_eq!(v["count"].to_u32().unwrap(), 2);
 /// ```
 ///
 /// ## Indexing
@@ -1661,34 +1660,64 @@ impl From<BTreeMap<Value, Value>> for Value {
 
 // --------- Index ---------
 
+impl Value {
+    /// Look up an element by index (arrays) or key (maps).
+    ///
+    /// Returns `None` if the value is not an array or map, the index
+    /// is out of bounds, or the key is missing.
+    ///
+    /// ```
+    /// use cbor_core::{Value, array, map};
+    ///
+    /// let a = array![10, 20, 30];
+    /// assert_eq!(a.get(1).unwrap().to_u32().unwrap(), 20);
+    /// assert!(a.get(5).is_none());
+    ///
+    /// let m = map! { "x" => 10 };
+    /// assert_eq!(m.get("x").unwrap().to_u32().unwrap(), 10);
+    /// assert!(m.get("missing").is_none());
+    /// ```
+    pub fn get(&self, index: impl Into<Value>) -> Option<&Value> {
+        let key = index.into();
+        match self.untagged() {
+            Value::Array(arr) => key.to_usize().ok().and_then(|i| arr.get(i)),
+            Value::Map(map) => map.get(&key),
+            _ => None,
+        }
+    }
+
+    /// Mutable version of [`get`](Self::get).
+    ///
+    /// ```
+    /// use cbor_core::{Value, array};
+    ///
+    /// let mut a = array![10, 20, 30];
+    /// *a.get_mut(1).unwrap() = Value::from(99);
+    /// assert_eq!(a[1].to_u32().unwrap(), 99);
+    /// ```
+    pub fn get_mut(&mut self, index: impl Into<Value>) -> Option<&mut Value> {
+        let key = index.into();
+        match self.untagged_mut() {
+            Value::Array(arr) => key.to_usize().ok().and_then(|i| arr.get_mut(i)),
+            Value::Map(map) => map.get_mut(&key),
+            _ => None,
+        }
+    }
+}
+
 impl<I: Into<Value>> Index<I> for Value {
     type Output = Value;
 
     fn index(&self, index: I) -> &Value {
-        let key = index.into();
-        match self.untagged() {
-            Value::Array(arr) => {
-                let idx = key.to_usize().expect("array index must be a valid usize integer");
-                &arr[idx]
-            }
-            Value::Map(map) => map.get(&key).expect("key not found in map"),
-            _ => panic!("cannot index into {:?}", self.data_type()),
-        }
+        self.get(index)
+            .expect("value should be an array or map containing the given key")
     }
 }
 
 impl<I: Into<Value>> IndexMut<I> for Value {
     fn index_mut(&mut self, index: I) -> &mut Value {
-        let key = index.into();
-        let data_type = self.untagged().data_type();
-        match self.untagged_mut() {
-            Value::Array(arr) => {
-                let idx = key.to_usize().expect("array index must be a valid usize integer");
-                &mut arr[idx]
-            }
-            Value::Map(map) => map.get_mut(&key).expect("key not found in map"),
-            _ => panic!("cannot index into {:?}", data_type),
-        }
+        self.get_mut(index)
+            .expect("value should be an array or map containing the given key")
     }
 }
 

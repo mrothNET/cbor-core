@@ -186,11 +186,10 @@ fn cbor_map_macro() {
         "age" => 30_u32,
         "active" => true,
     };
-    let map = m.as_map().unwrap();
-    assert_eq!(map.len(), 3);
-    assert_eq!(map.get(&Value::from("name")), Some(&Value::from("Alice")));
-    assert_eq!(map.get(&Value::from("age")), Some(&Value::from(30_u32)));
-    assert_eq!(map.get(&Value::from("active")), Some(&Value::from(true)));
+    assert_eq!(m.as_map().unwrap().len(), 3);
+    assert_eq!(m["name"].as_str(), Ok("Alice"));
+    assert_eq!(m["age"].to_u32(), Ok(30));
+    assert_eq!(m["active"].to_bool(), Ok(true));
 }
 
 // ===== Tags =====
@@ -438,7 +437,7 @@ fn index_tagged_map() {
 }
 
 #[test]
-#[should_panic(expected = "key not found")]
+#[should_panic(expected = "should be an array or map")]
 fn index_map_missing_key() {
     let m = map! { "x" => 1 };
     let _ = &m["missing"];
@@ -452,7 +451,7 @@ fn index_array_out_of_bounds() {
 }
 
 #[test]
-#[should_panic(expected = "cannot index into")]
+#[should_panic(expected = "should be an array or map")]
 fn index_non_collection() {
     let v = Value::from(42);
     let _ = &v[0_u32];
@@ -487,9 +486,9 @@ fn replace_returns_old() {
 #[test]
 fn take_from_nested_structure() {
     let mut m = map! { "key" => array![1, 2, 3] };
-    let arr = m.as_map_mut().unwrap().get_mut(&"key".into()).unwrap().take();
+    let arr = m.get_mut("key").unwrap().take();
     assert_eq!(arr.as_array().unwrap().len(), 3);
-    assert!(m.as_map().unwrap()[&"key".into()].data_type().is_null());
+    assert!(m["key"].data_type().is_null());
 }
 
 // ===== Hex encoding/decoding =====

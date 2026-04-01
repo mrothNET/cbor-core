@@ -128,11 +128,10 @@ fn nested_array_deep() {
 #[test]
 fn array_of_arrays() {
     let v = Value::array(vec![array![1, 2], array![3, 4], array![5, 6]]);
-    let outer = v.as_array().unwrap();
-    assert_eq!(outer.len(), 3);
-    assert_eq!(outer[0].as_array().unwrap()[0].to_u32(), Ok(1));
-    assert_eq!(outer[1].as_array().unwrap()[1].to_u32(), Ok(4));
-    assert_eq!(outer[2].as_array().unwrap()[0].to_u32(), Ok(5));
+    assert_eq!(v.as_array().unwrap().len(), 3);
+    assert_eq!(v[0][0].to_u32(), Ok(1));
+    assert_eq!(v[1][1].to_u32(), Ok(4));
+    assert_eq!(v[2][0].to_u32(), Ok(5));
 }
 
 // ===== Map with different key types =====
@@ -144,11 +143,10 @@ fn map_with_string_keys() {
         "b" => 2,
         "c" => 3,
     };
-    let map = m.as_map().unwrap();
-    assert_eq!(map.len(), 3);
-    assert_eq!(map.get(&Value::from("a")), Some(&Value::from(1)));
-    assert_eq!(map.get(&Value::from("b")), Some(&Value::from(2)));
-    assert_eq!(map.get(&Value::from("c")), Some(&Value::from(3)));
+    assert_eq!(m.as_map().unwrap().len(), 3);
+    assert_eq!(m["a"].to_u32(), Ok(1));
+    assert_eq!(m["b"].to_u32(), Ok(2));
+    assert_eq!(m["c"].to_u32(), Ok(3));
 }
 
 #[test]
@@ -158,11 +156,10 @@ fn map_with_integer_keys() {
         1 => "one",
         u32::MAX => "max",
     };
-    let map = m.as_map().unwrap();
-    assert_eq!(map.len(), 3);
-    assert_eq!(map.get(&Value::from(0)), Some(&Value::from("zero")));
-    assert_eq!(map.get(&Value::from(1)), Some(&Value::from("one")));
-    assert_eq!(map.get(&Value::from(u32::MAX)), Some(&Value::from("max")));
+    assert_eq!(m.as_map().unwrap().len(), 3);
+    assert_eq!(m[0].as_str(), Ok("zero"));
+    assert_eq!(m[1].as_str(), Ok("one"));
+    assert_eq!(m[u32::MAX].as_str(), Ok("max"));
 }
 
 #[test]
@@ -171,10 +168,9 @@ fn map_with_negative_keys() {
         -1 => "neg one",
         -128 => "neg 128",
     };
-    let map = m.as_map().unwrap();
-    assert_eq!(map.len(), 2);
-    assert_eq!(map.get(&Value::from(-1)), Some(&Value::from("neg one")));
-    assert_eq!(map.get(&Value::from(-128)), Some(&Value::from("neg 128")));
+    assert_eq!(m.as_map().unwrap().len(), 2);
+    assert_eq!(m[-1].as_str(), Ok("neg one"));
+    assert_eq!(m[-128].as_str(), Ok("neg 128"));
 }
 
 #[test]
@@ -183,10 +179,9 @@ fn map_with_boolean_keys() {
         true => "yes",
         false => "no",
     };
-    let map = m.as_map().unwrap();
-    assert_eq!(map.len(), 2);
-    assert_eq!(map.get(&Value::from(true)), Some(&Value::from("yes")));
-    assert_eq!(map.get(&Value::from(false)), Some(&Value::from("no")));
+    assert_eq!(m.as_map().unwrap().len(), 2);
+    assert_eq!(m[true].as_str(), Ok("yes"));
+    assert_eq!(m[false].as_str(), Ok("no"));
 }
 
 #[test]
@@ -194,9 +189,8 @@ fn map_with_null_key() {
     let m = map! {
         Value::null() => "nothing",
     };
-    let map = m.as_map().unwrap();
-    assert_eq!(map.len(), 1);
-    assert_eq!(map.get(&Value::null()), Some(&Value::from("nothing")));
+    assert_eq!(m.as_map().unwrap().len(), 1);
+    assert_eq!(m[Value::null()].as_str(), Ok("nothing"));
 }
 
 #[test]
@@ -220,9 +214,8 @@ fn map_with_byte_string_keys() {
         Value::from(vec![0x01]) => "one",
         Value::from(vec![0x02]) => "two",
     };
-    let map = m.as_map().unwrap();
-    assert_eq!(map.len(), 2);
-    assert_eq!(map.get(&Value::from(vec![0x01])), Some(&Value::from("one")));
+    assert_eq!(m.as_map().unwrap().len(), 2);
+    assert_eq!(m[Value::from(vec![0x01])].as_str(), Ok("one"));
 }
 
 #[test]
@@ -234,13 +227,12 @@ fn map_with_mixed_key_types() {
         Value::null() => "null",
         Value::from(vec![0xAA]) => "bytes",
     };
-    let map = m.as_map().unwrap();
-    assert_eq!(map.len(), 5);
-    assert_eq!(map.get(&Value::from(0)), Some(&Value::from("int")));
-    assert_eq!(map.get(&Value::from("key")), Some(&Value::from("string")));
-    assert_eq!(map.get(&Value::from(true)), Some(&Value::from("bool")));
-    assert_eq!(map.get(&Value::null()), Some(&Value::from("null")));
-    assert_eq!(map.get(&Value::from(vec![0xAA])), Some(&Value::from("bytes")));
+    assert_eq!(m.as_map().unwrap().len(), 5);
+    assert_eq!(m[0].as_str(), Ok("int"));
+    assert_eq!(m["key"].as_str(), Ok("string"));
+    assert_eq!(m[true].as_str(), Ok("bool"));
+    assert_eq!(m[Value::null()].as_str(), Ok("null"));
+    assert_eq!(m[Value::from(vec![0xAA])].as_str(), Ok("bytes"));
 }
 
 // ===== Map with different value types =====
@@ -255,14 +247,13 @@ fn map_with_mixed_value_types() {
         "null" => Value::null(),
         "bytes" => Value::from(vec![1, 2]),
     };
-    let map = m.as_map().unwrap();
-    assert_eq!(map.len(), 6);
-    assert_eq!(map[&Value::from("int")].to_u32(), Ok(42));
-    assert_eq!(map[&Value::from("neg")].to_i32(), Ok(-1));
-    assert_eq!(map[&Value::from("str")].as_str(), Ok("hello"));
-    assert_eq!(map[&Value::from("bool")].to_bool(), Ok(true));
-    assert!(map[&Value::from("null")].data_type().is_null());
-    assert_eq!(map[&Value::from("bytes")].as_bytes(), Ok(&[1, 2][..]));
+    assert_eq!(m.as_map().unwrap().len(), 6);
+    assert_eq!(m["int"].to_u32(), Ok(42));
+    assert_eq!(m["neg"].to_i32(), Ok(-1));
+    assert_eq!(m["str"].as_str(), Ok("hello"));
+    assert_eq!(m["bool"].to_bool(), Ok(true));
+    assert!(m["null"].data_type().is_null());
+    assert_eq!(m["bytes"].as_bytes(), Ok(&[1, 2][..]));
 }
 
 // ===== Nested maps =====
@@ -272,9 +263,7 @@ fn nested_map_empty() {
     let m = map! {
         "inner" => map! {},
     };
-    let map = m.as_map().unwrap();
-    let inner = map[&Value::from("inner")].as_map().unwrap();
-    assert_eq!(inner.len(), 0);
+    assert_eq!(m["inner"].as_map().unwrap().len(), 0);
 }
 
 #[test]
@@ -286,10 +275,7 @@ fn nested_map_deep() {
             },
         },
     };
-    let l1 = m.as_map().unwrap();
-    let l2 = l1[&Value::from("a")].as_map().unwrap();
-    let l3 = l2[&Value::from("b")].as_map().unwrap();
-    assert_eq!(l3[&Value::from("c")].to_u32(), Ok(42));
+    assert_eq!(m["a"]["b"]["c"].to_u32(), Ok(42));
 }
 
 // ===== Maps containing arrays, arrays containing maps =====
@@ -300,24 +286,19 @@ fn map_with_array_values() {
         "list" => array![1, 2, 3],
         "empty" => Value::array(Vec::<Value>::new()),
     };
-    let map = m.as_map().unwrap();
-    let list = map[&Value::from("list")].as_array().unwrap();
-    assert_eq!(list.len(), 3);
-    assert_eq!(list[0].to_u32(), Ok(1));
-    assert_eq!(list[1].to_u32(), Ok(2));
-    assert_eq!(list[2].to_u32(), Ok(3));
-    let empty = map[&Value::from("empty")].as_array().unwrap();
-    assert_eq!(empty.len(), 0);
+    assert_eq!(m["list"][0].to_u32(), Ok(1));
+    assert_eq!(m["list"][1].to_u32(), Ok(2));
+    assert_eq!(m["list"][2].to_u32(), Ok(3));
+    assert_eq!(m["empty"].as_array().unwrap().len(), 0);
 }
 
 #[test]
 fn array_of_maps() {
     let v = Value::array(vec![map! { "x" => 1 }, map! { "x" => 2 }, map! {}]);
-    let s = v.as_array().unwrap();
-    assert_eq!(s.len(), 3);
-    assert_eq!(s[0].as_map().unwrap()[&Value::from("x")].to_u32(), Ok(1));
-    assert_eq!(s[1].as_map().unwrap()[&Value::from("x")].to_u32(), Ok(2));
-    assert_eq!(s[2].as_map().unwrap().len(), 0);
+    assert_eq!(v.as_array().unwrap().len(), 3);
+    assert_eq!(v[0]["x"].to_u32(), Ok(1));
+    assert_eq!(v[1]["x"].to_u32(), Ok(2));
+    assert_eq!(v[2].as_map().unwrap().len(), 0);
 }
 
 #[test]
@@ -371,19 +352,14 @@ fn complex_nested_structure() {
         "count" => 2,
     };
 
-    let map = doc.as_map().unwrap();
-    assert_eq!(map[&Value::from("count")].to_u32(), Ok(2));
+    assert_eq!(doc["count"].to_u32(), Ok(2));
+    assert_eq!(doc["users"].as_array().unwrap().len(), 2);
 
-    let users = map[&Value::from("users")].as_array().unwrap();
-    assert_eq!(users.len(), 2);
+    assert_eq!(doc["users"][0]["name"].as_str(), Ok("Alice"));
+    assert_eq!(doc["users"][0]["age"].to_u32(), Ok(30));
+    assert_eq!(doc["users"][0]["active"].to_bool(), Ok(true));
 
-    let alice = users[0].as_map().unwrap();
-    assert_eq!(alice[&Value::from("name")].as_str(), Ok("Alice"));
-    assert_eq!(alice[&Value::from("age")].to_u32(), Ok(30));
-    assert_eq!(alice[&Value::from("active")].to_bool(), Ok(true));
-
-    let bob = users[1].as_map().unwrap();
-    assert_eq!(bob[&Value::from("name")].as_str(), Ok("Bob"));
-    assert!(bob[&Value::from("age")].data_type().is_null());
-    assert_eq!(bob[&Value::from("active")].to_bool(), Ok(false));
+    assert_eq!(doc["users"][1]["name"].as_str(), Ok("Bob"));
+    assert!(doc["users"][1]["age"].data_type().is_null());
+    assert_eq!(doc["users"][1]["active"].to_bool(), Ok(false));
 }
