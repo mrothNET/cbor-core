@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::{DataType, Error, Integer, SimpleValue, Value, array, map};
+use crate::{DataType, Error, SimpleValue, Value, array, map};
 // ===== Construction & type checks =====
 
 #[test]
@@ -116,15 +116,6 @@ fn from_integers() {
     assert_eq!(Value::from(-1_i8), Value::from(-1));
     assert_eq!(Value::from(-1_i32), Value::from(-1));
     assert_eq!(Value::from(-1_i64), Value::from(-1));
-}
-
-#[test]
-fn from_integer_struct() {
-    let i = Integer::from(42_u64);
-    assert_eq!(Value::from(i), Value::from(42));
-
-    let i = Integer::from(-1_i64);
-    assert_eq!(Value::from(i), Value::from(-1));
 }
 
 #[test]

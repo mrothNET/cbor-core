@@ -66,7 +66,6 @@ mod consts;
 mod data_type;
 mod error;
 mod float;
-mod integer;
 mod macros;
 mod map;
 mod simple_value;
@@ -81,7 +80,6 @@ pub use simple_value::SimpleValue;
 pub use value::Value;
 
 use consts::*;
-use integer::*;
 
 #[cfg(test)]
 mod tests;

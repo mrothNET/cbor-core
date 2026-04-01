@@ -3,7 +3,7 @@ use std::hash::{Hash, Hasher};
 use std::ops::{Index, IndexMut};
 use std::{cmp, io};
 
-use crate::{ArgLength, Array, CtrlByte, DataType, Error, Float, Integer, Major, Map, Result, SimpleValue, Tag};
+use crate::{ArgLength, Array, CtrlByte, DataType, Error, Float, Major, Map, Result, SimpleValue, Tag};
 
 fn u128_from_bytes(bytes: &[u8]) -> Result<u128> {
     let mut buf = [0; 16];
@@ -1462,81 +1462,115 @@ impl From<bool> for Value {
     }
 }
 
-impl From<Integer> for Value {
-    fn from(value: Integer) -> Self {
-        value.into_value()
-    }
-}
-
 impl From<u8> for Value {
     fn from(value: u8) -> Self {
-        Integer::from(value).into_value()
+        Self::Unsigned(value.into())
     }
 }
 
 impl From<u16> for Value {
     fn from(value: u16) -> Self {
-        Integer::from(value).into_value()
+        Self::Unsigned(value.into())
     }
 }
 
 impl From<u32> for Value {
     fn from(value: u32) -> Self {
-        Integer::from(value).into_value()
+        Self::Unsigned(value.into())
     }
 }
 
 impl From<u64> for Value {
     fn from(value: u64) -> Self {
-        Integer::from(value).into_value()
+        Self::Unsigned(value)
     }
 }
 
 impl From<u128> for Value {
     fn from(value: u128) -> Self {
-        Integer::from(value).into_value()
+        if value <= u64::MAX as u128 {
+            Self::Unsigned(value as u64)
+        } else {
+            let bytes: Vec<u8> = value.to_be_bytes().into_iter().skip_while(|&byte| byte == 0).collect();
+            debug_assert!(bytes.len() > 8);
+            Self::tag(Tag::POS_BIG_INT, bytes)
+        }
     }
 }
 
+#[cfg(any(target_pointer_width = "32", target_pointer_width = "64"))]
 impl From<usize> for Value {
     fn from(value: usize) -> Self {
-        Integer::from(value).into_value()
+        Self::Unsigned(value as u64)
     }
 }
 
 impl From<i8> for Value {
     fn from(value: i8) -> Self {
-        Integer::from(value).into_value()
+        if value >= 0 {
+            Self::Unsigned(value as u64)
+        } else {
+            Self::Negative((!value) as u64)
+        }
     }
 }
 
 impl From<i16> for Value {
     fn from(value: i16) -> Self {
-        Integer::from(value).into_value()
+        if value >= 0 {
+            Self::Unsigned(value as u64)
+        } else {
+            Self::Negative((!value) as u64)
+        }
     }
 }
 
 impl From<i32> for Value {
     fn from(value: i32) -> Self {
-        Integer::from(value).into_value()
+        if value >= 0 {
+            Self::Unsigned(value as u64)
+        } else {
+            Self::Negative((!value) as u64)
+        }
     }
 }
 
 impl From<i64> for Value {
     fn from(value: i64) -> Self {
-        Integer::from(value).into_value()
+        if value >= 0 {
+            Self::Unsigned(value as u64)
+        } else {
+            Self::Negative((!value) as u64)
+        }
     }
 }
 
 impl From<i128> for Value {
     fn from(value: i128) -> Self {
-        Integer::from(value).into_value()
+        if value >= 0 {
+            Self::from(value as u128)
+        } else {
+            let complement = (!value) as u128;
+
+            if complement <= u64::MAX as u128 {
+                Self::Negative(complement as u64)
+            } else {
+                let bytes: Vec<u8> = complement
+                    .to_be_bytes()
+                    .into_iter()
+                    .skip_while(|&byte| byte == 0)
+                    .collect();
+                debug_assert!(bytes.len() > 8);
+                Self::tag(Tag::NEG_BIG_INT, bytes)
+            }
+        }
     }
 }
 
+#[cfg(any(target_pointer_width = "32", target_pointer_width = "64"))]
 impl From<isize> for Value {
     fn from(value: isize) -> Self {
-        Integer::from(value).into_value()
+        Self::from(value as i64)
     }
 }
 
@@ -1845,13 +1879,6 @@ impl TryFrom<Value> for Float {
             Value::Float(f) => Ok(f),
             _ => Err(Error::IncompatibleType),
         }
-    }
-}
-
-impl TryFrom<Value> for Integer {
-    type Error = Error;
-    fn try_from(value: Value) -> Result<Self> {
-        Integer::from_value(value)
     }
 }
 
