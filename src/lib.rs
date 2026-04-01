@@ -47,7 +47,7 @@
 //! assert_eq!(value, decoded);
 //!
 //! // Access inner data
-//! let greeting = decoded.as_map().unwrap()[&1.into()].as_str().unwrap();
+//! let greeting = decoded[1].as_str().unwrap();
 //! assert_eq!(greeting, "hello");
 //! ```
 //!
