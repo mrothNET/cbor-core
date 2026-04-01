@@ -1,3 +1,13 @@
+mod array;
+mod bytes;
+mod default_eq_ord_hash;
+mod float;
+mod index;
+mod int;
+mod map;
+mod simple_value;
+mod string;
+
 use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
 use std::ops::{Index, IndexMut};
@@ -422,62 +432,6 @@ pub enum Value {
     /// Tagged data item (major type 6). The first field is the tag number,
     /// the second is the enclosed content.
     Tag(u64, Box<Value>),
-}
-
-impl Default for Value {
-    fn default() -> Self {
-        Self::null()
-    }
-}
-
-impl PartialEq for Value {
-    fn eq(&self, other: &Self) -> bool {
-        self.cmp(other) == cmp::Ordering::Equal
-    }
-}
-
-impl Eq for Value {}
-
-impl Ord for Value {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.cbor_major()
-            .cmp(&other.cbor_major())
-            .then_with(|| self.cbor_argument().cmp(&other.cbor_argument()))
-            .then_with(|| match (self, other) {
-                (Self::TextString(a), Self::TextString(b)) => a.cmp(b),
-                (Self::ByteString(a), Self::ByteString(b)) => a.cmp(b),
-                (Self::Array(a), Self::Array(b)) => a.cmp(b),
-                (Self::Map(a), Self::Map(b)) => a.cmp(b),
-                (Self::Tag(_, a), Self::Tag(_, b)) => a.cmp(b),
-                _ => std::cmp::Ordering::Equal,
-            })
-    }
-}
-
-impl PartialOrd for Value {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Hash for Value {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.cbor_major().hash(state);
-        self.cbor_argument().hash(state);
-        match self {
-            Self::TextString(s) => s.hash(state),
-            Self::ByteString(b) => b.hash(state),
-            Self::Array(a) => a.hash(state),
-            Self::Map(m) => {
-                for (k, v) in m {
-                    k.hash(state);
-                    v.hash(state);
-                }
-            }
-            Self::Tag(_, v) => v.hash(state),
-            _ => {}
-        }
-    }
 }
 
 impl Value {
@@ -1336,6 +1290,53 @@ impl Value {
         }
     }
 
+    // --------------- Index access ---------------
+
+    /// Look up an element by index (arrays) or key (maps).
+    ///
+    /// Returns `None` if the value is not an array or map, the index
+    /// is out of bounds, or the key is missing.
+    ///
+    /// ```
+    /// use cbor_core::{Value, array, map};
+    ///
+    /// let a = array![10, 20, 30];
+    /// assert_eq!(a.get(1).unwrap().to_u32().unwrap(), 20);
+    /// assert!(a.get(5).is_none());
+    ///
+    /// let m = map! { "x" => 10 };
+    /// assert_eq!(m.get("x").unwrap().to_u32().unwrap(), 10);
+    /// assert!(m.get("missing").is_none());
+    /// ```
+    pub fn get(&self, index: impl Into<Value>) -> Option<&Value> {
+        let key = index.into();
+        match self.untagged() {
+            Value::Array(arr) => key.to_usize().ok().and_then(|i| arr.get(i)),
+            Value::Map(map) => map.get(&key),
+            _ => None,
+        }
+    }
+
+    /// Mutable version of [`get`](Self::get).
+    ///
+    /// ```
+    /// use cbor_core::{Value, array};
+    ///
+    /// let mut a = array![10, 20, 30];
+    /// *a.get_mut(1).unwrap() = Value::from(99);
+    /// assert_eq!(a[1].to_u32().unwrap(), 99);
+    /// ```
+    pub fn get_mut(&mut self, index: impl Into<Value>) -> Option<&mut Value> {
+        let key = index.into();
+        match self.untagged_mut() {
+            Value::Array(arr) => key.to_usize().ok().and_then(|i| arr.get_mut(i)),
+            Value::Map(map) => map.get_mut(&key),
+            _ => None,
+        }
+    }
+
+    // ------------------- Tags ------------------
+
     /// Return the tag number.
     pub const fn tag_number(&self) -> Result<u64> {
         match self {
@@ -1445,481 +1446,5 @@ impl Value {
             self = *content;
         }
         self
-    }
-}
-
-// --------- From-traits for Value ---------
-
-impl From<SimpleValue> for Value {
-    fn from(value: SimpleValue) -> Self {
-        Self::SimpleValue(value)
-    }
-}
-
-impl From<bool> for Value {
-    fn from(value: bool) -> Self {
-        Self::SimpleValue(SimpleValue::from_bool(value))
-    }
-}
-
-impl From<u8> for Value {
-    fn from(value: u8) -> Self {
-        Self::Unsigned(value.into())
-    }
-}
-
-impl From<u16> for Value {
-    fn from(value: u16) -> Self {
-        Self::Unsigned(value.into())
-    }
-}
-
-impl From<u32> for Value {
-    fn from(value: u32) -> Self {
-        Self::Unsigned(value.into())
-    }
-}
-
-impl From<u64> for Value {
-    fn from(value: u64) -> Self {
-        Self::Unsigned(value)
-    }
-}
-
-impl From<u128> for Value {
-    fn from(value: u128) -> Self {
-        if value <= u64::MAX as u128 {
-            Self::Unsigned(value as u64)
-        } else {
-            let bytes: Vec<u8> = value.to_be_bytes().into_iter().skip_while(|&byte| byte == 0).collect();
-            debug_assert!(bytes.len() > 8);
-            Self::tag(Tag::POS_BIG_INT, bytes)
-        }
-    }
-}
-
-#[cfg(any(target_pointer_width = "32", target_pointer_width = "64"))]
-impl From<usize> for Value {
-    fn from(value: usize) -> Self {
-        Self::Unsigned(value as u64)
-    }
-}
-
-impl From<i8> for Value {
-    fn from(value: i8) -> Self {
-        if value >= 0 {
-            Self::Unsigned(value as u64)
-        } else {
-            Self::Negative((!value) as u64)
-        }
-    }
-}
-
-impl From<i16> for Value {
-    fn from(value: i16) -> Self {
-        if value >= 0 {
-            Self::Unsigned(value as u64)
-        } else {
-            Self::Negative((!value) as u64)
-        }
-    }
-}
-
-impl From<i32> for Value {
-    fn from(value: i32) -> Self {
-        if value >= 0 {
-            Self::Unsigned(value as u64)
-        } else {
-            Self::Negative((!value) as u64)
-        }
-    }
-}
-
-impl From<i64> for Value {
-    fn from(value: i64) -> Self {
-        if value >= 0 {
-            Self::Unsigned(value as u64)
-        } else {
-            Self::Negative((!value) as u64)
-        }
-    }
-}
-
-impl From<i128> for Value {
-    fn from(value: i128) -> Self {
-        if value >= 0 {
-            Self::from(value as u128)
-        } else {
-            let complement = (!value) as u128;
-
-            if complement <= u64::MAX as u128 {
-                Self::Negative(complement as u64)
-            } else {
-                let bytes: Vec<u8> = complement
-                    .to_be_bytes()
-                    .into_iter()
-                    .skip_while(|&byte| byte == 0)
-                    .collect();
-                debug_assert!(bytes.len() > 8);
-                Self::tag(Tag::NEG_BIG_INT, bytes)
-            }
-        }
-    }
-}
-
-#[cfg(any(target_pointer_width = "32", target_pointer_width = "64"))]
-impl From<isize> for Value {
-    fn from(value: isize) -> Self {
-        Self::from(value as i64)
-    }
-}
-
-// --- Floats ---
-
-impl From<Float> for Value {
-    fn from(value: Float) -> Self {
-        Self::Float(value)
-    }
-}
-
-impl From<f32> for Value {
-    fn from(value: f32) -> Self {
-        Self::Float(value.into())
-    }
-}
-
-impl From<f64> for Value {
-    fn from(value: f64) -> Self {
-        Self::Float(value.into())
-    }
-}
-
-// --- Strings: String, str, Box ---
-
-impl From<&str> for Value {
-    fn from(value: &str) -> Self {
-        Self::TextString(value.into())
-    }
-}
-
-impl From<String> for Value {
-    fn from(value: String) -> Self {
-        Self::TextString(value)
-    }
-}
-
-impl From<&String> for Value {
-    fn from(value: &String) -> Self {
-        Self::TextString(value.clone())
-    }
-}
-
-impl From<Box<str>> for Value {
-    fn from(value: Box<str>) -> Self {
-        Self::TextString(value.into())
-    }
-}
-
-// --- ByteString: Vec, slice, array, Box ---
-
-impl From<Vec<u8>> for Value {
-    fn from(value: Vec<u8>) -> Self {
-        Self::ByteString(value)
-    }
-}
-
-impl From<&[u8]> for Value {
-    fn from(value: &[u8]) -> Self {
-        Self::ByteString(value.to_vec())
-    }
-}
-
-impl<const N: usize> From<[u8; N]> for Value {
-    fn from(value: [u8; N]) -> Self {
-        Self::ByteString(value.to_vec())
-    }
-}
-
-impl<const N: usize> From<&[u8; N]> for Value {
-    fn from(value: &[u8; N]) -> Self {
-        Self::ByteString(value.to_vec())
-    }
-}
-
-impl From<Box<[u8]>> for Value {
-    fn from(value: Box<[u8]>) -> Self {
-        Self::ByteString(Vec::from(value))
-    }
-}
-
-// --- Array of values: Vec, array, Box ---
-
-impl From<Vec<Value>> for Value {
-    fn from(value: Vec<Value>) -> Self {
-        Self::Array(value)
-    }
-}
-
-impl<const N: usize> From<[Value; N]> for Value {
-    fn from(value: [Value; N]) -> Self {
-        Self::Array(value.to_vec())
-    }
-}
-
-impl From<Box<[Value]>> for Value {
-    fn from(value: Box<[Value]>) -> Self {
-        Self::Array(value.to_vec())
-    }
-}
-
-// --- Array, Map, BTreeMap ---
-
-impl From<Array> for Value {
-    fn from(value: Array) -> Self {
-        Self::Array(value.into_inner())
-    }
-}
-
-impl From<Map> for Value {
-    fn from(value: Map) -> Self {
-        Self::Map(value.into_inner())
-    }
-}
-
-impl From<BTreeMap<Value, Value>> for Value {
-    fn from(value: BTreeMap<Value, Value>) -> Self {
-        Self::Map(value)
-    }
-}
-
-// --------- Index ---------
-
-impl Value {
-    /// Look up an element by index (arrays) or key (maps).
-    ///
-    /// Returns `None` if the value is not an array or map, the index
-    /// is out of bounds, or the key is missing.
-    ///
-    /// ```
-    /// use cbor_core::{Value, array, map};
-    ///
-    /// let a = array![10, 20, 30];
-    /// assert_eq!(a.get(1).unwrap().to_u32().unwrap(), 20);
-    /// assert!(a.get(5).is_none());
-    ///
-    /// let m = map! { "x" => 10 };
-    /// assert_eq!(m.get("x").unwrap().to_u32().unwrap(), 10);
-    /// assert!(m.get("missing").is_none());
-    /// ```
-    pub fn get(&self, index: impl Into<Value>) -> Option<&Value> {
-        let key = index.into();
-        match self.untagged() {
-            Value::Array(arr) => key.to_usize().ok().and_then(|i| arr.get(i)),
-            Value::Map(map) => map.get(&key),
-            _ => None,
-        }
-    }
-
-    /// Mutable version of [`get`](Self::get).
-    ///
-    /// ```
-    /// use cbor_core::{Value, array};
-    ///
-    /// let mut a = array![10, 20, 30];
-    /// *a.get_mut(1).unwrap() = Value::from(99);
-    /// assert_eq!(a[1].to_u32().unwrap(), 99);
-    /// ```
-    pub fn get_mut(&mut self, index: impl Into<Value>) -> Option<&mut Value> {
-        let key = index.into();
-        match self.untagged_mut() {
-            Value::Array(arr) => key.to_usize().ok().and_then(|i| arr.get_mut(i)),
-            Value::Map(map) => map.get_mut(&key),
-            _ => None,
-        }
-    }
-}
-
-impl<I: Into<Value>> Index<I> for Value {
-    type Output = Value;
-
-    fn index(&self, index: I) -> &Value {
-        self.get(index)
-            .expect("value should be an array or map containing the given key")
-    }
-}
-
-impl<I: Into<Value>> IndexMut<I> for Value {
-    fn index_mut(&mut self, index: I) -> &mut Value {
-        self.get_mut(index)
-            .expect("value should be an array or map containing the given key")
-    }
-}
-
-// --------- TryFrom Value ---------
-
-impl TryFrom<Value> for bool {
-    type Error = Error;
-    fn try_from(value: Value) -> Result<Self> {
-        value.to_bool()
-    }
-}
-
-impl TryFrom<Value> for SimpleValue {
-    type Error = Error;
-    fn try_from(value: Value) -> Result<Self> {
-        match value {
-            Value::SimpleValue(sv) => Ok(sv),
-            _ => Err(Error::IncompatibleType),
-        }
-    }
-}
-
-impl TryFrom<Value> for u8 {
-    type Error = Error;
-    fn try_from(value: Value) -> Result<Self> {
-        value.to_u8()
-    }
-}
-
-impl TryFrom<Value> for u16 {
-    type Error = Error;
-    fn try_from(value: Value) -> Result<Self> {
-        value.to_u16()
-    }
-}
-
-impl TryFrom<Value> for u32 {
-    type Error = Error;
-    fn try_from(value: Value) -> Result<Self> {
-        value.to_u32()
-    }
-}
-
-impl TryFrom<Value> for u64 {
-    type Error = Error;
-    fn try_from(value: Value) -> Result<Self> {
-        value.to_u64()
-    }
-}
-
-impl TryFrom<Value> for u128 {
-    type Error = Error;
-    fn try_from(value: Value) -> Result<Self> {
-        value.to_u128()
-    }
-}
-
-impl TryFrom<Value> for usize {
-    type Error = Error;
-    fn try_from(value: Value) -> Result<Self> {
-        value.to_usize()
-    }
-}
-
-impl TryFrom<Value> for i8 {
-    type Error = Error;
-    fn try_from(value: Value) -> Result<Self> {
-        value.to_i8()
-    }
-}
-
-impl TryFrom<Value> for i16 {
-    type Error = Error;
-    fn try_from(value: Value) -> Result<Self> {
-        value.to_i16()
-    }
-}
-
-impl TryFrom<Value> for i32 {
-    type Error = Error;
-    fn try_from(value: Value) -> Result<Self> {
-        value.to_i32()
-    }
-}
-
-impl TryFrom<Value> for i64 {
-    type Error = Error;
-    fn try_from(value: Value) -> Result<Self> {
-        value.to_i64()
-    }
-}
-
-impl TryFrom<Value> for i128 {
-    type Error = Error;
-    fn try_from(value: Value) -> Result<Self> {
-        value.to_i128()
-    }
-}
-
-impl TryFrom<Value> for isize {
-    type Error = Error;
-    fn try_from(value: Value) -> Result<Self> {
-        value.to_isize()
-    }
-}
-
-impl TryFrom<Value> for f32 {
-    type Error = Error;
-    fn try_from(value: Value) -> Result<Self> {
-        value.to_f32()
-    }
-}
-
-impl TryFrom<Value> for f64 {
-    type Error = Error;
-    fn try_from(value: Value) -> Result<Self> {
-        value.to_f64()
-    }
-}
-
-impl TryFrom<Value> for Float {
-    type Error = Error;
-    fn try_from(value: Value) -> Result<Self> {
-        match value {
-            Value::Float(f) => Ok(f),
-            _ => Err(Error::IncompatibleType),
-        }
-    }
-}
-
-impl TryFrom<Value> for String {
-    type Error = Error;
-    fn try_from(value: Value) -> Result<Self> {
-        value.into_string()
-    }
-}
-
-impl TryFrom<Value> for Vec<u8> {
-    type Error = Error;
-    fn try_from(value: Value) -> Result<Self> {
-        value.into_bytes()
-    }
-}
-
-impl TryFrom<Value> for Vec<Value> {
-    type Error = Error;
-    fn try_from(value: Value) -> Result<Self> {
-        value.into_array()
-    }
-}
-
-impl TryFrom<Value> for BTreeMap<Value, Value> {
-    type Error = Error;
-    fn try_from(value: Value) -> Result<Self> {
-        value.into_map()
-    }
-}
-
-impl TryFrom<Value> for Array {
-    type Error = Error;
-    fn try_from(value: Value) -> Result<Self> {
-        value.into_array().map(Array::from)
-    }
-}
-
-impl TryFrom<Value> for Map {
-    type Error = Error;
-    fn try_from(value: Value) -> Result<Self> {
-        value.into_map().map(Map::from)
     }
 }
