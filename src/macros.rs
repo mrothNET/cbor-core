@@ -4,7 +4,7 @@
 ///
 /// ```
 /// # use cbor_core::{array, Value};
-/// let v = array![1_u32, "hello", true];
+/// let v = array![1, "hello", true];
 /// assert!(v.data_type().is_array());
 /// ```
 #[macro_export]
@@ -20,7 +20,7 @@ macro_rules! array {
 ///
 /// ```
 /// # use cbor_core::{map, Value};
-/// let m = map! { "x" => 1_u32, "y" => 2_u32 };
+/// let m = map! { "x" => 1, "y" => 2 };
 /// assert!(m.data_type().is_map());
 /// ```
 #[macro_export]

@@ -89,15 +89,7 @@ fn array_of_simple_values() {
 
 #[test]
 fn array_mixed_types() {
-    let v = array![
-        42_u32,
-        -1_i8,
-        "text",
-        true,
-        false,
-        Value::null(),
-        Value::from(vec![0xAB])
-    ];
+    let v = array![42, -1, "text", true, false, Value::null(), Value::from(vec![0xAB])];
     let s = v.as_array().unwrap();
     assert_eq!(s.len(), 7);
     assert_eq!(s[0].to_u32(), Ok(42));
@@ -135,7 +127,7 @@ fn nested_array_deep() {
 
 #[test]
 fn array_of_arrays() {
-    let v = Value::array(vec![array![1_u32, 2_u32], array![3_u32, 4_u32], array![5_u32, 6_u32]]);
+    let v = Value::array(vec![array![1, 2], array![3, 4], array![5, 6]]);
     let outer = v.as_array().unwrap();
     assert_eq!(outer.len(), 3);
     assert_eq!(outer[0].as_array().unwrap()[0].to_u32(), Ok(1));
@@ -148,41 +140,41 @@ fn array_of_arrays() {
 #[test]
 fn map_with_string_keys() {
     let m = map! {
-        "a" => 1_u32,
-        "b" => 2_u32,
-        "c" => 3_u32,
+        "a" => 1,
+        "b" => 2,
+        "c" => 3,
     };
     let map = m.as_map().unwrap();
     assert_eq!(map.len(), 3);
-    assert_eq!(map.get(&Value::from("a")), Some(&Value::from(1_u32)));
-    assert_eq!(map.get(&Value::from("b")), Some(&Value::from(2_u32)));
-    assert_eq!(map.get(&Value::from("c")), Some(&Value::from(3_u32)));
+    assert_eq!(map.get(&Value::from("a")), Some(&Value::from(1)));
+    assert_eq!(map.get(&Value::from("b")), Some(&Value::from(2)));
+    assert_eq!(map.get(&Value::from("c")), Some(&Value::from(3)));
 }
 
 #[test]
 fn map_with_integer_keys() {
     let m = map! {
-        0_u32 => "zero",
-        1_u32 => "one",
+        0 => "zero",
+        1 => "one",
         u32::MAX => "max",
     };
     let map = m.as_map().unwrap();
     assert_eq!(map.len(), 3);
-    assert_eq!(map.get(&Value::from(0_u32)), Some(&Value::from("zero")));
-    assert_eq!(map.get(&Value::from(1_u32)), Some(&Value::from("one")));
+    assert_eq!(map.get(&Value::from(0)), Some(&Value::from("zero")));
+    assert_eq!(map.get(&Value::from(1)), Some(&Value::from("one")));
     assert_eq!(map.get(&Value::from(u32::MAX)), Some(&Value::from("max")));
 }
 
 #[test]
 fn map_with_negative_keys() {
     let m = map! {
-        -1_i32 => "neg one",
-        -128_i32 => "neg 128",
+        -1 => "neg one",
+        -128 => "neg 128",
     };
     let map = m.as_map().unwrap();
     assert_eq!(map.len(), 2);
-    assert_eq!(map.get(&Value::from(-1_i32)), Some(&Value::from("neg one")));
-    assert_eq!(map.get(&Value::from(-128_i32)), Some(&Value::from("neg 128")));
+    assert_eq!(map.get(&Value::from(-1)), Some(&Value::from("neg one")));
+    assert_eq!(map.get(&Value::from(-128)), Some(&Value::from("neg 128")));
 }
 
 #[test]
@@ -236,7 +228,7 @@ fn map_with_byte_string_keys() {
 #[test]
 fn map_with_mixed_key_types() {
     let m = map! {
-        0_u32 => "int",
+        0 => "int",
         "key" => "string",
         true => "bool",
         Value::null() => "null",
@@ -244,7 +236,7 @@ fn map_with_mixed_key_types() {
     };
     let map = m.as_map().unwrap();
     assert_eq!(map.len(), 5);
-    assert_eq!(map.get(&Value::from(0_u32)), Some(&Value::from("int")));
+    assert_eq!(map.get(&Value::from(0)), Some(&Value::from("int")));
     assert_eq!(map.get(&Value::from("key")), Some(&Value::from("string")));
     assert_eq!(map.get(&Value::from(true)), Some(&Value::from("bool")));
     assert_eq!(map.get(&Value::null()), Some(&Value::from("null")));
@@ -256,8 +248,8 @@ fn map_with_mixed_key_types() {
 #[test]
 fn map_with_mixed_value_types() {
     let m = map! {
-        "int" => 42_u32,
-        "neg" => -1_i32,
+        "int" => 42,
+        "neg" => -1,
         "str" => "hello",
         "bool" => true,
         "null" => Value::null(),
@@ -290,7 +282,7 @@ fn nested_map_deep() {
     let m = map! {
         "a" => map! {
             "b" => map! {
-                "c" => 42_u32,
+                "c" => 42,
             },
         },
     };
@@ -305,7 +297,7 @@ fn nested_map_deep() {
 #[test]
 fn map_with_array_values() {
     let m = map! {
-        "list" => array![1_u32, 2_u32, 3_u32],
+        "list" => array![1, 2, 3],
         "empty" => Value::array(Vec::<Value>::new()),
     };
     let map = m.as_map().unwrap();
@@ -320,7 +312,7 @@ fn map_with_array_values() {
 
 #[test]
 fn array_of_maps() {
-    let v = Value::array(vec![map! { "x" => 1_u32 }, map! { "x" => 2_u32 }, map! {}]);
+    let v = Value::array(vec![map! { "x" => 1 }, map! { "x" => 2 }, map! {}]);
     let s = v.as_array().unwrap();
     assert_eq!(s.len(), 3);
     assert_eq!(s[0].as_map().unwrap()[&Value::from("x")].to_u32(), Ok(1));
@@ -331,8 +323,8 @@ fn array_of_maps() {
 #[test]
 fn map_with_array_keys() {
     // Arrays can serve as map keys (they implement Ord)
-    let key1 = array![1_u32, 2_u32];
-    let key2 = array![3_u32, 4_u32];
+    let key1 = array![1, 2];
+    let key2 = array![3, 4];
 
     let m = Value::map([(key1.clone(), "pair_12"), (key2.clone(), "pair_34")]);
     let map = m.as_map().unwrap();
@@ -345,13 +337,13 @@ fn map_with_array_keys() {
 
 #[test]
 fn map_operations_on_non_map() {
-    let v = Value::from(42_u32);
+    let v = Value::from(42);
     assert_eq!(v.as_map(), Err(Error::IncompatibleType));
 }
 
 #[test]
 fn array_operations_on_non_array() {
-    let v = Value::from(42_u32);
+    let v = Value::from(42);
     assert_eq!(v.as_array(), Err(Error::IncompatibleType));
 }
 
@@ -367,7 +359,7 @@ fn complex_nested_structure() {
         "users" => Value::array(vec![
             map! {
                 "name" => "Alice",
-                "age" => 30_u32,
+                "age" => 30,
                 "active" => true,
             },
             map! {
@@ -376,7 +368,7 @@ fn complex_nested_structure() {
                 "active" => false,
             },
         ]),
-        "count" => 2_u32,
+        "count" => 2,
     };
 
     let map = doc.as_map().unwrap();

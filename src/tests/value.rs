@@ -591,3 +591,14 @@ fn decode_truncated_input() {
     // Empty input
     assert!(Value::decode([]).is_err());
 }
+
+// ===== Decode error cases =====
+
+#[test]
+fn ordering_by_encoded_bytes() {
+    assert!(Value::from(1) < Value::from(-1));
+    assert!(Value::from(u128::MAX) < Value::simple_value(0));
+    assert!(Value::from(0.5) < Value::from(0.1));
+    assert!(Value::from(0.5) < Value::from(0.51));
+    assert!(Value::simple_value(19) < Value::null());
+}

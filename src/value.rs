@@ -6,7 +6,7 @@ use std::{cmp, io};
 use crate::{ArgLength, Array, CtrlByte, DataType, Error, Float, Integer, Major, Map, Result, SimpleValue, Tag};
 
 fn u128_from_bytes(bytes: &[u8]) -> Result<u128> {
-    let mut buf = [0_u8; 16];
+    let mut buf = [0; 16];
     let offset = buf.len().checked_sub(bytes.len()).ok_or(Error::Overflow)?;
     buf[offset..].copy_from_slice(bytes);
     Ok(u128::from_be_bytes(buf))
@@ -40,7 +40,7 @@ fn read_vec(reader: &mut impl io::Read, len: u64) -> Result<Vec<u8>> {
 /// ```
 /// use cbor_core::Value;
 ///
-/// let n = Value::from(42_u32);
+/// let n = Value::from(42);
 /// let s = Value::from("hello");
 /// let b = Value::from(true);
 /// ```
@@ -63,11 +63,11 @@ fn read_vec(reader: &mut impl io::Read, len: u64) -> Result<Vec<u8>> {
 /// use std::collections::HashMap;
 ///
 /// // Array from a slice
-/// let a = Value::array([1_u32, 2, 3].as_slice());
+/// let a = Value::array([1, 2, 3].as_slice());
 ///
 /// // Map from a HashMap
 /// let mut hm = HashMap::new();
-/// hm.insert(1_u32, 2_u32);
+/// hm.insert(1, 2);
 /// let m = Value::map(&hm);
 ///
 /// // Map from key-value pairs
@@ -102,7 +102,7 @@ fn read_vec(reader: &mut impl io::Read, len: u64) -> Result<Vec<u8>> {
 /// ```
 /// use cbor_core::Value;
 ///
-/// let original = Value::from(-1000_i32);
+/// let original = Value::from(-1000);
 /// let bytes = original.encode();
 /// let decoded = Value::decode(&bytes).unwrap();
 /// assert_eq!(original, decoded);
@@ -170,12 +170,12 @@ fn read_vec(reader: &mut impl io::Read, len: u64) -> Result<Vec<u8>> {
 /// ```
 /// use cbor_core::Value;
 ///
-/// let v = Value::from(1000_u32);
+/// let v = Value::from(1000);
 /// assert_eq!(v.to_u32().unwrap(), 1000);
 /// assert_eq!(v.to_i64().unwrap(), 1000);
 /// assert!(v.to_u8().is_err()); // overflow
 ///
-/// let neg = Value::from(-5_i32);
+/// let neg = Value::from(-5);
 /// assert_eq!(neg.to_i8().unwrap(), -5);
 /// assert!(neg.to_u32().is_err()); // negative unsigned
 /// ```
@@ -197,7 +197,7 @@ fn read_vec(reader: &mut impl io::Read, len: u64) -> Result<Vec<u8>> {
 /// ```
 /// use cbor_core::Value;
 ///
-/// let v = Value::from(2.5_f32);
+/// let v = Value::from(2.5);
 /// assert_eq!(v.to_f64().unwrap(), 2.5);
 /// assert_eq!(v.to_f32().unwrap(), 2.5);
 /// ```
@@ -217,7 +217,7 @@ fn read_vec(reader: &mut impl io::Read, len: u64) -> Result<Vec<u8>> {
 /// ```
 /// use cbor_core::Value;
 ///
-/// let mut v = Value::from(vec![1_u8, 2, 3]);
+/// let mut v = Value::from(vec![1, 2, 3]);
 /// v.as_bytes_mut().unwrap().push(4);
 /// assert_eq!(v.as_bytes().unwrap(), &[1, 2, 3, 4]);
 /// ```
@@ -307,7 +307,7 @@ fn read_vec(reader: &mut impl io::Read, len: u64) -> Result<Vec<u8>> {
 /// use cbor_core::{Value, array, map};
 ///
 /// let a = array![10, 20, 30];
-/// assert_eq!(a[1_u32].to_u32().unwrap(), 20);
+/// assert_eq!(a[1].to_u32().unwrap(), 20);
 ///
 /// let m = map! { "x" => 10, "y" => 20 };
 /// assert_eq!(m["x"].to_u32().unwrap(), 10);
@@ -362,7 +362,7 @@ fn read_vec(reader: &mut impl io::Read, len: u64) -> Result<Vec<u8>> {
 /// assert_eq!(uri.as_str().unwrap(), "https://example.com");
 ///
 /// // Nested tags are also transparent
-/// let nested = Value::tag(100, Value::tag(200, 42_u32));
+/// let nested = Value::tag(100, Value::tag(200, 42));
 /// assert_eq!(nested.to_u32().unwrap(), 42);
 /// ```
 ///
@@ -385,7 +385,7 @@ fn read_vec(reader: &mut impl io::Read, len: u64) -> Result<Vec<u8>> {
 /// ```
 /// use cbor_core::Value;
 ///
-/// let v = Value::from(3.14_f64);
+/// let v = Value::from(3.14);
 /// assert!(v.data_type().is_float());
 /// ```
 #[derive(Debug, Clone)]
@@ -516,7 +516,7 @@ impl Value {
     ///
     /// ```
     /// use cbor_core::Value;
-    /// let bytes = Value::from(42_u32).encode();
+    /// let bytes = Value::from(42).encode();
     /// assert_eq!(bytes, [0x18, 42]);
     /// ```
     #[must_use]
@@ -754,7 +754,7 @@ impl Value {
     /// ```
     /// use cbor_core::Value;
     /// let mut buf = Vec::new();
-    /// Value::from(42_u32).write_to(&mut buf).unwrap();
+    /// Value::from(42).write_to(&mut buf).unwrap();
     /// assert_eq!(buf, [0x18, 42]);
     /// ```
     pub fn write_to(&self, writer: &mut impl io::Write) -> Result<()> {
@@ -806,7 +806,7 @@ impl Value {
     /// ```
     /// use cbor_core::Value;
     /// let mut buf = Vec::new();
-    /// Value::from(42_u32).write_hex_to(&mut buf).unwrap();
+    /// Value::from(42).write_hex_to(&mut buf).unwrap();
     /// assert_eq!(buf, b"182a");
     /// ```
     pub fn write_hex_to(&self, writer: impl io::Write) -> Result<()> {
@@ -925,7 +925,7 @@ impl Value {
     /// let f1 = Value::float(1.0);
     /// assert!(f1.to_f64() == Ok(1.0));
     ///
-    /// let f2 = Value::float(2_u32);
+    /// let f2 = Value::float(2);
     /// assert!(f2.to_f64() == Ok(2.0));
     ///
     /// let f3 = Value::float(true);
@@ -1183,7 +1183,7 @@ impl Value {
 
     /// Narrow to `isize`.
     #[cfg(target_pointer_width = "32")]
-    pub const fn to_isize_(&self) -> Result<isize> {
+    pub const fn to_isize(&self) -> Result<isize> {
         match self {
             Self::Unsigned(x) if *x <= i32::MAX as u64 => Ok(*x as isize),
             Self::Unsigned(_) => Err(Error::Overflow),
