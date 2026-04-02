@@ -666,7 +666,224 @@ fn decode_truncated_input() {
     assert!(Value::decode([]).is_err());
 }
 
-// ===== Decode error cases =====
+// ===== DataType and is_*() predicates =====
+
+#[test]
+fn data_type_null() {
+    let v = Value::null();
+    let dt = v.data_type();
+    assert_eq!(dt, DataType::Null);
+
+    assert!(dt.is_null());
+    assert!(!dt.is_bool());
+    assert!(dt.is_simple_value());
+    assert!(!dt.is_integer());
+    assert!(!dt.is_float());
+    assert!(!dt.is_bytes());
+    assert!(!dt.is_text());
+    assert!(!dt.is_array());
+    assert!(!dt.is_map());
+    assert!(!dt.is_tag());
+}
+
+#[test]
+fn data_type_bool() {
+    let dt = Value::from(true).data_type();
+    assert_eq!(dt, DataType::Bool);
+
+    assert!(!dt.is_null());
+    assert!(dt.is_bool());
+    assert!(dt.is_simple_value());
+    assert!(!dt.is_integer());
+    assert!(!dt.is_float());
+    assert!(!dt.is_bytes());
+    assert!(!dt.is_text());
+    assert!(!dt.is_array());
+    assert!(!dt.is_map());
+    assert!(!dt.is_tag());
+
+    assert_eq!(Value::from(false).data_type(), DataType::Bool);
+}
+
+#[test]
+fn data_type_simple() {
+    let dt = Value::simple_value(0).data_type();
+    assert_eq!(dt, DataType::Simple);
+
+    assert!(!dt.is_null());
+    assert!(!dt.is_bool());
+    assert!(dt.is_simple_value());
+    assert!(!dt.is_integer());
+    assert!(!dt.is_float());
+    assert!(!dt.is_bytes());
+    assert!(!dt.is_text());
+    assert!(!dt.is_array());
+    assert!(!dt.is_map());
+    assert!(!dt.is_tag());
+
+    assert_eq!(Value::simple_value(255).data_type(), DataType::Simple);
+}
+
+#[test]
+fn data_type_int() {
+    let dt = Value::from(42).data_type();
+    assert_eq!(dt, DataType::Int);
+
+    assert!(!dt.is_simple_value());
+    assert!(dt.is_integer());
+    assert!(!dt.is_float());
+    assert!(!dt.is_bytes());
+    assert!(!dt.is_text());
+    assert!(!dt.is_array());
+    assert!(!dt.is_map());
+    assert!(!dt.is_tag());
+
+    assert_eq!(Value::from(-1).data_type(), DataType::Int);
+}
+
+#[test]
+fn data_type_bigint() {
+    let dt = Value::from(u128::MAX).data_type();
+    assert_eq!(dt, DataType::BigInt);
+
+    assert!(!dt.is_simple_value());
+    assert!(dt.is_integer());
+    assert!(!dt.is_float());
+    assert!(!dt.is_bytes());
+    assert!(!dt.is_text());
+    assert!(!dt.is_array());
+    assert!(!dt.is_map());
+    assert!(dt.is_tag()); // bigints are tagged byte strings
+
+    assert_eq!(Value::from(i128::MIN).data_type(), DataType::BigInt);
+}
+
+#[test]
+fn data_type_float16() {
+    let dt = Value::from(0.0).data_type();
+    assert_eq!(dt, DataType::Float16);
+
+    assert!(!dt.is_simple_value());
+    assert!(!dt.is_integer());
+    assert!(dt.is_float());
+    assert!(!dt.is_bytes());
+    assert!(!dt.is_text());
+    assert!(!dt.is_array());
+    assert!(!dt.is_map());
+    assert!(!dt.is_tag());
+
+    assert_eq!(Value::from(1.0).data_type(), DataType::Float16);
+}
+
+#[test]
+fn data_type_float32() {
+    let dt = Value::from(1.0e10_f32).data_type();
+    assert_eq!(dt, DataType::Float32);
+
+    assert!(!dt.is_simple_value());
+    assert!(!dt.is_integer());
+    assert!(dt.is_float());
+    assert!(!dt.is_bytes());
+    assert!(!dt.is_text());
+    assert!(!dt.is_array());
+    assert!(!dt.is_map());
+    assert!(!dt.is_tag());
+}
+
+#[test]
+fn data_type_float64() {
+    let dt = Value::from(1.0e100_f64).data_type();
+    assert_eq!(dt, DataType::Float64);
+
+    assert!(!dt.is_simple_value());
+    assert!(!dt.is_integer());
+    assert!(dt.is_float());
+    assert!(!dt.is_bytes());
+    assert!(!dt.is_text());
+    assert!(!dt.is_array());
+    assert!(!dt.is_map());
+    assert!(!dt.is_tag());
+}
+
+#[test]
+fn data_type_bytes() {
+    let dt = Value::from(vec![1, 2, 3]).data_type();
+    assert_eq!(dt, DataType::Bytes);
+
+    assert!(!dt.is_simple_value());
+    assert!(!dt.is_integer());
+    assert!(!dt.is_float());
+    assert!(dt.is_bytes());
+    assert!(!dt.is_text());
+    assert!(!dt.is_array());
+    assert!(!dt.is_map());
+    assert!(!dt.is_tag());
+}
+
+#[test]
+fn data_type_text() {
+    let dt = Value::from("hello").data_type();
+    assert_eq!(dt, DataType::Text);
+
+    assert!(!dt.is_simple_value());
+    assert!(!dt.is_integer());
+    assert!(!dt.is_float());
+    assert!(!dt.is_bytes());
+    assert!(dt.is_text());
+    assert!(!dt.is_array());
+    assert!(!dt.is_map());
+    assert!(!dt.is_tag());
+}
+
+#[test]
+fn data_type_array() {
+    let dt = array![1, 2, 3].data_type();
+    assert_eq!(dt, DataType::Array);
+
+    assert!(!dt.is_simple_value());
+    assert!(!dt.is_integer());
+    assert!(!dt.is_float());
+    assert!(!dt.is_bytes());
+    assert!(!dt.is_text());
+    assert!(dt.is_array());
+    assert!(!dt.is_map());
+    assert!(!dt.is_tag());
+}
+
+#[test]
+fn data_type_map() {
+    let dt = map! { "a" => 1 }.data_type();
+    assert_eq!(dt, DataType::Map);
+
+    assert!(!dt.is_simple_value());
+    assert!(!dt.is_integer());
+    assert!(!dt.is_float());
+    assert!(!dt.is_bytes());
+    assert!(!dt.is_text());
+    assert!(!dt.is_array());
+    assert!(dt.is_map());
+    assert!(!dt.is_tag());
+}
+
+#[test]
+fn data_type_tag() {
+    let dt = Value::tag(32, "https://example.com").data_type();
+    assert_eq!(dt, DataType::Tag);
+
+    assert!(!dt.is_simple_value());
+    assert!(!dt.is_integer());
+    assert!(!dt.is_float());
+    assert!(!dt.is_bytes());
+    assert!(!dt.is_text());
+    assert!(!dt.is_array());
+    assert!(!dt.is_map());
+    assert!(dt.is_tag());
+
+    // nested tags
+    assert_eq!(Value::tag(100, Value::tag(200, 42)).data_type(), DataType::Tag);
+}
+
+// ===== Ordering =====
 
 #[test]
 fn ordering_by_encoded_bytes() {
