@@ -15,28 +15,6 @@ use std::{cmp, io};
 
 use crate::{ArgLength, Array, CtrlByte, DataType, Error, Float, Major, Map, Result, SimpleValue, Tag};
 
-fn u128_from_bytes(bytes: &[u8]) -> Result<u128> {
-    let mut buf = [0; 16];
-    let offset = buf.len().checked_sub(bytes.len()).ok_or(Error::Overflow)?;
-    buf[offset..].copy_from_slice(bytes);
-    Ok(u128::from_be_bytes(buf))
-}
-
-fn read_vec(reader: &mut impl io::Read, len: u64) -> Result<Vec<u8>> {
-    use io::Read;
-
-    let len_usize = usize::try_from(len).map_err(|_| Error::LengthTooLarge)?;
-
-    let mut buf = Vec::with_capacity(len_usize.min(100_000_000)); // Mitigate OOM
-    let bytes_read = reader.take(len).read_to_end(&mut buf)?;
-
-    if bytes_read == len_usize {
-        Ok(buf)
-    } else {
-        Err(Error::UnexpectedEof)
-    }
-}
-
 /// A single CBOR data item.
 ///
 /// `Value` covers all CBOR major types: integers, floats, byte and text
@@ -958,210 +936,105 @@ impl Value {
         }
     }
 
-    /// Narrow to `u8`. Returns `Err(Overflow)` or `Err(NegativeUnsigned)` on mismatch.
-    pub const fn to_u8(&self) -> Result<u8> {
+    fn to_uint<T>(&self) -> Result<T>
+    where
+        T: TryFrom<u64> + TryFrom<u128>,
+    {
         match self {
-            Self::Unsigned(x) if *x <= u8::MAX as u64 => Ok(*x as u8),
-            Self::Unsigned(_) => Err(Error::Overflow),
+            Self::Unsigned(x) => T::try_from(*x).or(Err(Error::Overflow)),
             Self::Negative(_) => Err(Error::NegativeUnsigned),
-            Self::Tag(Tag::POS_BIG_INT, content) if content.is_bytes() => Err(Error::Overflow),
+
+            Self::Tag(Tag::POS_BIG_INT, content) if content.is_bytes() => {
+                T::try_from(u128_from_bytes(self.as_bytes()?)?).or(Err(Error::Overflow))
+            }
+
             Self::Tag(Tag::NEG_BIG_INT, content) if content.is_bytes() => Err(Error::NegativeUnsigned),
-            Self::Tag(_other_number, content) => content.peeled().to_u8(),
+            Self::Tag(_other_number, content) => content.peeled().to_uint(),
             _ => Err(Error::IncompatibleType),
         }
+    }
+
+    /// Narrow to `u8`. Returns `Err(Overflow)` or `Err(NegativeUnsigned)` on mismatch.
+    pub fn to_u8(&self) -> Result<u8> {
+        self.to_uint()
     }
 
     /// Narrow to `u16`.
-    pub const fn to_u16(&self) -> Result<u16> {
-        match self {
-            Self::Unsigned(x) if *x <= u16::MAX as u64 => Ok(*x as u16),
-            Self::Unsigned(_) => Err(Error::Overflow),
-            Self::Negative(_) => Err(Error::NegativeUnsigned),
-            Self::Tag(Tag::POS_BIG_INT, content) if content.is_bytes() => Err(Error::Overflow),
-            Self::Tag(Tag::NEG_BIG_INT, content) if content.is_bytes() => Err(Error::NegativeUnsigned),
-            Self::Tag(_other_number, content) => content.peeled().to_u16(),
-            _ => Err(Error::IncompatibleType),
-        }
+    pub fn to_u16(&self) -> Result<u16> {
+        self.to_uint()
     }
 
     /// Narrow to `u32`.
-    pub const fn to_u32(&self) -> Result<u32> {
-        match self {
-            Self::Unsigned(x) if *x <= u32::MAX as u64 => Ok(*x as u32),
-            Self::Unsigned(_) => Err(Error::Overflow),
-            Self::Negative(_) => Err(Error::NegativeUnsigned),
-            Self::Tag(Tag::POS_BIG_INT, content) if content.is_bytes() => Err(Error::Overflow),
-            Self::Tag(Tag::NEG_BIG_INT, content) if content.is_bytes() => Err(Error::NegativeUnsigned),
-            Self::Tag(_other_number, content) => content.peeled().to_u32(),
-            _ => Err(Error::IncompatibleType),
-        }
+    pub fn to_u32(&self) -> Result<u32> {
+        self.to_uint()
     }
 
     /// Narrow to `u64`.
-    pub const fn to_u64(&self) -> Result<u64> {
-        match self {
-            Self::Unsigned(x) => Ok(*x),
-            Self::Negative(_) => Err(Error::NegativeUnsigned),
-            Self::Tag(Tag::POS_BIG_INT, content) if content.is_bytes() => Err(Error::Overflow),
-            Self::Tag(Tag::NEG_BIG_INT, content) if content.is_bytes() => Err(Error::NegativeUnsigned),
-            Self::Tag(_other_number, content) => content.peeled().to_u64(),
-            _ => Err(Error::IncompatibleType),
-        }
+    pub fn to_u64(&self) -> Result<u64> {
+        self.to_uint()
     }
 
     /// Narrow to `u128`. Handles big integers (tag 2) transparently.
     pub fn to_u128(&self) -> Result<u128> {
-        match self {
-            Self::Unsigned(x) => Ok(*x as u128),
-            Self::Negative(_) => Err(Error::NegativeUnsigned),
-            Self::Tag(Tag::POS_BIG_INT, content) if content.is_bytes() => u128_from_bytes(content.as_bytes()?),
-            Self::Tag(Tag::NEG_BIG_INT, content) if content.is_bytes() => Err(Error::NegativeUnsigned),
-            Self::Tag(_other_number, content) => content.peeled().to_u128(),
-            _ => Err(Error::IncompatibleType),
-        }
+        self.to_uint()
     }
 
     /// Narrow to `usize`.
-    #[cfg(target_pointer_width = "32")]
-    pub const fn to_usize(&self) -> Result<usize> {
-        match self {
-            Self::Unsigned(x) if *x <= u32::MAX as u64 => Ok(*x as usize),
-            Self::Unsigned(_) => Err(Error::Overflow),
-            Self::Negative(_) => Err(Error::NegativeUnsigned),
-            Self::Tag(Tag::POS_BIG_INT, content) if content.is_bytes() => Err(Error::Overflow),
-            Self::Tag(Tag::NEG_BIG_INT, content) if content.is_bytes() => Err(Error::NegativeUnsigned),
-            Self::Tag(_other_number, content) => content.peeled().to_usize(),
-            _ => Err(Error::IncompatibleType),
-        }
+    pub fn to_usize(&self) -> Result<usize> {
+        self.to_uint()
     }
 
-    /// Narrow to `usize`.
-    #[cfg(target_pointer_width = "64")]
-    pub const fn to_usize(&self) -> Result<usize> {
+    fn to_sint<T>(&self) -> Result<T>
+    where
+        T: TryFrom<u64> + TryFrom<u128> + std::ops::Not<Output = T>,
+    {
         match self {
-            Self::Unsigned(x) => Ok(*x as usize),
-            Self::Negative(_) => Err(Error::NegativeUnsigned),
-            Self::Tag(Tag::POS_BIG_INT, content) if content.is_bytes() => Err(Error::Overflow),
-            Self::Tag(Tag::NEG_BIG_INT, content) if content.is_bytes() => Err(Error::NegativeUnsigned),
-            Self::Tag(_other_number, content) => content.peeled().to_usize(),
+            Self::Unsigned(x) => T::try_from(*x).or(Err(Error::Overflow)),
+            Self::Negative(x) => T::try_from(*x).map(T::not).or(Err(Error::Overflow)),
+
+            Self::Tag(Tag::POS_BIG_INT, content) if content.is_bytes() => {
+                T::try_from(u128_from_bytes(self.as_bytes()?)?).or(Err(Error::Overflow))
+            }
+
+            Self::Tag(Tag::NEG_BIG_INT, content) if content.is_bytes() => {
+                T::try_from(u128_from_bytes(self.as_bytes()?)?)
+                    .map(T::not)
+                    .or(Err(Error::Overflow))
+            }
+
+            Self::Tag(_other_number, content) => content.peeled().to_sint(),
             _ => Err(Error::IncompatibleType),
         }
     }
 
     /// Narrow to `i8`.
-    pub const fn to_i8(&self) -> Result<i8> {
-        match self {
-            Self::Unsigned(x) if *x <= i8::MAX as u64 => Ok(*x as i8),
-            Self::Unsigned(_) => Err(Error::Overflow),
-            Self::Negative(x) if *x <= i8::MAX as u64 => Ok((!*x) as i8),
-            Self::Negative(_) => Err(Error::Overflow),
-            Self::Tag(Tag::POS_BIG_INT, content) if content.is_bytes() => Err(Error::Overflow),
-            Self::Tag(Tag::NEG_BIG_INT, content) if content.is_bytes() => Err(Error::Overflow),
-            Self::Tag(_other_number, content) => content.peeled().to_i8(),
-            _ => Err(Error::IncompatibleType),
-        }
+    pub fn to_i8(&self) -> Result<i8> {
+        self.to_sint()
     }
 
     /// Narrow to `i16`.
-    pub const fn to_i16(&self) -> Result<i16> {
-        match self {
-            Self::Unsigned(x) if *x <= i16::MAX as u64 => Ok(*x as i16),
-            Self::Unsigned(_) => Err(Error::Overflow),
-            Self::Negative(x) if *x <= i16::MAX as u64 => Ok((!*x) as i16),
-            Self::Negative(_) => Err(Error::Overflow),
-            Self::Tag(Tag::POS_BIG_INT, content) if content.is_bytes() => Err(Error::Overflow),
-            Self::Tag(Tag::NEG_BIG_INT, content) if content.is_bytes() => Err(Error::Overflow),
-            Self::Tag(_other_number, content) => content.peeled().to_i16(),
-            _ => Err(Error::IncompatibleType),
-        }
+    pub fn to_i16(&self) -> Result<i16> {
+        self.to_sint()
     }
 
     /// Narrow to `i32`.
-    pub const fn to_i32(&self) -> Result<i32> {
-        match self {
-            Self::Unsigned(x) if *x <= i32::MAX as u64 => Ok(*x as i32),
-            Self::Unsigned(_) => Err(Error::Overflow),
-            Self::Negative(x) if *x <= i32::MAX as u64 => Ok((!*x) as i32),
-            Self::Negative(_) => Err(Error::Overflow),
-            Self::Tag(Tag::POS_BIG_INT, content) if content.is_bytes() => Err(Error::Overflow),
-            Self::Tag(Tag::NEG_BIG_INT, content) if content.is_bytes() => Err(Error::Overflow),
-            Self::Tag(_other_number, content) => content.peeled().to_i32(),
-            _ => Err(Error::IncompatibleType),
-        }
+    pub fn to_i32(&self) -> Result<i32> {
+        self.to_sint()
     }
 
     /// Narrow to `i64`.
-    pub const fn to_i64(&self) -> Result<i64> {
-        match self {
-            Self::Unsigned(x) if *x <= i64::MAX as u64 => Ok(*x as i64),
-            Self::Unsigned(_) => Err(Error::Overflow),
-            Self::Negative(x) if *x <= i64::MAX as u64 => Ok((!*x) as i64),
-            Self::Negative(_) => Err(Error::Overflow),
-            Self::Tag(Tag::POS_BIG_INT, content) if content.is_bytes() => Err(Error::Overflow),
-            Self::Tag(Tag::NEG_BIG_INT, content) if content.is_bytes() => Err(Error::Overflow),
-            Self::Tag(_other_number, content) => content.peeled().to_i64(),
-            _ => Err(Error::IncompatibleType),
-        }
+    pub fn to_i64(&self) -> Result<i64> {
+        self.to_sint()
     }
 
     /// Narrow to `i128`. Handles big integers (tags 2 and 3) transparently.
     pub fn to_i128(&self) -> Result<i128> {
-        match self {
-            Self::Unsigned(x) => Ok(*x as i128),
-            Self::Negative(x) => Ok(!(*x as i128)),
-
-            Self::Tag(Tag::POS_BIG_INT, content) if content.is_bytes() => {
-                let value = u128_from_bytes(content.as_bytes()?)?;
-                if value <= i128::MAX as u128 {
-                    Ok(value as i128)
-                } else {
-                    Err(Error::Overflow)
-                }
-            }
-
-            Self::Tag(Tag::NEG_BIG_INT, content) if content.is_bytes() => {
-                let value = u128_from_bytes(content.as_bytes()?)?;
-                if value <= i128::MAX as u128 {
-                    Ok((!value) as i128)
-                } else {
-                    Err(Error::Overflow)
-                }
-            }
-
-            Self::Tag(_other_number, content) => content.peeled().to_i128(),
-
-            _ => Err(Error::IncompatibleType),
-        }
+        self.to_sint()
     }
 
     /// Narrow to `isize`.
-    #[cfg(target_pointer_width = "32")]
-    pub const fn to_isize(&self) -> Result<isize> {
-        match self {
-            Self::Unsigned(x) if *x <= i32::MAX as u64 => Ok(*x as isize),
-            Self::Unsigned(_) => Err(Error::Overflow),
-            Self::Negative(x) if *x <= i32::MAX as u64 => Ok((!*x) as isize),
-            Self::Negative(_) => Err(Error::Overflow),
-            Self::Tag(Tag::POS_BIG_INT, content) if content.is_bytes() => Err(Error::Overflow),
-            Self::Tag(Tag::NEG_BIG_INT, content) if content.is_bytes() => Err(Error::Overflow),
-            Self::Tag(_other_number, content) => content.peeled().to_isize(),
-            _ => Err(Error::IncompatibleType),
-        }
-    }
-
-    /// Narrow to `isize`.
-    #[cfg(target_pointer_width = "64")]
-    pub const fn to_isize(&self) -> Result<isize> {
-        match self {
-            Self::Unsigned(x) if *x <= i64::MAX as u64 => Ok(*x as isize),
-            Self::Unsigned(_) => Err(Error::Overflow),
-            Self::Negative(x) if *x <= i64::MAX as u64 => Ok((!*x) as isize),
-            Self::Negative(_) => Err(Error::Overflow),
-            Self::Tag(Tag::POS_BIG_INT, content) if content.is_bytes() => Err(Error::Overflow),
-            Self::Tag(Tag::NEG_BIG_INT, content) if content.is_bytes() => Err(Error::Overflow),
-            Self::Tag(_other_number, content) => content.peeled().to_isize(),
-            _ => Err(Error::IncompatibleType),
-        }
+    pub fn to_isize(&self) -> Result<isize> {
+        self.to_sint()
     }
 
     /// Convert to `f32`. Returns `Err(Precision)` for f64-width values.
@@ -1446,5 +1319,29 @@ impl Value {
             self = *content;
         }
         self
+    }
+}
+
+// -------------------- Helpers --------------------
+
+fn u128_from_bytes(bytes: &[u8]) -> Result<u128> {
+    let mut buf = [0; 16];
+    let offset = buf.len().checked_sub(bytes.len()).ok_or(Error::Overflow)?;
+    buf[offset..].copy_from_slice(bytes);
+    Ok(u128::from_be_bytes(buf))
+}
+
+fn read_vec(reader: &mut impl io::Read, len: u64) -> Result<Vec<u8>> {
+    use io::Read;
+
+    let len_usize = usize::try_from(len).map_err(|_| Error::LengthTooLarge)?;
+
+    let mut buf = Vec::with_capacity(len_usize.min(100_000_000)); // Mitigate OOM
+    let bytes_read = reader.take(len).read_to_end(&mut buf)?;
+
+    if bytes_read == len_usize {
+        Ok(buf)
+    } else {
+        Err(Error::UnexpectedEof)
     }
 }

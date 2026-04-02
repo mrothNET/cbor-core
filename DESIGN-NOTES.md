@@ -125,9 +125,13 @@ This crate distinguishes several failure modes (`IncompatibleType`,
 accessors like `to_u8()` benefit from distinguishing "wrong type
 entirely" from "value doesn't fit".
 
+## No strict `const fn` goal
+
+Methods are only made `const fn` when it comes at low effort and
+without sacrificing code clarity.
+
 ## Accessor naming: `to_`, `as_`, `into_`
 
 The naming follows standard Rust conventions (`to_` for checked
 conversion, `as_` for borrowing, `into_` for consuming) rather than
-the `as_`-for-everything pattern used by serde_json and similar
-crates.
+the `as_`-for-everything pattern used by other similar crates.

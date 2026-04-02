@@ -68,6 +68,90 @@ fn u128_bigint() {
     assert_eq!(v.to_u128(), Ok(big));
 }
 
+// ===== Non-canonical big integers =====
+
+#[test]
+fn bigint_short_bytes() {
+    // A big integer encoded as a 4-byte byte string (shorter than canonical 8+)
+    let v = Value::tag(2, Value::from(vec![0x00, 0x00, 0x01, 0x00])); // 256
+    assert_eq!(v.to_u128(), Ok(256));
+    assert_eq!(v.to_i32(), Ok(256));
+    assert_eq!(v.to_u16(), Ok(256));
+    assert_eq!(v.to_u8(), Err(Error::Overflow));
+}
+
+#[test]
+fn bigint_single_byte() {
+    let v = Value::tag(2, Value::from(vec![42]));
+    assert_eq!(v.to_u128(), Ok(42));
+    assert_eq!(v.to_u8(), Ok(42));
+    assert_eq!(v.to_i32(), Ok(42));
+}
+
+#[test]
+fn bigint_with_leading_zeros() {
+    // 256 with many leading zeros
+    let v = Value::tag(2, Value::from(vec![0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0]));
+    assert_eq!(v.to_u128(), Ok(256));
+    assert_eq!(v.to_i16(), Ok(256));
+}
+
+#[test]
+fn bigint_empty_bytes() {
+    // Empty byte string = 0
+    let v = Value::tag(2, Value::from(Vec::<u8>::new()));
+    assert_eq!(v.to_u128(), Ok(0));
+    assert_eq!(v.to_u8(), Ok(0));
+}
+
+#[test]
+fn neg_bigint_short_bytes() {
+    // Tag 3 with [0x00, 0xFF] means -(0x00FF) - 1 = -256
+    let v = Value::tag(3, Value::from(vec![0x00, 0xFF]));
+    assert_eq!(v.to_i128(), Ok(-256));
+    assert_eq!(v.to_i32(), Ok(-256));
+    assert_eq!(v.to_i16(), Ok(-256));
+    assert_eq!(v.to_i8(), Err(Error::Overflow));
+    assert_eq!(v.to_u32(), Err(Error::NegativeUnsigned));
+}
+
+#[test]
+fn neg_bigint_single_byte() {
+    // Tag 3 with [0x04] means -5
+    let v = Value::tag(3, Value::from(vec![0x04]));
+    assert_eq!(v.to_i128(), Ok(-5));
+    assert_eq!(v.to_i8(), Ok(-5));
+}
+
+#[test]
+fn neg_bigint_with_leading_zeros() {
+    let v = Value::tag(3, Value::from(vec![0, 0, 0, 0, 0x04]));
+    assert_eq!(v.to_i128(), Ok(-5));
+    assert_eq!(v.to_i8(), Ok(-5));
+}
+
+#[test]
+fn neg_bigint_empty_bytes() {
+    // Empty byte string for tag 3 means -(0) - 1 = -1
+    let v = Value::tag(3, Value::from(Vec::<u8>::new()));
+    assert_eq!(v.to_i128(), Ok(-1));
+    assert_eq!(v.to_i8(), Ok(-1));
+}
+
+#[test]
+fn bigint_max_u128() {
+    let v = Value::tag(2, Value::from(u128::MAX.to_be_bytes().to_vec()));
+    assert_eq!(v.to_u128(), Ok(u128::MAX));
+    assert_eq!(v.to_u64(), Err(Error::Overflow));
+}
+
+#[test]
+fn bigint_exceeds_u128() {
+    // 17 bytes — doesn't fit in u128
+    let v = Value::tag(2, Value::from(vec![0x01; 17]));
+    assert_eq!(v.to_u128(), Err(Error::Overflow));
+}
+
 // ===== Signed integers =====
 
 #[test]

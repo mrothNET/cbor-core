@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- `to_uN()` and `to_iN()` are no longer `const fn`.
+- Integer accessors now accept non-canonical big integers (short byte strings, leading zeros).
+
 ## 0.2.0 — 2026-04-01
 
 ### Added
