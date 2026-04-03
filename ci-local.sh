@@ -12,13 +12,28 @@ fi
 run_ci() {
   docker run --rm -t --platform "$1" \
     -v "$PWD:/work" -w /work \
+    -v "$PWD/.cache/cargo-$2:/usr/local/cargo/registry" \
     -e CARGO_TARGET_DIR=/tmp/target \
     "$IMAGE_NAME:$2" \
     bash -c '
-      cargo build &&
-      cargo build --release &&
-      cargo test --quiet &&
-      cargo test --quiet --release &&
+      echo -- &&
+      echo --  Build &&
+      echo -- &&
+      echo &&
+      cargo build --all-features &&
+      cargo build --all-features --release &&
+      echo &&
+      echo -- &&
+      echo --  Test &&
+      echo -- &&
+      echo &&
+      cargo test --all-features --quiet &&
+      cargo test --all-features --quiet --release &&
+      echo &&
+      echo -- &&
+      echo --  Clippy &&
+      echo -- &&
+      echo &&
       cargo clippy --all-targets --all-features -- -D warnings
     '
 }

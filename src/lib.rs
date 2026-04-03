@@ -63,6 +63,9 @@
 //! through encode/decode round-trips. Conversion between float widths uses
 //! bit-level manipulation to avoid hardware NaN canonicalization.
 
+#[cfg(feature = "num-bigint")]
+mod ext_num_bigint;
+
 mod array;
 mod consts;
 mod data_type;
@@ -70,6 +73,7 @@ mod date_time;
 mod epoch_time;
 mod error;
 mod float;
+mod integer;
 mod iso3339;
 mod macros;
 mod map;
@@ -87,6 +91,7 @@ pub use simple_value::SimpleValue;
 pub use value::Value;
 
 use consts::*;
+use integer::*;
 
 #[cfg(test)]
 mod tests;

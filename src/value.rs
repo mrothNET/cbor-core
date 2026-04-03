@@ -15,7 +15,8 @@ use std::time::{Duration, SystemTime};
 use std::{cmp, io};
 
 use crate::{
-    ArgLength, Array, CtrlByte, DataType, DateTime, EpochTime, Error, Float, Major, Map, Result, SimpleValue, Tag,
+    ArgLength, Array, CtrlByte, DataType, DateTime, EpochTime, Error, Float, IntegerBytes, Major, Map, Result,
+    SimpleValue, Tag,
 };
 
 /// A single CBOR data item.
@@ -971,7 +972,7 @@ impl Value {
     }
 
     /// Internal shortcut helper
-    const fn is_bytes(&self) -> bool {
+    pub(crate) const fn is_bytes(&self) -> bool {
         self.data_type().is_bytes()
     }
 
@@ -1039,6 +1040,25 @@ impl Value {
     /// Narrow to `usize`.
     pub fn to_usize(&self) -> Result<usize> {
         self.to_uint()
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn as_integer_bytes(&self) -> Result<IntegerBytes<'_>> {
+        match self {
+            Self::Unsigned(x) => Ok(IntegerBytes::UnsignedOwned(x.to_be_bytes())),
+            Self::Negative(x) => Ok(IntegerBytes::NegativeOwned(x.to_be_bytes())),
+
+            Self::Tag(Tag::POS_BIG_INT, content) if content.is_bytes() => {
+                Ok(IntegerBytes::UnsignedBorrowed(content.as_bytes()?))
+            }
+
+            Self::Tag(Tag::NEG_BIG_INT, content) if content.is_bytes() => {
+                Ok(IntegerBytes::NegativeBorrowed(content.as_bytes()?))
+            }
+
+            Self::Tag(_other_number, content) => content.peeled().as_integer_bytes(),
+            _ => Err(Error::IncompatibleType),
+        }
     }
 
     fn to_sint<T>(&self) -> Result<T>
@@ -1382,7 +1402,7 @@ impl Value {
     /// Skip all tag wrappers except the innermost one.
     /// Returns `self` unchanged if not tagged or only single-tagged.
     #[must_use]
-    const fn peeled(&self) -> &Self {
+    pub(crate) const fn peeled(&self) -> &Self {
         let mut result = self;
         while let Self::Tag(_, content) = result
             && content.data_type().is_tag()

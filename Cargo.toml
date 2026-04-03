@@ -11,4 +11,8 @@ keywords = ["cbor", "encoding", "decoding", "serialization", "deterministic"]
 categories = ["encoding", "data-structures"]
 exclude = [".*"]
 
+[features]
+num-bigint = ["dep:num-bigint"]
+
 [dependencies]
+num-bigint = { version = "0.4", optional = true }

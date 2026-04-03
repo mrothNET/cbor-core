@@ -1,4 +1,5 @@
 .vscode
 rfc
 target
+.cache
 Cargo.lock
