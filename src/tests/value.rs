@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, time::UNIX_EPOCH};
 
 use crate::{DataType, Error, SimpleValue, Value, array, map};
 // ===== Construction & type checks =====
@@ -679,6 +679,8 @@ fn data_type_null() {
     assert!(dt.is_simple_value());
     assert!(!dt.is_integer());
     assert!(!dt.is_float());
+    assert!(!dt.is_date_time());
+    assert!(!dt.is_epoch_time());
     assert!(!dt.is_bytes());
     assert!(!dt.is_text());
     assert!(!dt.is_array());
@@ -696,6 +698,8 @@ fn data_type_bool() {
     assert!(dt.is_simple_value());
     assert!(!dt.is_integer());
     assert!(!dt.is_float());
+    assert!(!dt.is_date_time());
+    assert!(!dt.is_epoch_time());
     assert!(!dt.is_bytes());
     assert!(!dt.is_text());
     assert!(!dt.is_array());
@@ -715,6 +719,8 @@ fn data_type_simple() {
     assert!(dt.is_simple_value());
     assert!(!dt.is_integer());
     assert!(!dt.is_float());
+    assert!(!dt.is_date_time());
+    assert!(!dt.is_epoch_time());
     assert!(!dt.is_bytes());
     assert!(!dt.is_text());
     assert!(!dt.is_array());
@@ -732,6 +738,8 @@ fn data_type_int() {
     assert!(!dt.is_simple_value());
     assert!(dt.is_integer());
     assert!(!dt.is_float());
+    assert!(!dt.is_date_time());
+    assert!(!dt.is_epoch_time());
     assert!(!dt.is_bytes());
     assert!(!dt.is_text());
     assert!(!dt.is_array());
@@ -749,6 +757,8 @@ fn data_type_bigint() {
     assert!(!dt.is_simple_value());
     assert!(dt.is_integer());
     assert!(!dt.is_float());
+    assert!(!dt.is_date_time());
+    assert!(!dt.is_epoch_time());
     assert!(!dt.is_bytes());
     assert!(!dt.is_text());
     assert!(!dt.is_array());
@@ -766,6 +776,8 @@ fn data_type_float16() {
     assert!(!dt.is_simple_value());
     assert!(!dt.is_integer());
     assert!(dt.is_float());
+    assert!(!dt.is_date_time());
+    assert!(!dt.is_epoch_time());
     assert!(!dt.is_bytes());
     assert!(!dt.is_text());
     assert!(!dt.is_array());
@@ -783,6 +795,8 @@ fn data_type_float32() {
     assert!(!dt.is_simple_value());
     assert!(!dt.is_integer());
     assert!(dt.is_float());
+    assert!(!dt.is_date_time());
+    assert!(!dt.is_epoch_time());
     assert!(!dt.is_bytes());
     assert!(!dt.is_text());
     assert!(!dt.is_array());
@@ -798,6 +812,8 @@ fn data_type_float64() {
     assert!(!dt.is_simple_value());
     assert!(!dt.is_integer());
     assert!(dt.is_float());
+    assert!(!dt.is_date_time());
+    assert!(!dt.is_epoch_time());
     assert!(!dt.is_bytes());
     assert!(!dt.is_text());
     assert!(!dt.is_array());
@@ -813,6 +829,8 @@ fn data_type_bytes() {
     assert!(!dt.is_simple_value());
     assert!(!dt.is_integer());
     assert!(!dt.is_float());
+    assert!(!dt.is_date_time());
+    assert!(!dt.is_epoch_time());
     assert!(dt.is_bytes());
     assert!(!dt.is_text());
     assert!(!dt.is_array());
@@ -828,6 +846,8 @@ fn data_type_text() {
     assert!(!dt.is_simple_value());
     assert!(!dt.is_integer());
     assert!(!dt.is_float());
+    assert!(!dt.is_date_time());
+    assert!(!dt.is_epoch_time());
     assert!(!dt.is_bytes());
     assert!(dt.is_text());
     assert!(!dt.is_array());
@@ -843,6 +863,8 @@ fn data_type_array() {
     assert!(!dt.is_simple_value());
     assert!(!dt.is_integer());
     assert!(!dt.is_float());
+    assert!(!dt.is_date_time());
+    assert!(!dt.is_epoch_time());
     assert!(!dt.is_bytes());
     assert!(!dt.is_text());
     assert!(dt.is_array());
@@ -858,11 +880,41 @@ fn data_type_map() {
     assert!(!dt.is_simple_value());
     assert!(!dt.is_integer());
     assert!(!dt.is_float());
+    assert!(!dt.is_date_time());
+    assert!(!dt.is_epoch_time());
     assert!(!dt.is_bytes());
     assert!(!dt.is_text());
     assert!(!dt.is_array());
     assert!(dt.is_map());
     assert!(!dt.is_tag());
+}
+
+#[test]
+fn data_type_epoch_time() {
+    // integer content
+    let dt = Value::tag(1, 1_000_000).data_type();
+    assert_eq!(dt, DataType::EpochTime);
+
+    assert!(!dt.is_simple_value());
+    assert!(!dt.is_integer());
+    assert!(!dt.is_float());
+    assert!(!dt.is_date_time());
+    assert!(dt.is_epoch_time());
+    assert!(!dt.is_bytes());
+    assert!(!dt.is_text());
+    assert!(!dt.is_array());
+    assert!(!dt.is_map());
+    assert!(dt.is_tag()); // epoch time is a tagged value
+
+    // float content
+    assert_eq!(Value::tag(1, 1.5).data_type(), DataType::EpochTime);
+
+    // negative number is not a valid epoch time in CBOR::Core, but DataType describe structural types
+    assert_eq!(Value::tag(1, -1).data_type(), DataType::EpochTime);
+
+    // non-numeric content falls back to generic Tag
+    assert_eq!(Value::tag(1, "not a number").data_type(), DataType::Tag);
+    assert_eq!(Value::tag(1, Value::from(vec![1, 2])).data_type(), DataType::Tag);
 }
 
 #[test]
@@ -873,6 +925,8 @@ fn data_type_tag() {
     assert!(!dt.is_simple_value());
     assert!(!dt.is_integer());
     assert!(!dt.is_float());
+    assert!(!dt.is_date_time());
+    assert!(!dt.is_epoch_time());
     assert!(!dt.is_bytes());
     assert!(!dt.is_text());
     assert!(!dt.is_array());
@@ -881,6 +935,262 @@ fn data_type_tag() {
 
     // nested tags
     assert_eq!(Value::tag(100, Value::tag(200, 42)).data_type(), DataType::Tag);
+}
+
+// ===== Epoch time =====
+
+#[test]
+fn epoch_time_from_int() {
+    let v = Value::epoch_time(1_000_000);
+    assert_eq!(v.data_type(), DataType::EpochTime);
+    assert_eq!(v.to_u64(), Ok(1_000_000));
+}
+
+#[test]
+fn epoch_time_from_zero() {
+    let v = Value::epoch_time(0);
+    assert_eq!(v.data_type(), DataType::EpochTime);
+    assert_eq!(v.to_u64(), Ok(0));
+}
+
+#[test]
+fn epoch_time_from_max() {
+    let v = Value::epoch_time(253402300799_u64);
+    assert_eq!(v.to_u64(), Ok(253402300799));
+}
+
+#[test]
+#[should_panic(expected = "Invalid epoch time")]
+fn epoch_time_over_max() {
+    Value::epoch_time(253402300800_u64);
+}
+
+#[test]
+#[should_panic(expected = "Invalid epoch time")]
+fn epoch_time_negative() {
+    Value::epoch_time(-1);
+}
+
+#[test]
+fn epoch_time_from_float() {
+    let v = Value::epoch_time(1.5);
+    assert_eq!(v.data_type(), DataType::EpochTime);
+    assert_eq!(v.to_f64(), Ok(1.5));
+}
+
+#[test]
+#[should_panic(expected = "Invalid epoch time")]
+fn epoch_time_from_nan() {
+    Value::epoch_time(f64::NAN);
+}
+
+#[test]
+#[should_panic(expected = "Invalid epoch time")]
+fn epoch_time_from_infinity() {
+    Value::epoch_time(f64::INFINITY);
+}
+
+#[test]
+fn epoch_time_from_system_time() {
+    use std::time::{Duration, UNIX_EPOCH};
+
+    let st = UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let v = Value::epoch_time(st);
+    assert_eq!(v.to_u64(), Ok(1_000_000));
+}
+
+#[test]
+fn epoch_time_from_system_time_subsec() {
+    use std::time::{Duration, UNIX_EPOCH};
+
+    let st = UNIX_EPOCH + Duration::from_secs_f64(1.5);
+    let v = Value::epoch_time(st);
+    assert_eq!(v.to_f64(), Ok(1.5));
+}
+
+#[test]
+fn to_system_time_int() {
+    use std::time::{Duration, UNIX_EPOCH};
+
+    let v = Value::epoch_time(1_000_000);
+    assert_eq!(v.to_system_time(), Ok(UNIX_EPOCH + Duration::from_secs(1_000_000)));
+}
+
+#[test]
+fn to_system_time_zero() {
+    let v = Value::epoch_time(0);
+    assert_eq!(v.to_system_time(), Ok(UNIX_EPOCH));
+}
+
+#[test]
+fn to_system_time_float() {
+    use std::time::{Duration, UNIX_EPOCH};
+
+    let v = Value::epoch_time(1.5);
+    assert_eq!(v.to_system_time(), Ok(UNIX_EPOCH + Duration::from_secs_f64(1.5)));
+}
+
+#[test]
+fn to_system_time_negative_int() {
+    let v = Value::tag(1, -1);
+    assert_eq!(v.to_system_time(), Err(Error::Overflow));
+}
+
+#[test]
+fn to_system_time_negative_float() {
+    let v = Value::tag(1, -0.5);
+    assert_eq!(v.to_system_time(), Err(Error::Overflow));
+}
+
+#[test]
+fn to_system_time_untagged() {
+    let i = Value::from(0);
+    assert_eq!(i.to_system_time(), Ok(UNIX_EPOCH));
+
+    let f = Value::from(0.0);
+    assert_eq!(f.to_system_time(), Ok(UNIX_EPOCH));
+}
+
+#[test]
+fn to_system_time_other_tag() {
+    let v = Value::tag(32, 0);
+    assert_eq!(v.to_system_time(), Ok(UNIX_EPOCH));
+}
+
+#[test]
+fn to_system_time_non_numeric() {
+    let v = Value::tag(1, "not a number");
+    assert_eq!(v.to_system_time(), Err(Error::IncompatibleType));
+}
+
+// ===== Date/time (tag 0) =====
+
+#[test]
+fn date_time_from_str() {
+    let v = Value::date_time("2000-01-01T00:00:00Z");
+    assert_eq!(v.data_type(), DataType::DateTime);
+    assert_eq!(v.as_str(), Ok("2000-01-01T00:00:00Z"));
+}
+
+#[test]
+fn date_time_from_system_time() {
+    use std::time::{Duration, UNIX_EPOCH};
+
+    let st = UNIX_EPOCH + Duration::from_secs(946_684_800);
+    let v = Value::date_time(st);
+    assert_eq!(v.as_str(), Ok("2000-01-01T00:00:00Z"));
+}
+
+#[test]
+fn date_time_from_system_time_subsec() {
+    use std::time::{Duration, UNIX_EPOCH};
+
+    let st = UNIX_EPOCH + Duration::new(946_684_800, 500_000_000);
+    let v = Value::date_time(st);
+    assert_eq!(v.as_str(), Ok("2000-01-01T00:00:00.5Z"));
+}
+
+#[test]
+fn date_time_preserves_trailing_zeros() {
+    let v = Value::date_time("2000-01-01T00:00:00.100000000Z");
+    assert_eq!(v.as_str(), Ok("2000-01-01T00:00:00.100000000Z"));
+}
+
+#[test]
+fn date_time_preserves_full_precision() {
+    let v = Value::date_time("2000-01-01T00:00:00.123456789Z");
+    assert_eq!(v.as_str(), Ok("2000-01-01T00:00:00.123456789Z"));
+}
+
+#[test]
+fn date_time_preserves_time_offset() {
+    let v1 = Value::date_time("2000-01-01T00:00:00-02:15");
+    assert_eq!(v1.as_str(), Ok("2000-01-01T00:00:00-02:15"));
+
+    let v2 = Value::date_time("2000-01-01T02:15:00Z");
+    assert_eq!(v1.to_system_time(), v2.to_system_time());
+}
+
+#[test]
+fn date_time_whole_second_no_fraction() {
+    let v = Value::date_time("2000-01-01T12:30:45Z");
+    assert_eq!(v.as_str(), Ok("2000-01-01T12:30:45Z"));
+}
+
+#[test]
+#[should_panic(expected = "Invalid date/time")]
+fn date_time_invalid_format() {
+    Value::date_time("not a date");
+}
+
+#[test]
+fn date_time_year_zero() {
+    assert!(Value::date_time("0000-01-01T00:00:00Z").data_type().is_date_time());
+}
+
+#[test]
+#[should_panic(expected = "Invalid date/time")]
+fn date_time_year_beyond_9999() {
+    Value::date_time("10000-01-01T00:00:00Z");
+}
+
+#[test]
+fn date_time_leap_second() {
+    // CBOR::Core references section 5.6 of RFC3339, which allows leap seconds (second == 60)
+    let v = Value::date_time("2015-06-30T23:59:60Z");
+    assert_eq!(v.data_type(), DataType::DateTime);
+
+    // However, date/time with leap seconds cannot be converted into SystemTime
+    assert_eq!(v.to_system_time(), Err(Error::InvalidEncoding));
+}
+
+#[test]
+#[should_panic(expected = "Invalid date/time")]
+fn date_time_invalid_leap_second_date() {
+    Value::date_time("2001-01-01T23:59:60Z");
+}
+
+#[test]
+#[should_panic(expected = "Invalid date/time")]
+fn date_time_invalid_leap_second_hour() {
+    Value::date_time("2015-06-30T12:59:60Z");
+}
+
+#[test]
+#[should_panic(expected = "Invalid date/time")]
+fn date_time_invalid_leap_second_minute() {
+    Value::date_time("2015-06-30T23:58:60Z");
+}
+
+#[test]
+fn date_time_to_system_time() {
+    use std::time::{Duration, UNIX_EPOCH};
+
+    let v = Value::date_time(UNIX_EPOCH + Duration::from_secs(946_684_800));
+    assert_eq!(v.to_system_time(), Ok(UNIX_EPOCH + Duration::from_secs(946_684_800)));
+}
+
+#[test]
+fn data_type_date_time() {
+    let dt = Value::date_time("2000-01-01T00:00:00Z").data_type();
+    assert_eq!(dt, DataType::DateTime);
+
+    assert!(!dt.is_simple_value());
+    assert!(!dt.is_integer());
+    assert!(!dt.is_float());
+    assert!(dt.is_date_time());
+    assert!(!dt.is_epoch_time());
+    assert!(!dt.is_bytes());
+    assert!(!dt.is_text());
+    assert!(!dt.is_array());
+    assert!(!dt.is_map());
+    assert!(dt.is_tag()); // date/time is a tagged value
+
+    // non-text content falls back to generic Tag
+    assert_eq!(Value::tag(0, 42).data_type(), DataType::Tag);
+
+    // non-date-time text is structural (but invalid) date/time
+    assert_eq!(Value::tag(0, "not a date").data_type(), DataType::DateTime);
 }
 
 // ===== Ordering =====
@@ -892,4 +1202,25 @@ fn ordering_by_encoded_bytes() {
     assert!(Value::from(0.5) < Value::from(0.1));
     assert!(Value::from(0.5) < Value::from(0.51));
     assert!(Value::simple_value(19) < Value::null());
+}
+
+// ===== EpochTime ordering =====
+
+#[test]
+fn epoch_time_ordering_int_vs_float() {
+    use crate::EpochTime;
+
+    // Int(10) and Float(1.5): 10 > 1.5
+    let a = EpochTime::try_from(10_u64).unwrap();
+    let b = EpochTime::try_from(1.5_f64).unwrap();
+    assert!(a > b);
+
+    // Int(1) and Float(1.5): 1 < 1.5
+    let c = EpochTime::try_from(1_u64).unwrap();
+    assert!(c < b);
+
+    // Int(0) and Float(0.5): 0 < 0.5
+    let d = EpochTime::try_from(0_u64).unwrap();
+    let e = EpochTime::try_from(0.5_f64).unwrap();
+    assert!(d < e);
 }

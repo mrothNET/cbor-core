@@ -11,9 +11,12 @@ mod string;
 use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
 use std::ops::{Index, IndexMut};
+use std::time::{Duration, SystemTime};
 use std::{cmp, io};
 
-use crate::{ArgLength, Array, CtrlByte, DataType, Error, Float, Major, Map, Result, SimpleValue, Tag};
+use crate::{
+    ArgLength, Array, CtrlByte, DataType, DateTime, EpochTime, Error, Float, Major, Map, Result, SimpleValue, Tag,
+};
 
 /// A single CBOR data item.
 ///
@@ -612,6 +615,7 @@ impl Value {
             Major::TAG => {
                 let content = Box::new(Self::read_from(reader)?);
 
+                // check if conforming bigint
                 if matches!(argument, Tag::POS_BIG_INT | Tag::NEG_BIG_INT)
                     && let Ok(bigint) = content.as_bytes()
                 {
@@ -846,6 +850,55 @@ impl Value {
         }
     }
 
+    /// Create a CBOR date/time string value (tag 0).
+    ///
+    /// Accepts `&str`, `String`, and [`SystemTime`] via the
+    /// [`DateTime`] helper. The date must be within
+    /// `0001-01-01T00:00:00Z` to `9999-12-31T23:59:59Z`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the input is not a valid RFC 3339 (ISO 8601 profile)
+    /// UTC timestamp or is out of range.
+    ///
+    /// ```
+    /// use cbor_core::{DataType, Value};
+    ///
+    /// let v = Value::date_time("2000-01-01T00:00:00Z");
+    /// assert_eq!(v.data_type(), DataType::DateTime);
+    /// assert_eq!(v.as_str(), Ok("2000-01-01T00:00:00Z"));
+    /// ```
+    pub fn date_time(value: impl TryInto<DateTime>) -> Self {
+        match value.try_into() {
+            Ok(dt) => dt.into(),
+            Err(_) => panic!("Invalid date/time"),
+        }
+    }
+
+    /// Create a CBOR epoch time value (tag 1).
+    ///
+    /// Accepts integers, floats, and [`SystemTime`] via the
+    /// [`EpochTime`] helper. The value must be in the range 0 to
+    /// 253402300799.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the value is out of range or negative.
+    ///
+    /// ```
+    /// use std::time::{Duration, UNIX_EPOCH};
+    /// use cbor_core::Value;
+    ///
+    /// let v = Value::epoch_time(1_000_000);
+    /// assert_eq!(v.to_system_time(), Ok(UNIX_EPOCH + Duration::from_secs(1_000_000)));
+    /// ```
+    pub fn epoch_time(value: impl TryInto<EpochTime>) -> Self {
+        match value.try_into() {
+            Ok(et) => et.into(),
+            Err(_) => panic!("Invalid epoch time"),
+        }
+    }
+
     /// Create a CBOR float.
     ///
     /// Via the [`Float`] type floats can be created out of integers and booleans too.
@@ -906,9 +959,13 @@ impl Value {
             Self::Array(_) => DataType::Array,
             Self::Map(_) => DataType::Map,
 
+            Self::Tag(Tag::DATE_TIME, content) if content.data_type().is_text() => DataType::DateTime,
+            Self::Tag(Tag::EPOCH_TIME, content) if content.data_type().is_numeric() => DataType::EpochTime,
+
             Self::Tag(Tag::POS_BIG_INT | Tag::NEG_BIG_INT, content) if content.data_type().is_bytes() => {
                 DataType::BigInt
             }
+
             Self::Tag(_, _) => DataType::Tag,
         }
     }
@@ -1052,6 +1109,48 @@ impl Value {
             Self::Float(float) => Ok(float.to_f64()),
             Self::Tag(_number, content) => content.untagged().to_f64(),
             _ => Err(Error::IncompatibleType),
+        }
+    }
+
+    /// Convert a time value to [`SystemTime`].
+    ///
+    /// Accepts date/time strings (tag 0), epoch time values (tag 1),
+    /// and untagged integers or floats. Numeric values must be
+    /// non-negative and in the range 0 to 253402300799. Date/time
+    /// strings may include a timezone offset, which is converted to
+    /// UTC.
+    ///
+    /// Returns `Err(IncompatibleType)` for values that are neither
+    /// numeric nor text, `Err(Overflow)` if a numeric value is out of
+    /// range, and `Err(InvalidEncoding)` if a text string is not a
+    /// valid RFC 3339 timestamp. Leap seconds (`:60`) are rejected
+    /// because [`SystemTime`] cannot represent them.
+    ///
+    /// ```
+    /// use std::time::{Duration, UNIX_EPOCH};
+    /// use cbor_core::Value;
+    ///
+    /// let v = Value::tag(1, 1_000_000);
+    /// let t = v.to_system_time().unwrap();
+    /// assert_eq!(t, UNIX_EPOCH + Duration::from_secs(1_000_000));
+    /// ```
+    pub fn to_system_time(&self) -> Result<SystemTime> {
+        if let Ok(s) = self.as_str() {
+            use crate::iso3339::Timestamp;
+            let ts: Timestamp = s.parse().or(Err(Error::InvalidEncoding))?;
+            Ok(ts.try_into().or(Err(Error::InvalidEncoding))?)
+        } else if let Ok(f) = self.to_f64() {
+            if f.is_finite() && (0.0..=253402300799.0).contains(&f) {
+                Ok(SystemTime::UNIX_EPOCH + Duration::from_secs_f64(f))
+            } else {
+                Err(Error::Overflow)
+            }
+        } else {
+            match self.to_u64() {
+                Ok(secs) if secs <= 253402300799 => Ok(SystemTime::UNIX_EPOCH + Duration::from_secs(secs)),
+                Ok(_) | Err(Error::NegativeUnsigned) => Err(Error::Overflow),
+                Err(error) => Err(error),
+            }
         }
     }
 

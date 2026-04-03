@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Added
+
+- Date/time support: `DateTime` helper, `Value::date_time()`, and `DataType::DateTime`.
+- Epoch time support: `EpochTime` helper, `Value::epoch_time()`, and `DataType::EpochTime`.
+- `Value::to_system_time()` converts time values to `SystemTime`.
+
 ### Changed
 
 - `to_uN()` and `to_iN()` are no longer `const fn`.

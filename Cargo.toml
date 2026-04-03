@@ -2,18 +2,12 @@
 name = "cbor-core"
 version = "0.2.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.87"
 license = "MIT"
 description = "CBOR::Core deterministic encoder/decoder with owned data structures"
 documentation = "https://docs.rs/cbor-core"
 repository = "https://github.com/mrothNET/cbor-core"
-keywords = [
-    "cbor",
-    "encoding",
-    "decoding",
-    "serialization",
-    "deterministic",
-]
+keywords = ["cbor", "encoding", "decoding", "serialization", "deterministic"]
 categories = ["encoding", "data-structures"]
 exclude = [".*"]
 

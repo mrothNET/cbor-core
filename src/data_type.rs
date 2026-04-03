@@ -3,6 +3,20 @@
 /// Obtained via [`Value::data_type`](crate::Value::data_type). The
 /// convenience predicates (`is_integer`, `is_float`, etc.) cover common
 /// groupings.
+///
+/// `DataType` describes the *structural* type of a value based on its
+/// CBOR major type and, for tagged values, the tag number and the
+/// major type of the content. It does **not** validate the content
+/// itself.
+///
+/// For example, [`DateTime`](Self::DateTime) means "tag 0
+/// wrapping a text string that structurally resembles a date", not
+/// "a fully validated RFC 3339 timestamp". Likewise,
+/// [`EpochTime`](Self::EpochTime) means "tag 1 wrapping an integer
+/// or float", regardless of whether the numeric value falls within
+/// the allowed range. Full validation happens in the corresponding
+/// accessor methods (e.g.
+/// [`Value::to_system_time`](crate::Value::to_system_time)).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum DataType {
     /// CBOR null (simple value 22).
@@ -15,6 +29,10 @@ pub enum DataType {
     Int,
     /// Big integer (tags 2 or 3).
     BigInt,
+    /// Text-based date/time (tag 0).
+    DateTime,
+    /// Epoch-based date/time (tag 1).
+    EpochTime,
     /// IEEE 754 half-precision float.
     Float16,
     /// IEEE 754 single-precision float.
@@ -29,7 +47,7 @@ pub enum DataType {
     Array,
     /// Map of key-value pairs.
     Map,
-    /// Tagged data item (other than big integers).
+    /// Tagged data item (other than big integers, date/time, and epoch time).
     Tag,
 }
 
@@ -64,6 +82,15 @@ impl DataType {
         matches!(*self, Self::Float16 | Self::Float32 | Self::Float64)
     }
 
+    /// True if this is an integer (including big integers) or a floating-point value (any width).
+    #[must_use]
+    pub const fn is_numeric(&self) -> bool {
+        matches!(
+            *self,
+            Self::Int | Self::BigInt | Self::Float16 | Self::Float32 | Self::Float64
+        )
+    }
+
     /// True if this is a byte string.
     #[must_use]
     pub const fn is_bytes(&self) -> bool {
@@ -88,9 +115,21 @@ impl DataType {
         matches!(*self, Self::Map)
     }
 
-    /// True if this is a tagged value (including big integers).
+    /// True if this is a text-based date/time value (tag 0).
+    #[must_use]
+    pub const fn is_date_time(&self) -> bool {
+        matches!(*self, Self::DateTime)
+    }
+
+    /// True if this is an epoch time value (tag 1).
+    #[must_use]
+    pub const fn is_epoch_time(&self) -> bool {
+        matches!(*self, Self::EpochTime)
+    }
+
+    /// True if this is a tagged value (including big integers, date/time, and epoch time).
     #[must_use]
     pub const fn is_tag(&self) -> bool {
-        matches!(*self, Self::BigInt | Self::Tag)
+        matches!(*self, Self::BigInt | Self::DateTime | Self::EpochTime | Self::Tag)
     }
 }

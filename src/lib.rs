@@ -29,6 +29,8 @@
 //! | [`Array`] | Wrapper around `Vec<Value>` for flexible array construction. |
 //! | [`Map`] | Wrapper around `BTreeMap<Value, Value>` for flexible map construction. |
 //! | [`Float`] | IEEE 754 float stored in shortest CBOR form (f16, f32, or f64). |
+//! | [`DateTime`] | Validated ISO 8601 UTC string for tag 0 construction. |
+//! | [`EpochTime`] | Validated numeric epoch time for tag 1 construction. |
 //!
 //! # Quick start
 //!
@@ -64,8 +66,11 @@
 mod array;
 mod consts;
 mod data_type;
+mod date_time;
+mod epoch_time;
 mod error;
 mod float;
+mod iso3339;
 mod macros;
 mod map;
 mod simple_value;
@@ -73,6 +78,8 @@ mod value;
 
 pub use array::Array;
 pub use data_type::DataType;
+pub use date_time::DateTime;
+pub use epoch_time::EpochTime;
 pub use error::{Error, Result};
 pub use float::Float;
 pub use map::Map;
