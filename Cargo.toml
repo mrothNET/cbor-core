@@ -1,6 +1,6 @@
 [package]
 name = "cbor-core"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.87"
 license = "MIT"
@@ -9,7 +9,7 @@ documentation = "https://docs.rs/cbor-core"
 repository = "https://github.com/mrothNET/cbor-core"
 keywords = ["cbor", "encoding", "decoding", "serialization", "deterministic"]
 categories = ["encoding", "data-structures"]
-exclude = [".*"]
+exclude = [".*", "Cargo.lock", "Dockerfile.ci", "ci-local.sh"]
 
 [features]
 num-bigint = ["dep:num-bigint"]

@@ -33,8 +33,13 @@ Decoding rejects non-deterministic data as stated in the CBOR::Core draft.
 NaN values, including signaling NaNs and custom payloads, are preserved
 through round-trips.
 
-Not yet implemented: CBOR::Core diagnostic notation,
-and DateTime/EpochTime wrappers.
+Not yet implemented: CBOR::Core diagnostic notation.
+
+## Optional features
+
+| Feature name | Enables |
+|---|---|
+| `num-bigint` | `From`/`TryFrom` conversions between `Value` and `num_bigint::BigInt`/`BigUint` |
 
 ## Usage
 
@@ -58,6 +63,10 @@ documentation on `Value` for the full API.
 
 For detailed notes on design decisions and trade-offs, see
 [DESIGN-NOTES.md](DESIGN-NOTES.md).
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for a summary of changes per release.
 
 ## License
 
