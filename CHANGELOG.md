@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.0 — 2026-04-05
+
+### Changed
+
+- `Value::read_from()` and `Value::write_to()` now accept `impl Read`/`impl Write` instead of `&mut impl Read`/`&mut impl Write`, consistent with `read_hex_from()` and `write_hex_to()`.
+
 ## 0.3.0 — 2026-04-04
 
 ### Added

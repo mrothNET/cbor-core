@@ -524,7 +524,11 @@ impl Value {
     /// let v = Value::read_from(&mut bytes).unwrap();
     /// assert_eq!(v.to_u32().unwrap(), 42);
     /// ```
-    pub fn read_from(reader: &mut impl io::Read) -> Result<Self> {
+    pub fn read_from(mut reader: impl io::Read) -> Result<Self> {
+        Self::read_from_inner(&mut reader)
+    }
+
+    fn read_from_inner(reader: &mut impl io::Read) -> Result<Self> {
         let ctrl_byte = {
             let mut buf = [0];
             reader.read_exact(&mut buf)?;
@@ -583,7 +587,7 @@ impl Value {
             Major::ARRAY => {
                 let mut vec = Vec::with_capacity(argument.try_into().unwrap());
                 for _ in 0..argument {
-                    vec.push(Self::read_from(reader)?);
+                    vec.push(Self::read_from_inner(reader)?);
                 }
                 Self::Array(vec)
             }
@@ -593,8 +597,8 @@ impl Value {
                 let mut prev = None;
 
                 for _ in 0..argument {
-                    let key = Self::read_from(reader)?;
-                    let value = Self::read_from(reader)?;
+                    let key = Self::read_from_inner(reader)?;
+                    let value = Self::read_from_inner(reader)?;
 
                     if let Some((prev_key, prev_value)) = prev.take() {
                         if prev_key >= key {
@@ -614,7 +618,7 @@ impl Value {
             }
 
             Major::TAG => {
-                let content = Box::new(Self::read_from(reader)?);
+                let content = Box::new(Self::read_from_inner(reader)?);
 
                 // check if conforming bigint
                 if matches!(argument, Tag::POS_BIG_INT | Tag::NEG_BIG_INT)
@@ -682,7 +686,7 @@ impl Value {
             }
         }
 
-        Self::read_from(&mut HexReader(reader))
+        Self::read_from_inner(&mut HexReader(reader))
     }
 
     /// Write this value as binary CBOR to a stream.
@@ -693,7 +697,11 @@ impl Value {
     /// Value::from(42).write_to(&mut buf).unwrap();
     /// assert_eq!(buf, [0x18, 42]);
     /// ```
-    pub fn write_to(&self, writer: &mut impl io::Write) -> Result<()> {
+    pub fn write_to(&self, mut writer: impl io::Write) -> Result<()> {
+        self.write_to_inner(&mut writer)
+    }
+
+    fn write_to_inner(&self, writer: &mut impl io::Write) -> Result<()> {
         let major = self.cbor_major();
         let (info, argument) = self.cbor_argument();
 
@@ -713,18 +721,18 @@ impl Value {
             Value::ByteString(bytes) => writer.write_all(bytes)?,
             Value::TextString(string) => writer.write_all(string.as_bytes())?,
 
-            Value::Tag(_number, content) => content.write_to(writer)?,
+            Value::Tag(_number, content) => content.write_to_inner(writer)?,
 
             Value::Array(values) => {
                 for value in values {
-                    value.write_to(writer)?;
+                    value.write_to_inner(writer)?;
                 }
             }
 
             Value::Map(map) => {
                 for (key, value) in map {
-                    key.write_to(writer)?;
-                    value.write_to(writer)?;
+                    key.write_to_inner(writer)?;
+                    value.write_to_inner(writer)?;
                 }
             }
 
@@ -760,7 +768,7 @@ impl Value {
             }
         }
 
-        self.write_to(&mut HexWriter(writer))
+        self.write_to_inner(&mut HexWriter(writer))
     }
 
     fn cbor_major(&self) -> u8 {
