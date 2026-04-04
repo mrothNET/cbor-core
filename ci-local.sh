@@ -10,33 +10,33 @@ if [ "${1:-}" = "--build" ]; then
 fi
 
 run_ci() {
-  docker run --rm -t --platform "$1" \
+  docker run --rm -t --platform "linux/$1" \
     -v "$PWD:/work" -w /work \
-    -v "$PWD/.cache/cargo-$2:/usr/local/cargo/registry" \
+    -v "$PWD/.cache/cargo-$1:/usr/local/cargo/registry" \
     -e CARGO_TARGET_DIR=/tmp/target \
-    "$IMAGE_NAME:$2" \
-    bash -c '
+    "$IMAGE_NAME:$1" \
+    bash -c "
       echo -- &&
-      echo --  Build &&
+      echo --  Build: $1 &&
       echo -- &&
       echo &&
       cargo build --all-features &&
       cargo build --all-features --release &&
       echo &&
       echo -- &&
-      echo --  Test &&
+      echo --  Test: $1 &&
       echo -- &&
       echo &&
       cargo test --all-features --quiet &&
       cargo test --all-features --quiet --release &&
       echo &&
       echo -- &&
-      echo --  Clippy &&
+      echo --  Clippy: $1 &&
       echo -- &&
       echo &&
       cargo clippy --all-targets --all-features -- -D warnings
-    '
+    "
 }
 
-run_ci linux/amd64 amd64
-run_ci linux/386   i386
+run_ci amd64
+run_ci i386

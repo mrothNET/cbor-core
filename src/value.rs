@@ -16,7 +16,7 @@ use std::{cmp, io};
 
 use crate::{
     ArgLength, Array, CtrlByte, DataType, DateTime, EpochTime, Error, Float, IntegerBytes, Major, Map, Result,
-    SimpleValue, Tag,
+    SimpleValue, Tag, util::u128_from_slice,
 };
 
 /// A single CBOR data item.
@@ -873,9 +873,14 @@ impl Value {
     /// ```
     /// use cbor_core::{DataType, Value};
     ///
-    /// let v = Value::date_time("2000-01-01T00:00:00Z");
+    /// let v = Value::date_time("2000-01-01T00:00:00.000Z");
     /// assert_eq!(v.data_type(), DataType::DateTime);
-    /// assert_eq!(v.as_str(), Ok("2000-01-01T00:00:00Z"));
+    /// assert_eq!(v.as_str(), Ok("2000-01-01T00:00:00.000Z"));
+    ///
+    /// use std::time::SystemTime;
+    /// let v = Value::date_time(SystemTime::UNIX_EPOCH);
+    /// assert_eq!(v.data_type(), DataType::DateTime);
+    /// assert_eq!(v.as_str(), Ok("1970-01-01T00:00:00Z"));
     /// ```
     pub fn date_time(value: impl TryInto<DateTime>) -> Self {
         match value.try_into() {
@@ -1011,7 +1016,7 @@ impl Value {
             Self::Negative(_) => Err(Error::NegativeUnsigned),
 
             Self::Tag(Tag::POS_BIG_INT, content) if content.is_bytes() => {
-                T::try_from(u128_from_bytes(self.as_bytes()?)?).or(Err(Error::Overflow))
+                T::try_from(u128_from_slice(self.as_bytes()?)?).or(Err(Error::Overflow))
             }
 
             Self::Tag(Tag::NEG_BIG_INT, content) if content.is_bytes() => Err(Error::NegativeUnsigned),
@@ -1078,11 +1083,11 @@ impl Value {
             Self::Negative(x) => T::try_from(*x).map(T::not).or(Err(Error::Overflow)),
 
             Self::Tag(Tag::POS_BIG_INT, content) if content.is_bytes() => {
-                T::try_from(u128_from_bytes(self.as_bytes()?)?).or(Err(Error::Overflow))
+                T::try_from(u128_from_slice(self.as_bytes()?)?).or(Err(Error::Overflow))
             }
 
             Self::Tag(Tag::NEG_BIG_INT, content) if content.is_bytes() => {
-                T::try_from(u128_from_bytes(self.as_bytes()?)?)
+                T::try_from(u128_from_slice(self.as_bytes()?)?)
                     .map(T::not)
                     .or(Err(Error::Overflow))
             }
@@ -1450,13 +1455,6 @@ impl Value {
 }
 
 // -------------------- Helpers --------------------
-
-fn u128_from_bytes(bytes: &[u8]) -> Result<u128> {
-    let mut buf = [0; 16];
-    let offset = buf.len().checked_sub(bytes.len()).ok_or(Error::Overflow)?;
-    buf[offset..].copy_from_slice(bytes);
-    Ok(u128::from_be_bytes(buf))
-}
 
 fn read_vec(reader: &mut impl io::Read, len: u64) -> Result<Vec<u8>> {
     use io::Read;

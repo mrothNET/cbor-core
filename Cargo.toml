@@ -12,7 +12,15 @@ categories = ["encoding", "data-structures"]
 exclude = [".*", "Cargo.lock", "Dockerfile.ci", "ci-local.sh"]
 
 [features]
+## Add interoperability with num-bigint crate
 num-bigint = ["dep:num-bigint"]
+## Add interoperability with crypto-bigint crate
+crypto-bigint = ["dep:crypto-bigint"]
 
 [dependencies]
 num-bigint = { version = "0.4", optional = true }
+crypto-bigint = { version = "0.7", optional = true }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

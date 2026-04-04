@@ -1,20 +1,9 @@
 use num_bigint::{BigInt, BigUint, Sign};
 
-use crate::{Error, Result, Tag, Value};
-
-fn remove_leading_zeros(bytes: &mut Vec<u8>) {
-    if bytes.len() > 8 && bytes[0] == 0 {
-        *bytes = std::mem::take(bytes).into_iter().skip_while(|&b| b == 0).collect();
-    }
-}
-
-fn u64_from_bytes(bytes: Vec<u8>) -> u64 {
-    let mut result = 0;
-    for byte in bytes {
-        result = (result << 8) | u64::from(byte);
-    }
-    result
-}
+use crate::{
+    Error, Result, Tag, Value,
+    util::{trim_leading_zeros, u64_from_slice},
+};
 
 // ---------------------------------------------------------------------------
 // BigUint → Value
@@ -41,13 +30,15 @@ impl From<&BigUint> for Value {
 }
 
 fn from_big_uint(value: &BigUint) -> Value {
-    let mut bytes = value.to_bytes_be();
-    remove_leading_zeros(&mut bytes);
+    let bytes = value.to_bytes_be();
+    let trimmed = trim_leading_zeros(&bytes);
 
-    if bytes.len() <= 8 {
-        Value::Unsigned(u64_from_bytes(bytes))
+    if let Ok(number) = u64_from_slice(trimmed) {
+        Value::Unsigned(number)
+    } else if bytes.len() == trimmed.len() {
+        Value::tag(Tag::POS_BIG_INT, bytes) // reuse Vec
     } else {
-        Value::tag(Tag::POS_BIG_INT, bytes)
+        Value::tag(Tag::POS_BIG_INT, trimmed) // implicit new Vec
     }
 }
 
@@ -74,13 +65,15 @@ fn from_big_int(value: &BigInt) -> Value {
     match value.sign() {
         Sign::NoSign | Sign::Plus => magnitude.into(),
         Sign::Minus => {
-            let mut bytes = (magnitude - 1_u32).to_bytes_be();
-            remove_leading_zeros(&mut bytes);
+            let bytes = (magnitude - 1_u32).to_bytes_be();
+            let trimmed = trim_leading_zeros(&bytes);
 
-            if bytes.len() <= 8 {
-                Value::Negative(u64_from_bytes(bytes))
+            if let Ok(number) = u64_from_slice(trimmed) {
+                Value::Negative(number)
+            } else if bytes.len() == trimmed.len() {
+                Value::tag(Tag::NEG_BIG_INT, bytes) // reuse Vec
             } else {
-                Value::tag(Tag::NEG_BIG_INT, bytes)
+                Value::tag(Tag::NEG_BIG_INT, trimmed) // implicit new Vec
             }
         }
     }
@@ -187,7 +180,7 @@ mod tests {
 
     #[test]
     fn biguint_small() {
-        let n = BigUint::from(42u32);
+        let n = BigUint::from(42_u32);
         assert_eq!(roundtrip_biguint(n.clone()), n);
     }
 
@@ -215,7 +208,7 @@ mod tests {
 
     #[test]
     fn biguint_from_u128_roundtrip() {
-        for x in [0u128, 1, 42, u64::MAX as u128, u64::MAX as u128 + 1, u128::MAX] {
+        for x in [0_u128, 1, 42, u64::MAX as u128, u64::MAX as u128 + 1, u128::MAX] {
             let expected = BigUint::from(x);
             let via_value = Value::from(x); // existing From<u128>
             assert_eq!(BigUint::try_from(via_value).unwrap(), expected, "u128={x}");
@@ -224,7 +217,7 @@ mod tests {
 
     #[test]
     fn biguint_negative_value_errors() {
-        let v = Value::from(-1i32);
+        let v = Value::from(-1);
         assert_eq!(BigUint::try_from(v), Err(Error::NegativeUnsigned));
 
         let v = Value::from(i128::MIN);
@@ -278,7 +271,7 @@ mod tests {
 
     #[test]
     fn bigint_from_u128_roundtrip() {
-        for x in [0u128, 1, 42, u64::MAX as u128, u64::MAX as u128 + 1, u128::MAX] {
+        for x in [0_u128, 1, 42, u64::MAX as u128, u64::MAX as u128 + 1, u128::MAX] {
             let expected = BigInt::from(x);
             let via_value = Value::from(x);
             assert_eq!(BigInt::try_from(via_value).unwrap(), expected, "u128={x}");
@@ -288,7 +281,7 @@ mod tests {
     #[test]
     fn bigint_from_i128_roundtrip() {
         for x in [
-            0i128,
+            0,
             1,
             -1,
             42,

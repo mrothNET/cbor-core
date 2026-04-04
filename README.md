@@ -40,6 +40,7 @@ Not yet implemented: CBOR::Core diagnostic notation.
 | Feature name | Enables |
 |---|---|
 | `num-bigint` | `From`/`TryFrom` conversions between `Value` and `num_bigint::BigInt`/`BigUint` |
+| `crypto-bigint` | `From`/`TryFrom` conversions between `Value` and `crypto_bigint::Uint`/`Int`/`NonZero` |
 
 ## Usage
 
