@@ -5,6 +5,7 @@
 ### Added
 
 - Optional `crypto-bigint` feature: `From`/`TryFrom` conversions between `Value` and `crypto_bigint::Uint`/`Int`/`NonZero`.
+- Optional `rug` feature: `From`/`TryFrom` conversions between `Value` and `rug::Integer`.
 
 ## 0.4.0 — 2026-04-05
 

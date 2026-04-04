@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::{Error, Result};
 
 pub(crate) fn trim_leading_zeros(mut bytes: &[u8]) -> &[u8] {

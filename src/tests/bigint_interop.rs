@@ -12,27 +12,37 @@ type I256 = Int<{ U256::LIMBS }>;
 fn assert_unsigned_interop(val: u128) {
     let from_num = Value::from(BigUint::from(val));
     let from_crypto = Value::from(U256::from_u128(val));
+    let from_rug = Value::from(rug::Integer::from(val));
 
     // Same CBOR encoding
-    assert_eq!(from_num, from_crypto, "encoding mismatch for u128={val}");
+    assert_eq!(from_num, from_crypto);
+    assert_eq!(from_num, from_rug);
 
     // Cross-decode
     let back_num = BigUint::try_from(from_crypto).unwrap();
-    let back_crypto = U256::try_from(from_num).unwrap();
+    let back_crypto = U256::try_from(from_rug).unwrap();
+    let back_rug = rug::Integer::try_from(from_num).unwrap();
+
     assert_eq!(back_num, BigUint::from(val));
     assert_eq!(back_crypto, U256::from_u128(val));
+    assert_eq!(back_rug, rug::Integer::from(val));
 }
 
 fn assert_signed_interop(val: i128) {
     let from_num = Value::from(BigInt::from(val));
     let from_crypto = Value::from(I256::from_i128(val));
+    let from_rug = Value::from(rug::Integer::from(val));
 
-    assert_eq!(from_num, from_crypto, "encoding mismatch for i128={val}");
+    assert_eq!(from_num, from_crypto);
+    assert_eq!(from_num, from_rug);
 
-    let back_num = BigInt::try_from(from_crypto).unwrap();
+    let back_num = BigInt::try_from(from_rug).unwrap();
     let back_crypto = I256::try_from(from_num).unwrap();
+    let back_rug = rug::Integer::try_from(from_crypto).unwrap();
+
     assert_eq!(back_num, BigInt::from(val));
     assert_eq!(back_crypto, I256::from_i128(val));
+    assert_eq!(back_rug, rug::Integer::from(val));
 }
 
 #[test]

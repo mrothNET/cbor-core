@@ -560,10 +560,10 @@ impl Value {
 
         if !is_float {
             let non_deterministic = match info {
-                ArgLength::U8 => argument < ArgLength::U8.into(),
-                ArgLength::U16 => argument <= u8::MAX.into(),
-                ArgLength::U32 => argument <= u16::MAX.into(),
-                ArgLength::U64 => argument <= u32::MAX.into(),
+                ArgLength::U8 => argument < u64::from(ArgLength::U8),
+                ArgLength::U16 => argument <= u64::from(u8::MAX),
+                ArgLength::U32 => argument <= u64::from(u16::MAX),
+                ArgLength::U64 => argument <= u64::from(u32::MAX),
                 _ => false,
             };
 
@@ -787,7 +787,7 @@ impl Value {
 
     fn cbor_argument(&self) -> (u8, u64) {
         fn arg(value: u64) -> (u8, u64) {
-            if value < ArgLength::U8.into() {
+            if value < u64::from(ArgLength::U8) {
                 (value as u8, value)
             } else {
                 let info = match value {
