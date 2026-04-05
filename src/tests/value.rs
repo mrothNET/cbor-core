@@ -616,12 +616,12 @@ fn decode_hex_mixed_case() {
 
 #[test]
 fn decode_hex_odd_length() {
-    assert!(Value::decode_hex("18a").is_err());
+    assert_eq!(Value::decode_hex("18a"), Err(Error::UnexpectedEof));
 }
 
 #[test]
 fn decode_hex_invalid_char() {
-    assert!(Value::decode_hex("zz").is_err());
+    assert_eq!(Value::decode_hex("zz"), Err(Error::InvalidHex));
 }
 
 #[test]
@@ -655,15 +655,15 @@ fn incompatible_type_errors() {
 #[test]
 fn decode_invalid_info_byte() {
     // info = 28 is reserved/invalid
-    assert!(Value::decode([0x1C]).is_err());
+    assert_eq!(Value::decode([0x1C]), Err(Error::Malformed));
 }
 
 #[test]
 fn decode_truncated_input() {
     // Two-byte unsigned, but only header present
-    assert!(Value::decode([0x19, 0x01]).is_err());
+    assert_eq!(Value::decode([0x19, 0x01]), Err(Error::UnexpectedEof));
     // Empty input
-    assert!(Value::decode([]).is_err());
+    assert_eq!(Value::decode([]), Err(Error::UnexpectedEof));
 }
 
 // ===== DataType and is_*() predicates =====
@@ -1033,13 +1033,13 @@ fn to_system_time_float() {
 #[test]
 fn to_system_time_negative_int() {
     let v = Value::tag(1, -1);
-    assert_eq!(v.to_system_time(), Err(Error::Overflow));
+    assert_eq!(v.to_system_time(), Err(Error::InvalidValue));
 }
 
 #[test]
 fn to_system_time_negative_float() {
     let v = Value::tag(1, -0.5);
-    assert_eq!(v.to_system_time(), Err(Error::Overflow));
+    assert_eq!(v.to_system_time(), Err(Error::InvalidValue));
 }
 
 #[test]
@@ -1060,7 +1060,7 @@ fn to_system_time_other_tag() {
 #[test]
 fn to_system_time_non_numeric() {
     let v = Value::tag(1, "not a number");
-    assert_eq!(v.to_system_time(), Err(Error::IncompatibleType));
+    assert_eq!(v.to_system_time(), Err(Error::InvalidFormat));
 }
 
 // ===== Date/time (tag 0) =====
@@ -1141,7 +1141,7 @@ fn date_time_leap_second() {
     assert_eq!(v.data_type(), DataType::DateTime);
 
     // However, date/time with leap seconds cannot be converted into SystemTime
-    assert_eq!(v.to_system_time(), Err(Error::InvalidEncoding));
+    assert_eq!(v.to_system_time(), Err(Error::InvalidValue));
 }
 
 #[test]

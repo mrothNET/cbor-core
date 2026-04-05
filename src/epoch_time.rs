@@ -66,10 +66,12 @@ impl TryFrom<SystemTime> for EpochTime {
     type Error = Error;
 
     fn try_from(value: SystemTime) -> Result<Self> {
-        let time = value.duration_since(SystemTime::UNIX_EPOCH).or(Err(Error::Overflow))?;
+        let time = value
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .or(Err(Error::InvalidValue))?;
 
         if time > Duration::from_secs(253402300799) {
-            Err(Error::Overflow)
+            Err(Error::InvalidValue)
         } else if time.subsec_nanos() == 0 {
             Ok(Self(Inner::Int(time.as_secs())))
         } else {
@@ -79,12 +81,12 @@ impl TryFrom<SystemTime> for EpochTime {
 }
 
 fn from_int<T: TryInto<u64>>(value: T) -> Result<EpochTime> {
-    let value = value.try_into().or(Err(Error::Overflow))?;
+    let value = value.try_into().or(Err(Error::InvalidValue))?;
 
     if (0..=253402300799).contains(&value) {
         Ok(EpochTime(Inner::Int(value)))
     } else {
-        Err(Error::Overflow)
+        Err(Error::InvalidValue)
     }
 }
 
@@ -175,7 +177,7 @@ impl TryFrom<f64> for EpochTime {
         if value.is_finite() && (0.0..=253402300799.0).contains(&value) {
             Ok(Self(Inner::Float(value)))
         } else {
-            Err(Error::Overflow)
+            Err(Error::InvalidValue)
         }
     }
 }

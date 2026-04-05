@@ -3,7 +3,7 @@ use std::time::{Duration, SystemTime};
 use crate::iso3339::Timestamp;
 use crate::{Error, Result, Tag, Value};
 
-const LEAP_SECOND_DATES: [(u32, u8, u8); 27] = [
+const LEAP_SECOND_DATES: [(u16, u8, u8); 27] = [
     (1972, 6, 30),
     (1972, 12, 31),
     (1973, 12, 31),
@@ -71,35 +71,35 @@ impl TryFrom<SystemTime> for DateTime {
         if let Ok(time) = value.duration_since(SystemTime::UNIX_EPOCH)
             && time > Duration::from_secs(253402300799)
         {
-            return Err(Error::Overflow);
+            return Err(Error::InvalidValue);
         }
 
-        let ts = Timestamp::try_new(value).or(Err(Error::Overflow))?;
+        let ts = Timestamp::try_new(value)?;
         Ok(Self(ts.to_string()))
     }
 }
 
 fn validate_date_time(s: &str) -> Result<()> {
-    let ts: Timestamp = s.parse().or(Err(Error::InvalidEncoding))?;
+    let ts: Timestamp = s.parse()?;
 
     if ts.year > 9999 {
-        return Err(Error::Overflow);
+        return Err(Error::InvalidValue);
     }
 
     if ts.second == 60 {
         if ts.hour != 23 || ts.minute != 59 {
-            return Err(Error::InvalidEncoding);
+            return Err(Error::InvalidValue);
         }
 
         if !LEAP_SECOND_DATES.contains(&(ts.year, ts.month, ts.day)) {
-            return Err(Error::InvalidEncoding);
+            return Err(Error::InvalidValue);
         }
     }
 
     if ts.year < 9999 || ts.month < 12 || ts.day < 31 || ts.hour < 23 || ts.minute < 59 || ts.second < 59 {
         Ok(())
     } else if ts.second > 59 || (ts.nano_seconds > 0 && ts.offset == 0) || ts.offset < 0 {
-        Err(Error::Overflow)
+        Err(Error::InvalidValue)
     } else {
         Ok(())
     }

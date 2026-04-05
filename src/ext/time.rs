@@ -3,7 +3,7 @@ use time::{OffsetDateTime, UtcDateTime, UtcOffset, format_description::well_know
 use crate::{Error, Result, Value};
 
 fn offset_date_time_from_str(s: &str) -> Result<OffsetDateTime> {
-    OffsetDateTime::parse(s, &Rfc3339).or(Err(Error::InvalidEncoding))
+    OffsetDateTime::parse(s, &Rfc3339).or(Err(Error::InvalidFormat))
 }
 
 fn utc_date_time_from_float(f: f64) -> Result<UtcDateTime> {
@@ -12,7 +12,7 @@ fn utc_date_time_from_float(f: f64) -> Result<UtcDateTime> {
         let nanos = ((f - f.trunc()) * 1_000_000_000.0).round() as i64;
         Ok(UtcDateTime::from_unix_timestamp(secs).or(Err(Error::Overflow))? + time::Duration::nanoseconds(nanos))
     } else {
-        Err(Error::Overflow)
+        Err(Error::InvalidValue)
     }
 }
 
@@ -170,10 +170,12 @@ fn value_to_time_offset_data_time(value: &Value) -> Result<OffsetDateTime> {
         offset_date_time_from_str(s)
     } else if let Ok(f) = value.to_f64() {
         utc_date_time_from_float(f).map(|dt| dt.to_offset(UtcOffset::UTC))
-    } else if let Ok(secs) = value.to_u64() {
-        utc_date_time_from_u64(secs).map(|dt| dt.to_offset(UtcOffset::UTC))
     } else {
-        Err(Error::IncompatibleType)
+        match value.to_u64() {
+            Ok(secs) => utc_date_time_from_u64(secs).map(|dt| dt.to_offset(UtcOffset::UTC)),
+            Err(Error::NegativeUnsigned) => Err(Error::InvalidValue),
+            Err(other_error) => Err(other_error),
+        }
     }
 }
 
@@ -206,10 +208,12 @@ fn value_to_time_utc_data_time(value: &Value) -> Result<UtcDateTime> {
         offset_date_time_from_str(s).map(|dt| dt.to_utc())
     } else if let Ok(f) = value.to_f64() {
         utc_date_time_from_float(f)
-    } else if let Ok(secs) = value.to_u64() {
-        utc_date_time_from_u64(secs)
     } else {
-        Err(Error::IncompatibleType)
+        match value.to_u64() {
+            Ok(secs) => utc_date_time_from_u64(secs),
+            Err(Error::NegativeUnsigned) => Err(Error::InvalidValue),
+            Err(other_error) => Err(other_error),
+        }
     }
 }
 
@@ -277,7 +281,7 @@ mod tests {
     fn time_to_epoch_time_negative() {
         // Before epoch — should fail (our EpochTime is non-negative only)
         let dt = UtcDateTime::from_unix_timestamp(-1).unwrap();
-        assert_eq!(crate::EpochTime::try_from(dt), Err(crate::Error::Overflow));
+        assert_eq!(crate::EpochTime::try_from(dt), Err(crate::Error::InvalidValue));
     }
 
     // ---- Value → time::UtcDateTime ----
@@ -337,7 +341,7 @@ mod tests {
     fn value_non_time_to_time_errors() {
         assert_eq!(
             UtcDateTime::try_from(Value::from("not a date")),
-            Err(crate::Error::InvalidEncoding)
+            Err(crate::Error::InvalidFormat)
         );
         assert_eq!(
             UtcDateTime::try_from(Value::null()),
@@ -348,7 +352,7 @@ mod tests {
     #[test]
     fn value_negative_epoch_to_time_errors() {
         let v = Value::from(-1);
-        assert_eq!(UtcDateTime::try_from(v), Err(crate::Error::Overflow));
+        assert_eq!(UtcDateTime::try_from(v), Err(crate::Error::InvalidValue));
     }
 
     // ---- SystemTime ↔ Value ↔ chrono roundtrips ----

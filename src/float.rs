@@ -193,7 +193,7 @@ impl Float {
         if matches!(Inner::new(float.to_f64()), Inner::F32(_)) {
             Ok(float)
         } else {
-            Err(Error::Precision)
+            Err(Error::NonDeterministic)
         }
     }
 
@@ -202,7 +202,7 @@ impl Float {
         if matches!(Inner::new(float.to_f64()), Inner::F64(_)) {
             Ok(float)
         } else {
-            Err(Error::Precision)
+            Err(Error::NonDeterministic)
         }
     }
 

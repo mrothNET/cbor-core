@@ -13,7 +13,8 @@ run_ci() {
   docker run --rm -t --platform "linux/$1" \
     -v "$PWD:/work" -w /work \
     -v "$PWD/.cache/cargo-$1:/usr/local/cargo/registry" \
-    -e CARGO_TARGET_DIR=/tmp/target \
+    -v "$PWD/.cache/target-$1:/target" \
+    -e CARGO_TARGET_DIR=/target \
     "$IMAGE_NAME:$1" \
     bash -c "
       echo -- &&

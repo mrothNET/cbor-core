@@ -3,22 +3,22 @@ use chrono::{DateTime, FixedOffset, SecondsFormat, TimeZone, Utc};
 use crate::{Error, Result, Value};
 
 fn date_time_from_str(s: &str) -> Result<DateTime<FixedOffset>> {
-    DateTime::<FixedOffset>::parse_from_rfc3339(s).map_err(|_| Error::InvalidEncoding)
+    DateTime::<FixedOffset>::parse_from_rfc3339(s).or(Err(Error::InvalidFormat))
 }
 
 fn date_time_from_float(f: f64) -> Result<DateTime<Utc>> {
     if f.is_finite() && f >= 0.0 {
         let secs = f.trunc() as i64;
         let nanos = ((f - f.trunc()) * 1_000_000_000.0).round() as u32;
-        DateTime::from_timestamp(secs, nanos).ok_or(Error::Overflow)
+        DateTime::from_timestamp(secs, nanos).ok_or(Error::InvalidValue)
     } else {
-        Err(Error::Overflow)
+        Err(Error::InvalidValue)
     }
 }
 
 fn date_time_from_u64(secs: u64) -> Result<DateTime<Utc>> {
-    let secs = secs.try_into().or(Err(Error::Overflow))?;
-    DateTime::from_timestamp(secs, 0).ok_or(Error::Overflow)
+    let secs = secs.try_into().or(Err(Error::InvalidValue))?;
+    DateTime::from_timestamp(secs, 0).ok_or(Error::InvalidValue)
 }
 
 // ---------------------------------------------------------------------------
@@ -116,10 +116,12 @@ fn value_to_chrono_utc(value: &Value) -> Result<DateTime<Utc>> {
         date_time_from_str(s).map(|dt| dt.to_utc())
     } else if let Ok(f) = value.to_f64() {
         date_time_from_float(f)
-    } else if let Ok(secs) = value.to_u64() {
-        date_time_from_u64(secs)
     } else {
-        Err(Error::IncompatibleType)
+        match value.to_u64() {
+            Ok(secs) => date_time_from_u64(secs),
+            Err(Error::NegativeUnsigned) => Err(Error::InvalidValue),
+            Err(other_error) => Err(other_error),
+        }
     }
 }
 
@@ -152,10 +154,12 @@ fn value_to_chrono_fixed(value: &Value) -> Result<DateTime<FixedOffset>> {
         date_time_from_str(s)
     } else if let Ok(f) = value.to_f64() {
         date_time_from_float(f).map(|dt| dt.into())
-    } else if let Ok(secs) = value.to_u64() {
-        date_time_from_u64(secs).map(|dt| dt.into())
     } else {
-        Err(Error::IncompatibleType)
+        match value.to_u64() {
+            Ok(secs) => date_time_from_u64(secs).map(|dt| dt.into()),
+            Err(Error::NegativeUnsigned) => Err(Error::InvalidValue),
+            Err(other_error) => Err(other_error),
+        }
     }
 }
 
@@ -226,9 +230,9 @@ mod tests {
 
     #[test]
     fn chrono_to_epoch_time_negative() {
-        // Before epoch — should fail (our EpochTime is non-negative only)
+        // Before epoch — should fail (CBOR EpochTime is non-negative only)
         let chrono_dt = DateTime::from_timestamp(-1, 0).unwrap();
-        assert_eq!(crate::EpochTime::try_from(chrono_dt), Err(crate::Error::Overflow));
+        assert_eq!(crate::EpochTime::try_from(chrono_dt), Err(crate::Error::InvalidValue));
     }
 
     // ---- Value → chrono::DateTime<Utc> ----
@@ -289,7 +293,7 @@ mod tests {
     fn value_non_time_to_chrono_errors() {
         assert_eq!(
             DateTime::<Utc>::try_from(Value::from("not a date")),
-            Err(crate::Error::InvalidEncoding)
+            Err(crate::Error::InvalidFormat)
         );
         assert_eq!(
             DateTime::<Utc>::try_from(Value::null()),
@@ -300,7 +304,7 @@ mod tests {
     #[test]
     fn value_negative_epoch_to_chrono_errors() {
         let v = Value::from(-1);
-        assert_eq!(DateTime::<Utc>::try_from(v), Err(crate::Error::Overflow));
+        assert_eq!(DateTime::<Utc>::try_from(v), Err(crate::Error::InvalidValue));
     }
 
     // ---- SystemTime ↔ Value ↔ chrono roundtrips ----

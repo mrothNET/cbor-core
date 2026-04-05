@@ -1,5 +1,5 @@
-use rug::integer::Order;
 use rug::Integer;
+use rug::integer::Order;
 
 use crate::{
     Error, Result, Tag, Value,
@@ -87,15 +87,9 @@ impl TryFrom<&Value> for Integer {
 
 fn to_rug_integer(value: &Value) -> Result<Integer> {
     match value.as_integer_bytes()? {
-        IntegerBytes::UnsignedOwned(bytes) => {
-            Ok(Integer::from(u64::from_be_bytes(bytes)))
-        }
-        IntegerBytes::NegativeOwned(bytes) => {
-            Ok(Integer::from(!u64::from_be_bytes(bytes) as i64))
-        }
-        IntegerBytes::UnsignedBorrowed(bytes) => {
-            Ok(Integer::from_digits(bytes, Order::MsfBe))
-        }
+        IntegerBytes::UnsignedOwned(bytes) => Ok(Integer::from(u64::from_be_bytes(bytes))),
+        IntegerBytes::NegativeOwned(bytes) => Ok(Integer::from(!u64::from_be_bytes(bytes) as i64)),
+        IntegerBytes::UnsignedBorrowed(bytes) => Ok(Integer::from_digits(bytes, Order::MsfBe)),
         IntegerBytes::NegativeBorrowed(bytes) => {
             // payload = magnitude - 1, so actual = -(payload + 1)
             let payload = Integer::from_digits(bytes, Order::MsfBe);
@@ -188,9 +182,15 @@ mod tests {
     #[test]
     fn from_i128_roundtrip() {
         for x in [
-            0_i128, 1, -1, 42, -42,
-            i64::MIN as i128, i64::MAX as i128,
-            i128::MIN, i128::MAX,
+            0_i128,
+            1,
+            -1,
+            42,
+            -42,
+            i64::MIN as i128,
+            i64::MAX as i128,
+            i128::MIN,
+            i128::MAX,
         ] {
             let expected = Integer::from(x);
             let via_value = Value::from(x);

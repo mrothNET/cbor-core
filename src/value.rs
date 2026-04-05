@@ -490,12 +490,15 @@ impl Value {
     ///
     /// ```
     /// use cbor_core::Value;
-    /// let v = Value::decode(&[0x18, 42]).unwrap();
+    /// let v = Value::decode([0x18, 42]).unwrap();
     /// assert_eq!(v.to_u32().unwrap(), 42);
     /// ```
-    pub fn decode(bytes: impl AsRef<[u8]>) -> Result<Self> {
+    pub fn decode(bytes: impl AsRef<[u8]>) -> crate::Result<Self> {
         let mut bytes = bytes.as_ref();
-        Self::read_from(&mut bytes)
+        Self::read_from(&mut bytes).map_err(|error| match error {
+            crate::IoError::Io(_io_error) => unreachable!(),
+            crate::IoError::Data(error) => error,
+        })
     }
 
     /// Decode a CBOR data item from hex-encoded bytes.
@@ -513,7 +516,10 @@ impl Value {
     /// ```
     pub fn decode_hex(hex: impl AsRef<[u8]>) -> Result<Self> {
         let mut bytes = hex.as_ref();
-        Self::read_hex_from(&mut bytes)
+        Self::read_hex_from(&mut bytes).map_err(|error| match error {
+            crate::IoError::Io(_io_error) => unreachable!(),
+            crate::IoError::Data(error) => error,
+        })
     }
 
     /// Read a single CBOR data item from a binary stream.
@@ -524,11 +530,11 @@ impl Value {
     /// let v = Value::read_from(&mut bytes).unwrap();
     /// assert_eq!(v.to_u32().unwrap(), 42);
     /// ```
-    pub fn read_from(mut reader: impl io::Read) -> Result<Self> {
+    pub fn read_from(mut reader: impl io::Read) -> crate::IoResult<Self> {
         Self::read_from_inner(&mut reader)
     }
 
-    fn read_from_inner(reader: &mut impl io::Read) -> Result<Self> {
+    fn read_from_inner(reader: &mut impl io::Read) -> crate::IoResult<Self> {
         let ctrl_byte = {
             let mut buf = [0];
             reader.read_exact(&mut buf)?;
@@ -551,7 +557,7 @@ impl Value {
                     ArgLength::U16 => reader.read_exact(&mut buf[6..])?,
                     ArgLength::U32 => reader.read_exact(&mut buf[4..])?,
                     ArgLength::U64 => reader.read_exact(&mut buf)?,
-                    _ => return Err(Error::InvalidEncoding),
+                    _ => return Error::Malformed.into(),
                 }
             }
 
@@ -568,7 +574,7 @@ impl Value {
             };
 
             if non_deterministic {
-                return Err(Error::InvalidEncoding);
+                return Error::NonDeterministic.into();
             }
         }
 
@@ -580,7 +586,7 @@ impl Value {
 
             Major::TEXT_STRING => {
                 let bytes = read_vec(reader, argument)?;
-                let string = String::from_utf8(bytes).map_err(|_| Error::InvalidUtf8)?;
+                let string = String::from_utf8(bytes)?;
                 Self::TextString(string)
             }
 
@@ -602,7 +608,7 @@ impl Value {
 
                     if let Some((prev_key, prev_value)) = prev.take() {
                         if prev_key >= key {
-                            return Err(Error::InvalidEncoding);
+                            return Error::NonDeterministic.into();
                         }
                         map.insert(prev_key, prev_value);
                     }
@@ -626,7 +632,7 @@ impl Value {
                 {
                     let valid = bigint.len() >= 8 && bigint[0] != 0;
                     if !valid {
-                        return Err(Error::InvalidEncoding);
+                        return Error::NonDeterministic.into();
                     }
                 }
 
@@ -634,15 +640,14 @@ impl Value {
             }
 
             Major::SIMPLE_VALUE => match info {
-                0..=ArgLength::U8 => SimpleValue::from_u8(argument as u8)
-                    .map(Self::SimpleValue)
-                    .map_err(|_| Error::InvalidEncoding)?,
+                0..ArgLength::U8 => Self::SimpleValue(SimpleValue(argument as u8)),
+                ArgLength::U8 if argument >= 32 => Self::SimpleValue(SimpleValue(argument as u8)),
 
                 ArgLength::U16 => Self::Float(Float::from_u16(argument as u16)),
                 ArgLength::U32 => Self::Float(Float::from_u32(argument as u32)?),
                 ArgLength::U64 => Self::Float(Float::from_u64(argument)?),
 
-                _ => return Err(Error::InvalidEncoding),
+                _ => return Error::Malformed.into(),
             },
 
             _ => unreachable!(),
@@ -662,31 +667,46 @@ impl Value {
     /// let v = Value::read_hex_from(&mut hex).unwrap();
     /// assert_eq!(v.to_u32().unwrap(), 42);
     /// ```
-    pub fn read_hex_from(reader: impl io::Read) -> Result<Self> {
-        struct HexReader<R>(R);
+    pub fn read_hex_from(reader: impl io::Read) -> crate::IoResult<Self> {
+        struct HexReader<R>(R, Option<Error>);
 
         impl<R: io::Read> io::Read for HexReader<R> {
             fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-                fn nibble(char: u8) -> io::Result<u8> {
+                fn nibble(char: u8) -> Option<u8> {
                     match char {
-                        b'0'..=b'9' => Ok(char - b'0'),
-                        b'a'..=b'f' => Ok(char - b'a' + 10),
-                        b'A'..=b'F' => Ok(char - b'A' + 10),
-                        _ => Err(io::ErrorKind::InvalidData.into()),
+                        b'0'..=b'9' => Some(char - b'0'),
+                        b'a'..=b'f' => Some(char - b'a' + 10),
+                        b'A'..=b'F' => Some(char - b'A' + 10),
+                        _ => None,
                     }
                 }
 
                 for byte in buf.iter_mut() {
                     let mut hex = [0; 2];
                     self.0.read_exact(&mut hex)?;
-                    *byte = nibble(hex[0])? << 4 | nibble(hex[1])?;
+
+                    if let Some(n0) = nibble(hex[0])
+                        && let Some(n1) = nibble(hex[1])
+                    {
+                        *byte = n0 << 4 | n1
+                    } else {
+                        self.1 = Some(Error::InvalidHex);
+                        return Err(io::Error::other("invalid hex character"));
+                    }
                 }
 
                 Ok(buf.len())
             }
         }
 
-        Self::read_from_inner(&mut HexReader(reader))
+        let mut hex_reader = HexReader(reader, None);
+        let result = Self::read_from_inner(&mut hex_reader);
+
+        if let Some(error) = hex_reader.1 {
+            error.into()
+        } else {
+            result
+        }
     }
 
     /// Write this value as binary CBOR to a stream.
@@ -697,11 +717,11 @@ impl Value {
     /// Value::from(42).write_to(&mut buf).unwrap();
     /// assert_eq!(buf, [0x18, 42]);
     /// ```
-    pub fn write_to(&self, mut writer: impl io::Write) -> Result<()> {
+    pub fn write_to(&self, mut writer: impl io::Write) -> crate::IoResult<()> {
         self.write_to_inner(&mut writer)
     }
 
-    fn write_to_inner(&self, writer: &mut impl io::Write) -> Result<()> {
+    fn write_to_inner(&self, writer: &mut impl io::Write) -> crate::IoResult<()> {
         let major = self.cbor_major();
         let (info, argument) = self.cbor_argument();
 
@@ -753,7 +773,7 @@ impl Value {
     /// Value::from(42).write_hex_to(&mut buf).unwrap();
     /// assert_eq!(buf, b"182a");
     /// ```
-    pub fn write_hex_to(&self, writer: impl io::Write) -> Result<()> {
+    pub fn write_hex_to(&self, writer: impl io::Write) -> crate::IoResult<()> {
         struct HexWriter<W>(W);
 
         impl<W: io::Write> io::Write for HexWriter<W> {
@@ -1158,8 +1178,8 @@ impl Value {
     /// UTC.
     ///
     /// Returns `Err(IncompatibleType)` for values that are neither
-    /// numeric nor text, `Err(Overflow)` if a numeric value is out of
-    /// range, and `Err(InvalidEncoding)` if a text string is not a
+    /// numeric nor text, `Err(InvalidValue)` if a numeric value is out of
+    /// range, and `Err(InvalidFormat)` if a text string is not a
     /// valid RFC 3339 timestamp. Leap seconds (`:60`) are rejected
     /// because [`SystemTime`] cannot represent them.
     ///
@@ -1173,19 +1193,17 @@ impl Value {
     /// ```
     pub fn to_system_time(&self) -> Result<SystemTime> {
         if let Ok(s) = self.as_str() {
-            use crate::iso3339::Timestamp;
-            let ts: Timestamp = s.parse().or(Err(Error::InvalidEncoding))?;
-            Ok(ts.try_into().or(Err(Error::InvalidEncoding))?)
+            Ok(s.parse::<crate::iso3339::Timestamp>()?.try_into()?)
         } else if let Ok(f) = self.to_f64() {
             if f.is_finite() && (0.0..=253402300799.0).contains(&f) {
                 Ok(SystemTime::UNIX_EPOCH + Duration::from_secs_f64(f))
             } else {
-                Err(Error::Overflow)
+                Err(Error::InvalidValue)
             }
         } else {
             match self.to_u64() {
                 Ok(secs) if secs <= 253402300799 => Ok(SystemTime::UNIX_EPOCH + Duration::from_secs(secs)),
-                Ok(_) | Err(Error::NegativeUnsigned) => Err(Error::Overflow),
+                Ok(_) | Err(Error::NegativeUnsigned) => Err(Error::InvalidValue),
                 Err(error) => Err(error),
             }
         }
@@ -1460,7 +1478,7 @@ impl Value {
 
 // -------------------- Helpers --------------------
 
-fn read_vec(reader: &mut impl io::Read, len: u64) -> Result<Vec<u8>> {
+fn read_vec(reader: &mut impl io::Read, len: u64) -> crate::IoResult<Vec<u8>> {
     use io::Read;
 
     let len_usize = usize::try_from(len).map_err(|_| Error::LengthTooLarge)?;
@@ -1471,6 +1489,6 @@ fn read_vec(reader: &mut impl io::Read, len: u64) -> Result<Vec<u8>> {
     if bytes_read == len_usize {
         Ok(buf)
     } else {
-        Err(Error::UnexpectedEof)
+        Error::UnexpectedEof.into()
     }
 }

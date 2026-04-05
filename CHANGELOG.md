@@ -10,6 +10,13 @@
 - Optional `time` feature: conversions between `time::UtcDateTime`/`time::OffsetDateTime` and `DateTime`/`EpochTime`/`Value`.
 - Optional `half` feature: `From`/`TryFrom` conversions between `Float`/`Value` and `half::f16`.
 
+### Changed
+
+- Streaming methods (`read_from`, `write_to`, `read_hex_from`, `write_hex_to`) now return `IoResult` instead of `Result`, separating I/O errors from data errors.
+- `Error` is now `Copy` and no longer wraps `io::Error`.
+- `InvalidEncoding` split into `Malformed` (structurally broken CBOR) and `NonDeterministic` (valid but not canonical).
+- New error variants: `InvalidHex`, `InvalidFormat`, `InvalidValue`.
+
 ## 0.4.0 — 2026-04-05
 
 ### Changed

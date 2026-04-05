@@ -4,36 +4,16 @@ use std::fmt;
 use std::str::FromStr;
 use std::time::{Duration, SystemTime};
 
-/// Error returned when an RFC 3339 string cannot be parsed or a [`Timestamp`]
-/// cannot be constructed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) enum Error {
-    /// The input string does not match the expected RFC 3339 layout.
-    InvalidFormat,
-    /// Year is outside 0000 - 9999
-    YearOutOfRange,
-    /// Month is outside 1–12.
-    MonthOutOfRange,
-    /// Day is outside the valid range for the given month/year.
-    DayOutOfRange,
-    /// Hour is outside 0–23.
-    HourOutOfRange,
-    /// Minute is outside 0–59.
-    MinuteOutOfRange,
-    /// Second is outside 0–60 (leap seconds parsing supported, but no conversion to SystemTime).
-    SecondOutOfRange,
-    /// Cannot convert a leap-second [`Timestamp`] to [`SystemTime`].
-    LeapSecond,
-}
+use crate::Error;
 
-/// UTC date and time components with nanosecond resolution.
+/// Date and time components with nanosecond resolution and time offset.
 ///
-/// Represents a decomposed UTC timestamp in the proleptic Gregorian calendar.
-/// All fields are in UTC — no timezone or local time handling is provided.
+/// Represents a decomposed timestamp including a time offset to UTC
+/// in the proleptic Gregorian calendar.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct Timestamp {
     /// Year 0 - 9999 (even the proleptic Gregorian calendar starts at year 1)
-    pub year: u32,
+    pub year: u16,
     /// Month (1 – 12).
     pub month: u8,
     /// Day of the month (1 – 28/29/30/31 depending on month/year).
@@ -59,9 +39,9 @@ impl Timestamp {
         }
     }
 
-    /// Decomposes a [`SystemTime`] into its UTC [`Timestamp`] components
+    /// Decomposes a [`SystemTime`] into its [`Timestamp`] components
     ///
-    /// Returns [`Error::YearZero`] if `time` falls before year 1.
+    /// Returns [`Error::InvalidValue`] if `time` falls outside the year range 0–9999.
     // cspell: disable
     // Uses Howard Hinnant's `civil_from_days` algorithm, shifting the epoch to
     // 0000-03-01 so that leap days fall at the end of the cycle.
@@ -99,11 +79,11 @@ impl Timestamp {
         let year = if month <= 2 { y + 1 } else { y };
 
         if !(0..=9999).contains(&year) {
-            return Err(Error::YearOutOfRange);
+            return Err(Error::InvalidValue);
         }
 
         Ok(Timestamp {
-            year: year as u32,
+            year: year as u16,
             month: month as u8,
             day: day as u8,
             hour: hour as u8,
@@ -116,7 +96,7 @@ impl Timestamp {
 }
 
 impl fmt::Display for Timestamp {
-    /// Formats as an RFC 3339 (an ISO 8601 profile) UTC string with 4 year digits.
+    /// Formats as an RFC 3339 (an ISO 8601 profile) string with 4 year digits.
     ///
     /// Whole-second timestamps omit the fractional part. Sub-second
     /// timestamps include only the necessary digits (no trailing zeros).
@@ -156,7 +136,8 @@ impl TryFrom<Timestamp> for SystemTime {
     /// Converts a [`Timestamp`] to a [`SystemTime`].
     fn try_from(ts: Timestamp) -> Result<Self, Self::Error> {
         if ts.second == 60 {
-            return Err(Error::LeapSecond);
+            // A date/time with leap second cannot be represented by SystemTime
+            return Err(Error::InvalidValue);
         }
 
         let days = date_to_days(ts.year, ts.month as u32, ts.day as u32);
@@ -182,8 +163,7 @@ impl FromStr for Timestamp {
     /// Parses an RFC 3339 date-time string into a [`Timestamp`].
     ///
     /// Accepts both `Z`/`z` and numeric offsets (`+HH:MM`, `-HH:MM`).
-    /// Numeric offsets are converted to UTC. Both upper and lower case
-    /// `T` and `Z` are accepted.
+    /// Both upper and lower case `T` and `Z` are accepted.
     ///
     /// The year field has variable length (at least 4 digits).
     ///
@@ -258,13 +238,13 @@ impl FromStr for Timestamp {
             let hours = str::from_utf8(&rest[1..3]).or(Err(Error::InvalidFormat))?;
             let hours: i32 = hours.parse().or(Err(Error::InvalidFormat))?;
             if hours > 23 {
-                return Err(Error::HourOutOfRange);
+                return Err(Error::InvalidValue);
             }
 
             let mins = str::from_utf8(&rest[4..]).or(Err(Error::InvalidFormat))?;
             let mins: i32 = mins.parse().or(Err(Error::InvalidFormat))?;
             if mins > 59 {
-                return Err(Error::MinuteOutOfRange);
+                return Err(Error::InvalidValue);
             }
 
             if rest[0] == b'+' {
@@ -280,26 +260,26 @@ impl FromStr for Timestamp {
 
         // Validate fields
         if !(0..=9999).contains(&year) {
-            return Err(Error::YearOutOfRange);
+            return Err(Error::InvalidValue);
         }
         if !(1..=12).contains(&month) {
-            return Err(Error::MonthOutOfRange);
+            return Err(Error::InvalidValue);
         }
         if day < 1 || day > days_in_month(year, month) {
-            return Err(Error::DayOutOfRange);
+            return Err(Error::InvalidValue);
         }
         if hour > 23 {
-            return Err(Error::HourOutOfRange);
+            return Err(Error::InvalidValue);
         }
         if min > 59 {
-            return Err(Error::MinuteOutOfRange);
+            return Err(Error::InvalidValue);
         }
         if sec > 60 {
-            return Err(Error::SecondOutOfRange);
+            return Err(Error::InvalidValue);
         }
 
         Ok(Timestamp {
-            year,
+            year: year as u16,
             month: month as u8,
             day: day as u8,
             hour: hour as u8,
@@ -316,7 +296,7 @@ impl FromStr for Timestamp {
 // ---------------------------------------------------------------------------
 
 fn parse_u32(s: &str) -> Result<u32, Error> {
-    s.parse().map_err(|_| Error::InvalidFormat)
+    s.parse().or(Err(Error::InvalidFormat))
 }
 
 fn is_leap_year(year: u32) -> bool {
@@ -334,7 +314,7 @@ fn days_in_month(year: u32, month: u32) -> u32 {
 }
 
 /// Convert `(year, month, day)` to days since Unix epoch.
-fn date_to_days(year: u32, month: u32, day: u32) -> i64 {
+fn date_to_days(year: u16, month: u32, day: u32) -> i64 {
     let year = if month <= 2 { year as i64 - 1 } else { year as i64 };
 
     let era = year.div_euclid(400);
@@ -536,42 +516,36 @@ mod tests {
     fn error_year_out_of_range() {
         assert_eq!(
             "100000-06-15T12:30:45.5Z".parse::<Timestamp>(),
-            Err(Error::YearOutOfRange)
+            Err(Error::InvalidValue)
         );
     }
 
     #[test]
     fn error_month_out_of_range() {
-        assert_eq!("2000-13-01T00:00:00Z".parse::<Timestamp>(), Err(Error::MonthOutOfRange));
-        assert_eq!("2000-00-01T00:00:00Z".parse::<Timestamp>(), Err(Error::MonthOutOfRange));
+        assert_eq!("2000-13-01T00:00:00Z".parse::<Timestamp>(), Err(Error::InvalidValue));
+        assert_eq!("2000-00-01T00:00:00Z".parse::<Timestamp>(), Err(Error::InvalidValue));
     }
 
     #[test]
     fn error_day_out_of_range() {
-        assert_eq!("2023-02-29T00:00:00Z".parse::<Timestamp>(), Err(Error::DayOutOfRange));
-        assert_eq!("2000-01-32T00:00:00Z".parse::<Timestamp>(), Err(Error::DayOutOfRange));
-        assert_eq!("2000-01-00T00:00:00Z".parse::<Timestamp>(), Err(Error::DayOutOfRange));
+        assert_eq!("2023-02-29T00:00:00Z".parse::<Timestamp>(), Err(Error::InvalidValue));
+        assert_eq!("2000-01-32T00:00:00Z".parse::<Timestamp>(), Err(Error::InvalidValue));
+        assert_eq!("2000-01-00T00:00:00Z".parse::<Timestamp>(), Err(Error::InvalidValue));
     }
 
     #[test]
     fn error_hour_out_of_range() {
-        assert_eq!("2000-01-01T24:00:00Z".parse::<Timestamp>(), Err(Error::HourOutOfRange));
+        assert_eq!("2000-01-01T24:00:00Z".parse::<Timestamp>(), Err(Error::InvalidValue));
     }
 
     #[test]
     fn error_minute_out_of_range() {
-        assert_eq!(
-            "2000-01-01T00:60:00Z".parse::<Timestamp>(),
-            Err(Error::MinuteOutOfRange)
-        );
+        assert_eq!("2000-01-01T00:60:00Z".parse::<Timestamp>(), Err(Error::InvalidValue));
     }
 
     #[test]
     fn error_second_out_of_range() {
-        assert_eq!(
-            "2000-01-01T00:00:61Z".parse::<Timestamp>(),
-            Err(Error::SecondOutOfRange)
-        );
+        assert_eq!("2000-01-01T00:00:61Z".parse::<Timestamp>(), Err(Error::InvalidValue));
     }
 
     // -----------------------------------------------------------------------
@@ -762,7 +736,7 @@ mod tests {
     fn parse_rejects_invalid_offset_hour() {
         assert!(matches!(
             "2000-01-01T00:00:00+25:00".parse::<Timestamp>(),
-            Err(Error::HourOutOfRange)
+            Err(Error::InvalidValue)
         ));
     }
 
@@ -770,7 +744,7 @@ mod tests {
     fn parse_rejects_invalid_offset_minute() {
         assert_eq!(
             "2000-01-01T00:00:00+00:60".parse::<Timestamp>(),
-            Err(Error::MinuteOutOfRange)
+            Err(Error::InvalidValue)
         );
     }
 
@@ -790,7 +764,7 @@ mod tests {
 
     #[test]
     fn parse_rejects_year_10000() {
-        assert_eq!("10000-01-01T00:00:00Z".parse::<Timestamp>(), Err(Error::YearOutOfRange));
+        assert_eq!("10000-01-01T00:00:00Z".parse::<Timestamp>(), Err(Error::InvalidValue));
     }
 
     #[test]

@@ -83,7 +83,7 @@ pub use array::Array;
 pub use data_type::DataType;
 pub use date_time::DateTime;
 pub use epoch_time::EpochTime;
-pub use error::{Error, Result};
+pub use error::{Error, IoError, IoResult, Result};
 pub use float::Float;
 pub use map::Map;
 pub use simple_value::SimpleValue;
