@@ -9,3 +9,7 @@ mod crypto_bigint;
 #[cfg(feature = "rug")]
 #[cfg_attr(docsrs, doc(cfg(feature = "rug")))]
 mod rug;
+
+#[cfg(feature = "chrono")]
+#[cfg_attr(docsrs, doc(cfg(feature = "chrono")))]
+mod chrono;

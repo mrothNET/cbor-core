@@ -18,11 +18,19 @@ num-bigint = ["dep:num-bigint"]
 crypto-bigint = ["dep:crypto-bigint"]
 ## Add interoperability with rug crate
 rug = ["dep:rug"]
+## Add interoperability with chrono crate
+chrono = ["dep:chrono"]
 
 [dependencies]
 num-bigint = { version = "0.4", optional = true }
 crypto-bigint = { version = "0.7", optional = true }
-rug = { version = "1.29.0", default-features = false, features = ["std", "integer"], optional = true }
+rug = { version = "1.29.0", default-features = false, features = [
+    "std",
+    "integer",
+], optional = true }
+chrono = { version = "0.4.44", default-features = false, features = [
+    "std",
+], optional = true }
 
 [package.metadata.docs.rs]
 all-features = true

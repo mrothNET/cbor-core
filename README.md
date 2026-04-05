@@ -42,6 +42,7 @@ Not yet implemented: CBOR::Core diagnostic notation.
 | `num-bigint` | `From`/`TryFrom` conversions between `Value` and `num_bigint::BigInt`/`BigUint` |
 | `crypto-bigint` | `From`/`TryFrom` conversions between `Value` and `crypto_bigint::Uint`/`Int`/`NonZero` |
 | `rug` | `From`/`TryFrom` conversions between `Value` and `rug::Integer` |
+| `chrono` | Conversions between `chrono::DateTime` and `DateTime`/`EpochTime`/`Value` |
 
 ## Usage
 
