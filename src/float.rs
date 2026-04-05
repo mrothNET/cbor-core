@@ -122,7 +122,7 @@ const fn f32_nan_to_f64(bits: u32) -> f64 {
 
 /// f16, f32 or f64 as bits
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-enum Inner {
+pub(crate) enum Inner {
     F16(u16),
     F32(u32),
     F64(u64),
@@ -163,7 +163,7 @@ impl Inner {
 /// preserving NaN payloads and the exact CBOR encoding.
 /// Two `Float` values are equal iff they encode to the same CBOR bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Float(Inner);
+pub struct Float(pub(crate) Inner);
 
 impl Float {
     /// Return the [`DataType`] indicating the storage width (f16, f32, or f64).
@@ -219,7 +219,9 @@ impl Float {
         }
     }
 
-    /// Convert to `f32`. Returns `Err(Precision)` for f64-width values.
+    /// Convert to `f32`.
+    ///
+    /// Returns `Err(Precision)` for f64-width values.
     pub const fn to_f32(self) -> Result<f32> {
         match self.0 {
             Inner::F16(bits) => Ok(f16_to_f32(bits)),

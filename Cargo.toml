@@ -22,7 +22,8 @@ rug = ["dep:rug"]
 chrono = ["dep:chrono"]
 ## Add interoperability with time crate
 time = ["dep:time"]
-
+## Add interoperability with half crate
+half = ["dep:half"]
 
 [dependencies.num-bigint]
 version = "0.4"
@@ -47,6 +48,11 @@ optional = true
 [dependencies.time]
 version = "0.3"
 features = ["formatting", "parsing"]
+optional = true
+
+[dependencies.half]
+version = "2"
+default-features = false
 optional = true
 
 [package.metadata.docs.rs]

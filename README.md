@@ -44,6 +44,7 @@ Not yet implemented: CBOR::Core diagnostic notation.
 | `rug` | `From`/`TryFrom` conversions between `Value` and `rug::Integer` |
 | `chrono` | Conversions between `chrono::DateTime` and `DateTime`/`EpochTime`/`Value` |
 | `time` | Conversions between `time::UtcDateTime`/`time::OffsetDateTime` and `DateTime`/`EpochTime`/`Value` |
+| `half` | `From`/`TryFrom` conversions between `Float`/`Value` and `half::f16` |
 
 ## Usage
 

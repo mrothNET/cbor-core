@@ -1127,7 +1127,9 @@ impl Value {
         self.to_sint()
     }
 
-    /// Convert to `f32`. Returns `Err(Precision)` for f64-width values.
+    /// Convert to `f32`.
+    ///
+    /// Returns `Err(Precision)` for f64-width values.
     pub fn to_f32(&self) -> Result<f32> {
         match self {
             Self::Float(float) => float.to_f32(),
@@ -1136,7 +1138,9 @@ impl Value {
         }
     }
 
-    /// Convert to `f64`. Always succeeds for float values.
+    /// Convert to `f64`.
+    ///
+    /// Always succeeds for float values.
     pub fn to_f64(&self) -> Result<f64> {
         match self {
             Self::Float(float) => Ok(float.to_f64()),

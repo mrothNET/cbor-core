@@ -17,3 +17,7 @@ mod chrono;
 #[cfg(feature = "time")]
 #[cfg_attr(docsrs, doc(cfg(feature = "time")))]
 mod time;
+
+#[cfg(feature = "half")]
+#[cfg_attr(docsrs, doc(cfg(feature = "half")))]
+mod half;
