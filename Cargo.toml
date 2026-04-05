@@ -20,17 +20,34 @@ crypto-bigint = ["dep:crypto-bigint"]
 rug = ["dep:rug"]
 ## Add interoperability with chrono crate
 chrono = ["dep:chrono"]
+## Add interoperability with time crate
+time = ["dep:time"]
 
-[dependencies]
-num-bigint = { version = "0.4", optional = true }
-crypto-bigint = { version = "0.7", optional = true }
-rug = { version = "1.29.0", default-features = false, features = [
-    "std",
-    "integer",
-], optional = true }
-chrono = { version = "0.4.44", default-features = false, features = [
-    "std",
-], optional = true }
+
+[dependencies.num-bigint]
+version = "0.4"
+optional = true
+
+[dependencies.crypto-bigint]
+version = "0.7"
+optional = true
+
+[dependencies.rug]
+version = "1"
+default-features = false
+features = ["std", "integer"]
+optional = true
+
+[dependencies.chrono]
+version = "0.4"
+default-features = false
+features = ["std"]
+optional = true
+
+[dependencies.time]
+version = "0.3"
+features = ["formatting", "parsing"]
+optional = true
 
 [package.metadata.docs.rs]
 all-features = true

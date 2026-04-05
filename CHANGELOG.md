@@ -7,6 +7,7 @@
 - Optional `crypto-bigint` feature: `From`/`TryFrom` conversions between `Value` and `crypto_bigint::Uint`/`Int`/`NonZero`.
 - Optional `rug` feature: `From`/`TryFrom` conversions between `Value` and `rug::Integer`.
 - Optional `chrono` feature: conversions between `chrono::DateTime` and `DateTime`/`EpochTime`/`Value`.
+- Optional `time` feature: conversions between `time::UtcDateTime`/`time::OffsetDateTime` and `DateTime`/`EpochTime`/`Value`.
 
 ## 0.4.0 — 2026-04-05
 
