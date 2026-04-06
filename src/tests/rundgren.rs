@@ -4,6 +4,10 @@
 //! Each test verifies both encoding (Value → bytes) and decoding (bytes → Value).
 //! Some tests may fail due to known bugs that will be fixed later.
 
+// Float literals in these test vectors are taken verbatim from the specification.
+// The exact digits are significant for encoding correctness.
+#![allow(clippy::excessive_precision)]
+
 use crate::{Error, Value};
 
 /// Verify encode and decode match the expected CBOR bytes.
