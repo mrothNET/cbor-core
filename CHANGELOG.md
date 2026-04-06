@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 — 2026-04-06
 
 ### Added
 
@@ -17,6 +17,7 @@
 
 - Streaming methods (`read_from`, `write_to`, `read_hex_from`, `write_hex_to`) now return `IoResult` instead of `Result`, separating I/O errors from data errors.
 - `Error` is now `Copy` and no longer wraps `io::Error`.
+- `Error::IncompatibleType` now carries a `DataType` payload indicating the actual type encountered.
 - `InvalidEncoding` split into `Malformed` (structurally broken CBOR) and `NonDeterministic` (valid but not canonical).
 - New error variants: `InvalidHex`, `InvalidFormat`, `InvalidValue`.
 
