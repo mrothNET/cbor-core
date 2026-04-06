@@ -8,11 +8,15 @@ mod map;
 mod simple_value;
 mod string;
 
-use std::collections::BTreeMap;
-use std::hash::{Hash, Hasher};
-use std::ops::{Index, IndexMut};
-use std::time::{Duration, SystemTime};
-use std::{cmp, io};
+use std::{
+    cmp,
+    collections::BTreeMap,
+    fmt,
+    hash::{Hash, Hasher},
+    io,
+    ops::{Index, IndexMut},
+    time::{Duration, SystemTime},
+};
 
 use crate::{
     ArgLength, Array, CtrlByte, DataType, DateTime, EpochTime, Error, Float, IntegerBytes, Major, Map, Result,
@@ -383,7 +387,7 @@ const RECURSION_LIMIT: u16 = 200; // maximum hierarchical data structure depth
 /// let v = Value::from(3.14);
 /// assert!(v.data_type().is_float());
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum Value {
     /// Simple value such as `null`, `true`, or `false` (major type 7).
     ///
@@ -418,6 +422,113 @@ pub enum Value {
     /// Tagged data item (major type 6). The first field is the tag number,
     /// the second is the enclosed content.
     Tag(u64, Box<Value>),
+}
+
+// --- CBOR::Core diagnostic notation (Section 2.3.6) ---
+//
+// `Debug` outputs diagnostic notation. The `#` (alternate/pretty) flag
+// enables multi-line output for arrays and maps with indentation.
+impl fmt::Debug for Value {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::SimpleValue(sv) => match *sv {
+                SimpleValue::FALSE => f.write_str("false"),
+                SimpleValue::TRUE => f.write_str("true"),
+                SimpleValue::NULL => f.write_str("null"),
+                other => write!(f, "simple({})", other.0),
+            },
+
+            Self::Unsigned(n) => write!(f, "{n}"),
+
+            Self::Negative(n) => write!(f, "{actual}", actual = -i128::from(*n) - 1),
+
+            Self::Float(float) => {
+                let value = float.to_f64();
+                if value.is_nan() {
+                    use crate::float::Inner;
+                    match float.0 {
+                        Inner::F16(0x7e00) => f.write_str("NaN"), // Default NaN is the canonical f16 quiet NaN (f97e00)
+                        Inner::F16(bits) => write!(f, "float'{bits:04x}'"),
+                        Inner::F32(bits) => write!(f, "float'{bits:08x}'"),
+                        Inner::F64(bits) => write!(f, "float'{bits:016x}'"),
+                    }
+                } else if value.is_infinite() {
+                    if value.is_sign_positive() {
+                        f.write_str("Infinity")
+                    } else {
+                        f.write_str("-Infinity")
+                    }
+                } else {
+                    let s = format!("{value}");
+                    f.write_str(&s)?;
+                    if !s.contains('.') && !s.contains('e') && !s.contains('E') {
+                        f.write_str(".0")?; // ensure a decimal point is present
+                    }
+                    Ok(())
+                }
+            }
+
+            Self::ByteString(bytes) => {
+                f.write_str("h'")?;
+                for b in bytes {
+                    write!(f, "{b:02x}")?;
+                }
+                f.write_str("'")
+            }
+
+            Self::TextString(s) => {
+                f.write_str("\"")?;
+                for c in s.chars() {
+                    match c {
+                        '"' => f.write_str("\\\"")?,
+                        '\\' => f.write_str("\\\\")?,
+                        '\u{08}' => f.write_str("\\b")?,
+                        '\u{0C}' => f.write_str("\\f")?,
+                        '\n' => f.write_str("\\n")?,
+                        '\r' => f.write_str("\\r")?,
+                        '\t' => f.write_str("\\t")?,
+                        c if c.is_control() => write!(f, "\\u{:04x}", c as u32)?,
+                        c => write!(f, "{c}")?,
+                    }
+                }
+                f.write_str("\"")
+            }
+
+            Self::Array(items) => {
+                let mut list = f.debug_list();
+                for item in items {
+                    list.entry(item);
+                }
+                list.finish()
+            }
+
+            Self::Map(map) => {
+                let mut m = f.debug_map();
+                for (key, value) in map {
+                    m.entry(key, value);
+                }
+                m.finish()
+            }
+
+            Self::Tag(tag, content) => {
+                // Big integers: show as decimal when they fit in i128/u128
+                if self.data_type().is_integer() {
+                    if let Ok(n) = self.to_u128() {
+                        return write!(f, "{n}");
+                    }
+                    if let Ok(n) = self.to_i128() {
+                        return write!(f, "{n}");
+                    }
+                }
+
+                if f.alternate() {
+                    write!(f, "{tag}({content:#?})")
+                } else {
+                    write!(f, "{tag}({content:?})")
+                }
+            }
+        }
+    }
 }
 
 impl Value {

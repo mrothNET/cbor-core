@@ -1,4 +1,5 @@
 mod collections;
+mod diagnostic;
 mod integers;
 mod limits;
 mod rundgren;

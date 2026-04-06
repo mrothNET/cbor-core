@@ -32,7 +32,8 @@ Decoding rejects non-deterministic data as stated in the CBOR::Core draft.
 NaN values, including signaling NaNs and custom payloads, are preserved
 through round-trips.
 
-Not yet implemented: CBOR::Core diagnostic notation.
+`Debug` output uses CBOR::Core diagnostic notation, including `{:#?}` format
+for multi-line output with indentation for nested arrays and maps.
 
 ## Security
 

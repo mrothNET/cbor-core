@@ -10,6 +10,7 @@
 - Optional `time` feature: conversions between `time::UtcDateTime`/`time::OffsetDateTime` and `DateTime`/`EpochTime`/`Value`.
 - Optional `half` feature: `From`/`TryFrom` conversions between `Float`/`Value` and `half::f16`.
 - Decoder hardening against malicious input: recursion depth limit, collection length limit, and enhanced OOM mitigation with tracked allocation budgets.
+- `Debug` for `Value` outputs CBOR::Core diagnostic notation (Section 2.3.6), with `{:#?}` pretty-printing for arrays and maps.
 
 ### Changed
 
