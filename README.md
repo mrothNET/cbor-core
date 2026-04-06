@@ -4,36 +4,35 @@ A Rust implementation of [CBOR::Core](https://www.ietf.org/archive/id/draft-rund
 the deterministic subset of CBOR (RFC 8949).
 
 This crate encodes and decodes CBOR using owned data structures.
-Values can be constructed, inspected, and modified directly, using CBOR
-data types, and maintain deterministic encoding.
+Values can be constructed, inspected, and modified directly using
+CBOR data types while maintaining deterministic encoding.
 
-This library is in development. The API is not stable yet and may change
-in future releases.
+The API is not stable yet and may change in future releases.
 
 ## Status
 
-The implementation currently targets `draft-rundgren-cbor-core-25` (this
-might change in the future) and passes all test vectors from Appendix A
-of that specification, including rejection of non-deterministic encodings.
+The implementation targets `draft-rundgren-cbor-core-25` and passes
+all test vectors from Appendix A of that specification, including
+rejection of non-deterministic encodings.
 
-Supported types: integers and big integers, IEEE 754 floats (half, single,
-double), byte strings, text strings, arrays, maps, tagged values, and
-simple values (null, booleans).
+Supported types: integers and big integers, IEEE 754 floats (half,
+single, double), byte strings, text strings, arrays, maps, tagged
+values, and simple values (null, booleans).
 
-Arrays and maps are heterogeneous. Map keys can be any CBOR types including
-arrays and maps themselves.
+Arrays and maps are heterogeneous. Map keys can be any CBOR type
+including arrays and maps.
 
-Accessor methods see through tags transparently, including custom tags
-wrapping big integers (tags 2/3).
+Accessor methods look through tags, including custom tags wrapping
+big integers (tags 2/3).
 
-Encoding is deterministic: integers and floats use their shortest form,
-and map keys are encoded in sorted canonical order.
-Decoding rejects non-deterministic data as stated in the CBOR::Core draft.
-NaN values, including signaling NaNs and custom payloads, are preserved
-through round-trips.
+Encoding is deterministic: integers and floats use their shortest
+form, and map keys are encoded in sorted canonical order. Decoding
+rejects non-deterministic data. NaN values, including signaling NaNs
+and custom payloads, are preserved through round-trips.
 
-`Debug` output uses CBOR::Core diagnostic notation, including `{:#?}` format
-for multi-line output with indentation for nested arrays and maps.
+`Debug` output uses CBOR::Core diagnostic notation. The `{:#?}`
+format produces multi-line output with indentation for nested arrays
+and maps.
 
 ## Security
 
@@ -47,8 +46,8 @@ The decoder rejects malicious input:
 
 ## Optional features
 
-Optional integration with different external crates exists. Too enable
-an integration add the relevant feature flag to `Cargo.toml'.
+Optional integration with external crates. To enable an integration
+add the relevant feature flag to `Cargo.toml`.
 
 | Feature name | Enables |
 |---|---|

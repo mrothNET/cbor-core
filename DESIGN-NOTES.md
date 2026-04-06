@@ -5,28 +5,20 @@ source code or API documentation alone. It covers deliberate trade-offs,
 things that were intentionally left out, and choices that might
 otherwise look like oversights.
 
-## `Value::simple_value()` panics
+## Panicking constructors
 
-`Value::simple_value()` panics on invalid input because simple values
-are almost always used as fixed markers (like custom protocol flags),
-so errors must surface early during development. Applications that
-work with variable simple values need to validate them anyway to
-avoid collisions with null/boolean encodings.
-
-The panic is an acceptable trade-off for ergonomic use with
-(expected) constants; `SimpleValue::from_u8()` provides a fallible
-alternative.
+`simple_value()`, `date_time()`, and `epoch_time()` accept
+`impl TryInto<T>` and panic on conversion failure. This is a
+convenience trade-off. Users who want to handle errors can use
+the underlying `TryInto` conversions (`SimpleValue`, `DateTime`,
+`EpochTime`) directly.
 
 ## No Int53 support
 
-There are a few Rust crates with Int53-like types, but demand
-appears low. Building a full-featured Int53 type would likely
-not be worth the effort.
-
-Applications that need Int53 compatibility (e.g. for interoperability
-with JavaScript) can define their own type with `From`/`TryFrom`
-implementations and check whether a CBOR integer fits within the
-53-bit range themselves.
+This crate does not provide an Int53 type. Applications that need
+one (e.g. for JavaScript interoperability) can define their own
+wrapper with `From`/`TryFrom` to check whether a CBOR integer fits
+within the 53-bit range.
 
 ## NaN preservation via bit manipulation
 
@@ -54,15 +46,20 @@ This is intentional because CBOR::Core requires ordering on the
 resulting byte encoding. For integers that means positive integers
 are sorted before negative integers.
 
-## OOM mitigation in the decoder
+## Decoder hardening
 
-The decoder caps pre-allocation to 100 MB when reading byte/text
-strings, even if the declared length is larger. This prevents a
-malicious or corrupt length field from triggering an out-of-memory
-condition before any data is actually read.
+The decoder rejects malicious input early through limits:
 
-To be clear: this does not mean that decoding is limited to 100 MB
-strings, just that re-allocation occurs in these cases.
+Nesting depth for arrays, maps, and tags is capped at 200 levels,
+low enough to leave stack room for the calling application.
+
+Declared lengths for collections and strings are capped at
+1 billion and rejected before any element data is read.
+
+Pre-allocated capacity is capped at 100 MB per decode call, so a
+crafted length field cannot trigger a large allocation up front.
+This does not limit the size of decoded data, it only means that
+re-allocation occurs for strings or collections beyond 100 MB.
 
 ## Value is a public enum
 

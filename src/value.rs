@@ -1101,12 +1101,32 @@ impl Value {
         Self::Float(value.into())
     }
 
-    /// Create a CBOR array from a `Vec`, slice, or fixed-size array.
+    /// Create a CBOR array.
+    ///
+    /// Accepts any type that converts into [`Array`], including
+    /// `Vec<T>`, `[T; N]`, `&[T]`, and `Box<[T]>` where `T: Into<Value>`.
+    /// See [`Array`] for the full list of accepted types.
+    ///
+    /// ```
+    /// # use cbor_core::Value;
+    /// let a = Value::array([1, 2, 3]);
+    /// assert_eq!(a.as_array().unwrap().len(), 3);
+    /// ```
     pub fn array(array: impl Into<Array>) -> Self {
         Self::Array(array.into().0)
     }
 
     /// Create a CBOR map. Keys are stored in canonical order.
+    ///
+    /// Accepts any type that converts into [`Map`], including
+    /// `BTreeMap`, `&HashMap`, `Vec<(K, V)>`, `[(K, V); N]`, and
+    /// `&[(K, V)]`. See [`Map`] for the full list of accepted types.
+    ///
+    /// ```
+    /// # use cbor_core::Value;
+    /// let m = Value::map([("x", 1), ("y", 2)]);
+    /// assert_eq!(m.as_map().unwrap().len(), 2);
+    /// ```
     pub fn map(map: impl Into<Map>) -> Self {
         Self::Map(map.into().0)
     }
