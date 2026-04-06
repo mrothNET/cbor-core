@@ -19,11 +19,28 @@ impl TryFrom<Value> for bool {
     }
 }
 
+impl TryFrom<&Value> for bool {
+    type Error = Error;
+    fn try_from(value: &Value) -> Result<Self> {
+        value.to_bool()
+    }
+}
+
 impl TryFrom<Value> for SimpleValue {
     type Error = Error;
     fn try_from(value: Value) -> Result<Self> {
         match value {
             Value::SimpleValue(sv) => Ok(sv),
+            _ => Err(Error::IncompatibleType(value.data_type())),
+        }
+    }
+}
+
+impl TryFrom<&Value> for SimpleValue {
+    type Error = Error;
+    fn try_from(value: &Value) -> Result<Self> {
+        match value {
+            Value::SimpleValue(sv) => Ok(*sv),
             _ => Err(Error::IncompatibleType(value.data_type())),
         }
     }

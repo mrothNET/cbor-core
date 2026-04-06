@@ -25,9 +25,23 @@ impl TryFrom<Value> for f32 {
     }
 }
 
+impl TryFrom<&Value> for f32 {
+    type Error = Error;
+    fn try_from(value: &Value) -> Result<Self> {
+        value.to_f32()
+    }
+}
+
 impl TryFrom<Value> for f64 {
     type Error = Error;
     fn try_from(value: Value) -> Result<Self> {
+        value.to_f64()
+    }
+}
+
+impl TryFrom<&Value> for f64 {
+    type Error = Error;
+    fn try_from(value: &Value) -> Result<Self> {
         value.to_f64()
     }
 }

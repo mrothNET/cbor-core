@@ -31,6 +31,20 @@ impl TryFrom<Value> for Vec<Value> {
     }
 }
 
+impl<'a> TryFrom<&'a Value> for &'a [Value] {
+    type Error = Error;
+    fn try_from(value: &'a Value) -> Result<Self> {
+        value.as_array()
+    }
+}
+
+impl<'a> TryFrom<&'a mut Value> for &'a mut Vec<Value> {
+    type Error = Error;
+    fn try_from(value: &'a mut Value) -> Result<Self> {
+        value.as_array_mut()
+    }
+}
+
 impl TryFrom<Value> for Array {
     type Error = Error;
     fn try_from(value: Value) -> Result<Self> {

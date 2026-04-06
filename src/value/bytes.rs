@@ -36,3 +36,17 @@ impl TryFrom<Value> for Vec<u8> {
         value.into_bytes()
     }
 }
+
+impl<'a> TryFrom<&'a Value> for &'a [u8] {
+    type Error = Error;
+    fn try_from(value: &'a Value) -> Result<Self> {
+        value.as_bytes()
+    }
+}
+
+impl<'a> TryFrom<&'a mut Value> for &'a mut Vec<u8> {
+    type Error = Error;
+    fn try_from(value: &'a mut Value) -> Result<Self> {
+        value.as_bytes_mut()
+    }
+}

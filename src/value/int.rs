@@ -123,9 +123,23 @@ impl TryFrom<Value> for u8 {
     }
 }
 
+impl TryFrom<&Value> for u8 {
+    type Error = Error;
+    fn try_from(value: &Value) -> Result<Self> {
+        value.to_u8()
+    }
+}
+
 impl TryFrom<Value> for u16 {
     type Error = Error;
     fn try_from(value: Value) -> Result<Self> {
+        value.to_u16()
+    }
+}
+
+impl TryFrom<&Value> for u16 {
+    type Error = Error;
+    fn try_from(value: &Value) -> Result<Self> {
         value.to_u16()
     }
 }
@@ -137,9 +151,23 @@ impl TryFrom<Value> for u32 {
     }
 }
 
+impl TryFrom<&Value> for u32 {
+    type Error = Error;
+    fn try_from(value: &Value) -> Result<Self> {
+        value.to_u32()
+    }
+}
+
 impl TryFrom<Value> for u64 {
     type Error = Error;
     fn try_from(value: Value) -> Result<Self> {
+        value.to_u64()
+    }
+}
+
+impl TryFrom<&Value> for u64 {
+    type Error = Error;
+    fn try_from(value: &Value) -> Result<Self> {
         value.to_u64()
     }
 }
@@ -151,9 +179,23 @@ impl TryFrom<Value> for u128 {
     }
 }
 
+impl TryFrom<&Value> for u128 {
+    type Error = Error;
+    fn try_from(value: &Value) -> Result<Self> {
+        value.to_u128()
+    }
+}
+
 impl TryFrom<Value> for usize {
     type Error = Error;
     fn try_from(value: Value) -> Result<Self> {
+        value.to_usize()
+    }
+}
+
+impl TryFrom<&Value> for usize {
+    type Error = Error;
+    fn try_from(value: &Value) -> Result<Self> {
         value.to_usize()
     }
 }
@@ -165,9 +207,23 @@ impl TryFrom<Value> for i8 {
     }
 }
 
+impl TryFrom<&Value> for i8 {
+    type Error = Error;
+    fn try_from(value: &Value) -> Result<Self> {
+        value.to_i8()
+    }
+}
+
 impl TryFrom<Value> for i16 {
     type Error = Error;
     fn try_from(value: Value) -> Result<Self> {
+        value.to_i16()
+    }
+}
+
+impl TryFrom<&Value> for i16 {
+    type Error = Error;
+    fn try_from(value: &Value) -> Result<Self> {
         value.to_i16()
     }
 }
@@ -179,9 +235,23 @@ impl TryFrom<Value> for i32 {
     }
 }
 
+impl TryFrom<&Value> for i32 {
+    type Error = Error;
+    fn try_from(value: &Value) -> Result<Self> {
+        value.to_i32()
+    }
+}
+
 impl TryFrom<Value> for i64 {
     type Error = Error;
     fn try_from(value: Value) -> Result<Self> {
+        value.to_i64()
+    }
+}
+
+impl TryFrom<&Value> for i64 {
+    type Error = Error;
+    fn try_from(value: &Value) -> Result<Self> {
         value.to_i64()
     }
 }
@@ -192,10 +262,23 @@ impl TryFrom<Value> for i128 {
         value.to_i128()
     }
 }
+impl TryFrom<&Value> for i128 {
+    type Error = Error;
+    fn try_from(value: &Value) -> Result<Self> {
+        value.to_i128()
+    }
+}
 
 impl TryFrom<Value> for isize {
     type Error = Error;
     fn try_from(value: Value) -> Result<Self> {
+        value.to_isize()
+    }
+}
+
+impl TryFrom<&Value> for isize {
+    type Error = Error;
+    fn try_from(value: &Value) -> Result<Self> {
         value.to_isize()
     }
 }

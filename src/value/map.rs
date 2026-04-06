@@ -19,6 +19,20 @@ impl TryFrom<Value> for BTreeMap<Value, Value> {
     }
 }
 
+impl<'a> TryFrom<&'a Value> for &'a BTreeMap<Value, Value> {
+    type Error = Error;
+    fn try_from(value: &'a Value) -> Result<Self> {
+        value.as_map()
+    }
+}
+
+impl<'a> TryFrom<&'a mut Value> for &'a mut BTreeMap<Value, Value> {
+    type Error = Error;
+    fn try_from(value: &'a mut Value) -> Result<Self> {
+        value.as_map_mut()
+    }
+}
+
 impl TryFrom<Value> for Map {
     type Error = Error;
     fn try_from(value: Value) -> Result<Self> {
