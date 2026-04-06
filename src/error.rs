@@ -2,10 +2,53 @@ use std::{fmt, io, string::FromUtf8Error};
 
 use crate::DataType;
 
-/// Errors produced during CBOR encoding, decoding, or value access.
+/// Errors produced by this crate.
+///
+/// Errors fall into three categories:
+///
+/// **Decoding errors** are returned by [`Value::decode`](crate::Value::decode),
+/// [`Value::read_from`](crate::Value::read_from),
+/// and [`Value::read_hex_from`](crate::Value::read_hex_from) when the input is not valid deterministic
+/// CBOR: [`Malformed`](Self::Malformed), [`NonDeterministic`](Self::NonDeterministic),
+/// [`UnexpectedEof`](Self::UnexpectedEof), [`LengthTooLarge`](Self::LengthTooLarge),
+/// [`InvalidUtf8`](Self::InvalidUtf8), [`InvalidHex`](Self::InvalidHex).
+///
+/// **Accessor errors** are returned by the `to_*`, `as_*`, and `into_*`
+/// methods on [`Value`](crate::Value) when the value does not match the requested type:
+/// [`IncompatibleType`](Self::IncompatibleType), [`Overflow`](Self::Overflow),
+/// [`NegativeUnsigned`](Self::NegativeUnsigned), [`Precision`](Self::Precision),
+/// [`InvalidSimpleValue`](Self::InvalidSimpleValue).
+///
+/// **Validation errors** are returned during construction of typed helpers
+/// like [`DateTime`](crate::DateTime) and [`EpochTime`](crate::EpochTime):
+/// [`InvalidFormat`](Self::InvalidFormat), [`InvalidValue`](Self::InvalidValue).
+///
+/// `Error` is `Copy`, `Eq`, `Ord`, and `Hash`, so it can be matched,
+/// compared, and used as a map key without allocation. I/O errors are
+/// handled separately by [`IoError`], which wraps either an `Error` or
+/// a [`std::io::Error`]. This separation keeps `Error` small and
+/// `Copy`-able while still supporting streaming operations that can
+/// fail with I/O problems.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[non_exhaustive]
 pub enum Error {
+    // --- Decoding errors ---
+
+    /// Binary CBOR data is structurally broken.
+    Malformed,
+    /// CBOR encoding is valid but not deterministic (non-shortest form, unsorted map keys, etc.).
+    NonDeterministic,
+    /// Input ended before a complete data item was read.
+    UnexpectedEof,
+    /// Declared length exceeds addressable memory or reasonable size.
+    LengthTooLarge,
+    /// Text string contains invalid UTF-8.
+    InvalidUtf8,
+    /// Hex input contains invalid characters.
+    InvalidHex,
+
+    // --- Accessor errors ---
+
     /// Accessor called on a value of the wrong CBOR type.
     IncompatibleType(DataType),
     /// Integer does not fit in the target type.
@@ -16,38 +59,29 @@ pub enum Error {
     Precision,
     /// Simple value number is in the reserved range 24-31.
     InvalidSimpleValue,
-    /// Binary CBOR data is malformed.
-    Malformed,
-    /// CBOR encoding is valid but not deterministic (non-shortest form, unsorted map keys, etc.).
-    NonDeterministic,
-    /// Text string contains invalid UTF-8.
-    InvalidUtf8,
-    /// Text string contains invalid hex characters.
-    InvalidHex,
-    /// Input ended before a complete data item was read.
-    UnexpectedEof,
-    /// Declared length exceeds addressable memory or reasonable size.
-    LengthTooLarge,
-    /// A text field or similar value had invalid syntax for its expected format.
+
+    // --- Validation errors ---
+
+    /// A text field had invalid syntax for its expected format.
     InvalidFormat,
-    /// A decoded value violates semantic constraints.
+    /// A value violates semantic constraints.
     InvalidValue,
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Malformed => write!(f, "malformed CBOR encoding"),
+            Self::NonDeterministic => write!(f, "non-deterministic CBOR encoding"),
+            Self::UnexpectedEof => write!(f, "unexpected end of input"),
+            Self::LengthTooLarge => write!(f, "length exceeds reasonable size"),
+            Self::InvalidUtf8 => write!(f, "invalid UTF-8 in text string"),
+            Self::InvalidHex => write!(f, "invalid hex character"),
             Self::IncompatibleType(t) => write!(f, "incompatible CBOR type {name}", name = t.name()),
             Self::Overflow => write!(f, "integer overflow"),
             Self::NegativeUnsigned => write!(f, "negative value for unsigned type"),
             Self::Precision => write!(f, "float precision loss"),
             Self::InvalidSimpleValue => write!(f, "invalid CBOR simple value"),
-            Self::Malformed => write!(f, "malformed CBOR encoding"),
-            Self::NonDeterministic => write!(f, "non-deterministic CBOR encoding"),
-            Self::InvalidUtf8 => write!(f, "invalid UTF-8 in text string"),
-            Self::InvalidHex => write!(f, "invalid hex character in text string"),
-            Self::UnexpectedEof => write!(f, "unexpected end of input"),
-            Self::LengthTooLarge => write!(f, "length exceeds reasonable size"),
             Self::InvalidFormat => write!(f, "invalid syntax for expected format"),
             Self::InvalidValue => write!(f, "invalid value"),
         }
