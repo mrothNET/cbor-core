@@ -105,6 +105,7 @@ fn to_rug_integer(value: &Value) -> Result<Integer> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::DataType;
 
     fn roundtrip(n: Integer) -> Integer {
         let encoded = Value::from(&n).encode();
@@ -211,7 +212,13 @@ mod tests {
 
     #[test]
     fn non_integer_errors() {
-        assert_eq!(Integer::try_from(Value::from(0.5)), Err(Error::IncompatibleType));
-        assert_eq!(Integer::try_from(Value::null()), Err(Error::IncompatibleType));
+        assert_eq!(
+            Integer::try_from(Value::from(0.5)),
+            Err(Error::IncompatibleType(DataType::Float16))
+        );
+        assert_eq!(
+            Integer::try_from(Value::null()),
+            Err(Error::IncompatibleType(DataType::Null))
+        );
     }
 }

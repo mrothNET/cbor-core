@@ -24,7 +24,7 @@ impl TryFrom<Value> for SimpleValue {
     fn try_from(value: Value) -> Result<Self> {
         match value {
             Value::SimpleValue(sv) => Ok(sv),
-            _ => Err(Error::IncompatibleType),
+            _ => Err(Error::IncompatibleType(value.data_type())),
         }
     }
 }

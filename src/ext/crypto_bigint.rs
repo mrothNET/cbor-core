@@ -297,6 +297,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::DataType;
     use crypto_bigint::{U64, U128, U256};
 
     type I128 = Int<{ U128::LIMBS }>;
@@ -386,8 +387,14 @@ mod tests {
 
     #[test]
     fn uint_non_integer_errors() {
-        assert_eq!(U256::try_from(Value::from("hello")), Err(Error::IncompatibleType));
-        assert_eq!(U256::try_from(Value::null()), Err(Error::IncompatibleType));
+        assert_eq!(
+            U256::try_from(Value::from("hello")),
+            Err(Error::IncompatibleType(DataType::Text))
+        );
+        assert_eq!(
+            U256::try_from(Value::null()),
+            Err(Error::IncompatibleType(DataType::Null))
+        );
     }
 
     #[test]
@@ -466,8 +473,14 @@ mod tests {
 
     #[test]
     fn int_non_integer_errors() {
-        assert_eq!(I256::try_from(Value::from(0.5)), Err(Error::IncompatibleType));
-        assert_eq!(I256::try_from(Value::null()), Err(Error::IncompatibleType));
+        assert_eq!(
+            I256::try_from(Value::from(0.5)),
+            Err(Error::IncompatibleType(DataType::Float16))
+        );
+        assert_eq!(
+            I256::try_from(Value::null()),
+            Err(Error::IncompatibleType(DataType::Null))
+        );
     }
 
     // ---- NonZero tests ----

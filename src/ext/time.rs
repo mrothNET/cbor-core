@@ -228,7 +228,7 @@ mod tests {
 
     use time::{Date, Month, OffsetDateTime, Time, UtcDateTime, UtcOffset, format_description::well_known::Rfc3339};
 
-    use crate::{Float, Value};
+    use crate::{DataType, Error, Float, Value};
 
     // ---- time::UtcDateTime → crate::DateTime (tag 0) ----
 
@@ -281,7 +281,7 @@ mod tests {
     fn time_to_epoch_time_negative() {
         // Before epoch — should fail (our EpochTime is non-negative only)
         let dt = UtcDateTime::from_unix_timestamp(-1).unwrap();
-        assert_eq!(crate::EpochTime::try_from(dt), Err(crate::Error::InvalidValue));
+        assert_eq!(crate::EpochTime::try_from(dt), Err(Error::InvalidValue));
     }
 
     // ---- Value → time::UtcDateTime ----
@@ -341,18 +341,18 @@ mod tests {
     fn value_non_time_to_time_errors() {
         assert_eq!(
             UtcDateTime::try_from(Value::from("not a date")),
-            Err(crate::Error::InvalidFormat)
+            Err(Error::InvalidFormat)
         );
         assert_eq!(
             UtcDateTime::try_from(Value::null()),
-            Err(crate::Error::IncompatibleType)
+            Err(Error::IncompatibleType(DataType::Null))
         );
     }
 
     #[test]
     fn value_negative_epoch_to_time_errors() {
         let v = Value::from(-1);
-        assert_eq!(UtcDateTime::try_from(v), Err(crate::Error::InvalidValue));
+        assert_eq!(UtcDateTime::try_from(v), Err(Error::InvalidValue));
     }
 
     // ---- SystemTime ↔ Value ↔ chrono roundtrips ----

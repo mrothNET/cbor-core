@@ -37,7 +37,7 @@ impl TryFrom<Value> for Float {
     fn try_from(value: Value) -> Result<Self> {
         match value {
             Value::Float(f) => Ok(f),
-            _ => Err(Error::IncompatibleType),
+            _ => Err(Error::IncompatibleType(value.data_type())),
         }
     }
 }

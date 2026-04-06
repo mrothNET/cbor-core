@@ -52,6 +52,26 @@ pub enum DataType {
 }
 
 impl DataType {
+    pub fn name(&self) -> &'static str {
+        match self {
+            DataType::Null => "Null",
+            DataType::Bool => "Bool",
+            DataType::Simple => "Simple",
+            DataType::Int => "Int",
+            DataType::BigInt => "Bigint",
+            DataType::DateTime => "DateTime",
+            DataType::EpochTime => "EpochTime",
+            DataType::Float16 => "Float16",
+            DataType::Float32 => "Float32",
+            DataType::Float64 => "Float64",
+            DataType::Bytes => "Bytes",
+            DataType::Text => "Text",
+            DataType::Array => "Array",
+            DataType::Map => "Map",
+            DataType::Tag => "Tag",
+        }
+    }
+
     /// True if this is a null value.
     #[must_use]
     pub const fn is_null(&self) -> bool {

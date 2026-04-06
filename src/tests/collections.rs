@@ -1,4 +1,4 @@
-use crate::{Error, Value, array, map};
+use crate::{DataType, Error, Value, array, map};
 
 // ===== Empty collections =====
 
@@ -319,13 +319,13 @@ fn map_with_array_keys() {
 #[test]
 fn map_operations_on_non_map() {
     let v = Value::from(42);
-    assert_eq!(v.as_map(), Err(Error::IncompatibleType));
+    assert_eq!(v.as_map(), Err(Error::IncompatibleType(DataType::Int)));
 }
 
 #[test]
 fn array_operations_on_non_array() {
     let v = Value::from(42);
-    assert_eq!(v.as_array(), Err(Error::IncompatibleType));
+    assert_eq!(v.as_array(), Err(Error::IncompatibleType(DataType::Int)));
 }
 
 // ===== Complex nested structure =====

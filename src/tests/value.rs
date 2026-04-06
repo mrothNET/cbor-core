@@ -364,7 +364,7 @@ fn tagged_bool_accessor() {
 fn nested_tags_accessor() {
     let v = Value::tag(100, Value::tag(200, 42_u32));
     assert_eq!(v.to_u32(), Ok(42));
-    assert_eq!(v.as_str(), Err(Error::IncompatibleType));
+    assert_eq!(v.as_str(), Err(Error::IncompatibleType(DataType::Int)));
 }
 
 #[test]
@@ -643,11 +643,11 @@ fn read_hex_from_stream() {
 #[test]
 fn incompatible_type_errors() {
     let v = Value::from("hello");
-    assert_eq!(v.to_u8(), Err(Error::IncompatibleType));
-    assert_eq!(v.to_bool(), Err(Error::IncompatibleType));
-    assert_eq!(v.to_simple_value(), Err(Error::IncompatibleType));
-    assert_eq!(v.as_bytes(), Err(Error::IncompatibleType));
-    assert_eq!(v.tag_number(), Err(Error::IncompatibleType));
+    assert_eq!(v.to_u8(), Err(Error::IncompatibleType(DataType::Text)));
+    assert_eq!(v.to_bool(), Err(Error::IncompatibleType(DataType::Text)));
+    assert_eq!(v.to_simple_value(), Err(Error::IncompatibleType(DataType::Text)));
+    assert_eq!(v.as_bytes(), Err(Error::IncompatibleType(DataType::Text)));
+    assert_eq!(v.tag_number(), Err(Error::IncompatibleType(DataType::Text)));
 }
 
 // ===== Decode error cases =====

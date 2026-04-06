@@ -162,6 +162,7 @@ fn to_num_bigint(value: &Value) -> Result<BigInt> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::DataType;
 
     fn roundtrip_biguint(n: BigUint) -> BigUint {
         let encoded = Value::from(n).encode();
@@ -226,8 +227,14 @@ mod tests {
 
     #[test]
     fn biguint_non_integer_errors() {
-        assert_eq!(BigUint::try_from(Value::from("hello")), Err(Error::IncompatibleType));
-        assert_eq!(BigUint::try_from(Value::null()), Err(Error::IncompatibleType));
+        assert_eq!(
+            BigUint::try_from(Value::from("hello")),
+            Err(Error::IncompatibleType(DataType::Text))
+        );
+        assert_eq!(
+            BigUint::try_from(Value::null()),
+            Err(Error::IncompatibleType(DataType::Null))
+        );
     }
 
     #[test]
@@ -299,8 +306,14 @@ mod tests {
 
     #[test]
     fn bigint_non_integer_errors() {
-        assert_eq!(BigInt::try_from(Value::from(0.5)), Err(Error::IncompatibleType));
-        assert_eq!(BigInt::try_from(Value::null()), Err(Error::IncompatibleType));
+        assert_eq!(
+            BigInt::try_from(Value::from(0.5)),
+            Err(Error::IncompatibleType(DataType::Float16))
+        );
+        assert_eq!(
+            BigInt::try_from(Value::null()),
+            Err(Error::IncompatibleType(DataType::Null))
+        );
     }
 
     // ---- Cross-type consistency ----

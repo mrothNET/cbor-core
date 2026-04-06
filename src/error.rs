@@ -1,11 +1,13 @@
 use std::{fmt, io, string::FromUtf8Error};
 
+use crate::DataType;
+
 /// Errors produced during CBOR encoding, decoding, or value access.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[non_exhaustive]
 pub enum Error {
     /// Accessor called on a value of the wrong CBOR type.
-    IncompatibleType,
+    IncompatibleType(DataType),
     /// Integer does not fit in the target type.
     Overflow,
     /// Attempted to read a negative integer as an unsigned type.
@@ -35,7 +37,7 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::IncompatibleType => write!(f, "incompatible CBOR type"),
+            Self::IncompatibleType(t) => write!(f, "incompatible CBOR type {name}", name = t.name()),
             Self::Overflow => write!(f, "integer overflow"),
             Self::NegativeUnsigned => write!(f, "negative value for unsigned type"),
             Self::Precision => write!(f, "precision loss"),

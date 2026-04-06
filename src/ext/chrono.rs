@@ -173,7 +173,7 @@ mod tests {
 
     use chrono::{DateTime, FixedOffset, NaiveDate, SecondsFormat, Utc};
 
-    use crate::{Float, Value};
+    use crate::{DataType, Error, Float, Value};
 
     // ---- chrono::DateTime → crate::DateTime (tag 0) ----
 
@@ -232,7 +232,7 @@ mod tests {
     fn chrono_to_epoch_time_negative() {
         // Before epoch — should fail (CBOR EpochTime is non-negative only)
         let chrono_dt = DateTime::from_timestamp(-1, 0).unwrap();
-        assert_eq!(crate::EpochTime::try_from(chrono_dt), Err(crate::Error::InvalidValue));
+        assert_eq!(crate::EpochTime::try_from(chrono_dt), Err(Error::InvalidValue));
     }
 
     // ---- Value → chrono::DateTime<Utc> ----
@@ -293,18 +293,18 @@ mod tests {
     fn value_non_time_to_chrono_errors() {
         assert_eq!(
             DateTime::<Utc>::try_from(Value::from("not a date")),
-            Err(crate::Error::InvalidFormat)
+            Err(Error::InvalidFormat)
         );
         assert_eq!(
             DateTime::<Utc>::try_from(Value::null()),
-            Err(crate::Error::IncompatibleType)
+            Err(Error::IncompatibleType(DataType::Null))
         );
     }
 
     #[test]
     fn value_negative_epoch_to_chrono_errors() {
         let v = Value::from(-1);
-        assert_eq!(DateTime::<Utc>::try_from(v), Err(crate::Error::InvalidValue));
+        assert_eq!(DateTime::<Utc>::try_from(v), Err(Error::InvalidValue));
     }
 
     // ---- SystemTime ↔ Value ↔ chrono roundtrips ----

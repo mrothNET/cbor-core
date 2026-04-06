@@ -1179,7 +1179,7 @@ impl Value {
         match self {
             Self::SimpleValue(sv) => sv.to_bool(),
             Self::Tag(_number, content) => content.untagged().to_bool(),
-            _ => Err(Error::IncompatibleType),
+            _ => Err(Error::IncompatibleType(self.data_type())),
         }
     }
 
@@ -1188,7 +1188,7 @@ impl Value {
         match self {
             Self::SimpleValue(sv) => Ok(sv.0),
             Self::Tag(_number, content) => content.untagged().to_simple_value(),
-            _ => Err(Error::IncompatibleType),
+            _ => Err(Error::IncompatibleType(self.data_type())),
         }
     }
 
@@ -1206,7 +1206,7 @@ impl Value {
 
             Self::Tag(Tag::NEG_BIG_INT, content) if content.is_bytes() => Err(Error::NegativeUnsigned),
             Self::Tag(_other_number, content) => content.peeled().to_uint(),
-            _ => Err(Error::IncompatibleType),
+            _ => Err(Error::IncompatibleType(self.data_type())),
         }
     }
 
@@ -1255,7 +1255,7 @@ impl Value {
             }
 
             Self::Tag(_other_number, content) => content.peeled().as_integer_bytes(),
-            _ => Err(Error::IncompatibleType),
+            _ => Err(Error::IncompatibleType(self.data_type())),
         }
     }
 
@@ -1278,7 +1278,7 @@ impl Value {
             }
 
             Self::Tag(_other_number, content) => content.peeled().to_sint(),
-            _ => Err(Error::IncompatibleType),
+            _ => Err(Error::IncompatibleType(self.data_type())),
         }
     }
 
@@ -1319,7 +1319,7 @@ impl Value {
         match self {
             Self::Float(float) => float.to_f32(),
             Self::Tag(_number, content) => content.untagged().to_f32(),
-            _ => Err(Error::IncompatibleType),
+            _ => Err(Error::IncompatibleType(self.data_type())),
         }
     }
 
@@ -1330,7 +1330,7 @@ impl Value {
         match self {
             Self::Float(float) => Ok(float.to_f64()),
             Self::Tag(_number, content) => content.untagged().to_f64(),
-            _ => Err(Error::IncompatibleType),
+            _ => Err(Error::IncompatibleType(self.data_type())),
         }
     }
 
@@ -1379,7 +1379,7 @@ impl Value {
         match self {
             Self::ByteString(vec) => Ok(vec.as_slice()),
             Self::Tag(_number, content) => content.untagged().as_bytes(),
-            _ => Err(Error::IncompatibleType),
+            _ => Err(Error::IncompatibleType(self.data_type())),
         }
     }
 
@@ -1388,7 +1388,7 @@ impl Value {
         match self {
             Self::ByteString(vec) => Ok(vec),
             Self::Tag(_number, content) => content.untagged_mut().as_bytes_mut(),
-            _ => Err(Error::IncompatibleType),
+            _ => Err(Error::IncompatibleType(self.data_type())),
         }
     }
 
@@ -1397,7 +1397,7 @@ impl Value {
         match self {
             Self::ByteString(vec) => Ok(vec),
             Self::Tag(_number, content) => content.into_untagged().into_bytes(),
-            _ => Err(Error::IncompatibleType),
+            _ => Err(Error::IncompatibleType(self.data_type())),
         }
     }
 
@@ -1406,7 +1406,7 @@ impl Value {
         match self {
             Self::TextString(s) => Ok(s.as_str()),
             Self::Tag(_number, content) => content.untagged().as_str(),
-            _ => Err(Error::IncompatibleType),
+            _ => Err(Error::IncompatibleType(self.data_type())),
         }
     }
 
@@ -1415,7 +1415,7 @@ impl Value {
         match self {
             Self::TextString(s) => Ok(s),
             Self::Tag(_number, content) => content.untagged_mut().as_string_mut(),
-            _ => Err(Error::IncompatibleType),
+            _ => Err(Error::IncompatibleType(self.data_type())),
         }
     }
 
@@ -1424,7 +1424,7 @@ impl Value {
         match self {
             Self::TextString(s) => Ok(s),
             Self::Tag(_number, content) => content.into_untagged().into_string(),
-            _ => Err(Error::IncompatibleType),
+            _ => Err(Error::IncompatibleType(self.data_type())),
         }
     }
 
@@ -1433,7 +1433,7 @@ impl Value {
         match self {
             Self::Array(v) => Ok(v.as_slice()),
             Self::Tag(_number, content) => content.untagged().as_array(),
-            _ => Err(Error::IncompatibleType),
+            _ => Err(Error::IncompatibleType(self.data_type())),
         }
     }
 
@@ -1442,7 +1442,7 @@ impl Value {
         match self {
             Self::Array(v) => Ok(v),
             Self::Tag(_number, content) => content.untagged_mut().as_array_mut(),
-            _ => Err(Error::IncompatibleType),
+            _ => Err(Error::IncompatibleType(self.data_type())),
         }
     }
 
@@ -1451,7 +1451,7 @@ impl Value {
         match self {
             Self::Array(v) => Ok(v),
             Self::Tag(_number, content) => content.into_untagged().into_array(),
-            _ => Err(Error::IncompatibleType),
+            _ => Err(Error::IncompatibleType(self.data_type())),
         }
     }
 
@@ -1460,7 +1460,7 @@ impl Value {
         match self {
             Self::Map(m) => Ok(m),
             Self::Tag(_number, content) => content.untagged().as_map(),
-            _ => Err(Error::IncompatibleType),
+            _ => Err(Error::IncompatibleType(self.data_type())),
         }
     }
 
@@ -1469,7 +1469,7 @@ impl Value {
         match self {
             Self::Map(m) => Ok(m),
             Self::Tag(_number, content) => content.untagged_mut().as_map_mut(),
-            _ => Err(Error::IncompatibleType),
+            _ => Err(Error::IncompatibleType(self.data_type())),
         }
     }
 
@@ -1478,7 +1478,7 @@ impl Value {
         match self {
             Self::Map(m) => Ok(m),
             Self::Tag(_number, content) => content.into_untagged().into_map(),
-            _ => Err(Error::IncompatibleType),
+            _ => Err(Error::IncompatibleType(self.data_type())),
         }
     }
 
@@ -1533,7 +1533,7 @@ impl Value {
     pub const fn tag_number(&self) -> Result<u64> {
         match self {
             Self::Tag(number, _content) => Ok(*number),
-            _ => Err(Error::IncompatibleType),
+            _ => Err(Error::IncompatibleType(self.data_type())),
         }
     }
 
@@ -1541,7 +1541,7 @@ impl Value {
     pub const fn tag_content(&self) -> Result<&Self> {
         match self {
             Self::Tag(_tag, content) => Ok(content),
-            _ => Err(Error::IncompatibleType),
+            _ => Err(Error::IncompatibleType(self.data_type())),
         }
     }
 
@@ -1549,7 +1549,7 @@ impl Value {
     pub const fn tag_content_mut(&mut self) -> Result<&mut Self> {
         match self {
             Self::Tag(_, value) => Ok(value),
-            _ => Err(Error::IncompatibleType),
+            _ => Err(Error::IncompatibleType(self.data_type())),
         }
     }
 
@@ -1557,7 +1557,7 @@ impl Value {
     pub fn as_tag(&self) -> Result<(u64, &Value)> {
         match self {
             Self::Tag(number, content) => Ok((*number, content)),
-            _ => Err(Error::IncompatibleType),
+            _ => Err(Error::IncompatibleType(self.data_type())),
         }
     }
 
@@ -1565,7 +1565,7 @@ impl Value {
     pub fn as_tag_mut(&mut self) -> Result<(u64, &mut Value)> {
         match self {
             Self::Tag(number, content) => Ok((*number, content)),
-            _ => Err(Error::IncompatibleType),
+            _ => Err(Error::IncompatibleType(self.data_type())),
         }
     }
 
@@ -1573,7 +1573,7 @@ impl Value {
     pub fn into_tag(self) -> Result<(u64, Value)> {
         match self {
             Self::Tag(number, content) => Ok((number, *content)),
-            _ => Err(Error::IncompatibleType),
+            _ => Err(Error::IncompatibleType(self.data_type())),
         }
     }
 

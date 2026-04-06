@@ -29,7 +29,7 @@ impl Value {
         match self {
             Self::Float(float) => float.to_f16(),
             Self::Tag(_number, content) => content.untagged().to_f16(),
-            _ => Err(Error::IncompatibleType),
+            _ => Err(Error::IncompatibleType(self.data_type())),
         }
     }
 }
@@ -55,7 +55,7 @@ impl TryFrom<Value> for f16 {
 mod tests {
     use half::f16;
 
-    use crate::{Error, Float, Value, float::Inner};
+    use crate::{DataType, Error, Float, Value, float::Inner};
 
     // -------------------------------------------------------------------------
     // Float::to_f16
@@ -155,13 +155,13 @@ mod tests {
     #[test]
     fn value_to_f16_incompatible_type() {
         let val = Value::Unsigned(42);
-        assert_eq!(val.to_f16(), Err(Error::IncompatibleType));
+        assert_eq!(val.to_f16(), Err(Error::IncompatibleType(DataType::Int)));
     }
 
     #[test]
     fn value_to_f16_string_is_incompatible() {
         let val = Value::from("hello");
-        assert_eq!(val.to_f16(), Err(Error::IncompatibleType));
+        assert_eq!(val.to_f16(), Err(Error::IncompatibleType(DataType::Text)));
     }
 
     #[test]
@@ -194,6 +194,6 @@ mod tests {
     #[test]
     fn try_from_value_for_f16_err() {
         let val = Value::Unsigned(1);
-        assert_eq!(f16::try_from(val), Err(Error::IncompatibleType));
+        assert_eq!(f16::try_from(val), Err(Error::IncompatibleType(DataType::Int)));
     }
 }
