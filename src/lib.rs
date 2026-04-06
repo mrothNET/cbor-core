@@ -1,4 +1,5 @@
 #![forbid(unsafe_code)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 //! Deterministic CBOR encoder and decoder following the
 //! [CBOR::Core](https://www.ietf.org/archive/id/draft-rundgren-cbor-core-25.html)
