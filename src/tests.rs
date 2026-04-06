@@ -1,5 +1,6 @@
 mod collections;
 mod integers;
+mod limits;
 mod rundgren;
 mod simple_value;
 mod value;

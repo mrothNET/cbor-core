@@ -4,9 +4,8 @@ A Rust implementation of [CBOR::Core](https://www.ietf.org/archive/id/draft-rund
 the deterministic subset of CBOR (RFC 8949).
 
 This crate encodes and decodes CBOR using owned data structures.
-Values can be constructed, inspected, and modified directly,
-which is a better fit when the goal is to work with CBOR as a data format
-in its own right.
+Values can be constructed, inspected, and modified directly, using CBOR
+data types, and maintain deterministic encoding.
 
 This library is in development. The API is not stable yet and may change
 in future releases.
@@ -21,7 +20,7 @@ Supported types: integers and big integers, IEEE 754 floats (half, single,
 double), byte strings, text strings, arrays, maps, tagged values, and
 simple values (null, booleans).
 
-Arrays and maps are heterogeneous and keys can be any CBOR types including
+Arrays and maps are heterogeneous. Map keys can be any CBOR types including
 arrays and maps themselves.
 
 Accessor methods see through tags transparently, including custom tags
@@ -35,16 +34,29 @@ through round-trips.
 
 Not yet implemented: CBOR::Core diagnostic notation.
 
+## Security
+
+The decoder rejects malicious input:
+
+- Nesting depth for arrays, maps, and tags is limited to 200 levels.
+- Declared lengths for arrays, maps, byte strings, and text strings are
+  capped at 1 billion.
+- Pre-allocated capacity is bounded to 100 MB per decode call.
+- Declared lengths that exceed the available data produce an error.
+
 ## Optional features
+
+Optional integration with different external crates exists. Too enable
+an integration add the relevant feature flag to `Cargo.toml'.
 
 | Feature name | Enables |
 |---|---|
+| `half` | `From`/`TryFrom` conversions between `Float`/`Value` and `half::f16` |
 | `num-bigint` | `From`/`TryFrom` conversions between `Value` and `num_bigint::BigInt`/`BigUint` |
 | `crypto-bigint` | `From`/`TryFrom` conversions between `Value` and `crypto_bigint::Uint`/`Int`/`NonZero` |
 | `rug` | `From`/`TryFrom` conversions between `Value` and `rug::Integer` |
 | `chrono` | Conversions between `chrono::DateTime` and `DateTime`/`EpochTime`/`Value` |
 | `time` | Conversions between `time::UtcDateTime`/`time::OffsetDateTime` and `DateTime`/`EpochTime`/`Value` |
-| `half` | `From`/`TryFrom` conversions between `Float`/`Value` and `half::f16` |
 
 ## Usage
 

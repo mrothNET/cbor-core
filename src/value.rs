@@ -19,6 +19,10 @@ use crate::{
     SimpleValue, Tag, util::u128_from_slice,
 };
 
+const OOM_MITIGATION: usize = 100_000_000; // maximum size to reserve capacity
+const LENGTH_LIMIT: u64 = 1_000_000_000; // length limit for arrays, maps, test and byte strings
+const RECURSION_LIMIT: u16 = 200; // maximum hierarchical data structure depth
+
 /// A single CBOR data item.
 ///
 /// `Value` covers all CBOR major types: integers, floats, byte and text
@@ -531,10 +535,14 @@ impl Value {
     /// assert_eq!(v.to_u32().unwrap(), 42);
     /// ```
     pub fn read_from(mut reader: impl io::Read) -> crate::IoResult<Self> {
-        Self::read_from_inner(&mut reader)
+        Self::read_from_inner(&mut reader, RECURSION_LIMIT, OOM_MITIGATION)
     }
 
-    fn read_from_inner(reader: &mut impl io::Read) -> crate::IoResult<Self> {
+    fn read_from_inner(
+        reader: &mut impl io::Read,
+        recursion_limit: u16,
+        oom_mitigation: usize,
+    ) -> crate::IoResult<Self> {
         let ctrl_byte = {
             let mut buf = [0];
             reader.read_exact(&mut buf)?;
@@ -591,20 +599,42 @@ impl Value {
             }
 
             Major::ARRAY => {
-                let mut vec = Vec::with_capacity(argument.try_into().unwrap());
-                for _ in 0..argument {
-                    vec.push(Self::read_from_inner(reader)?);
+                if argument > LENGTH_LIMIT {
+                    return Error::LengthTooLarge.into();
                 }
+
+                let Some(recursion_limit) = recursion_limit.checked_sub(1) else {
+                    return Error::LengthTooLarge.into();
+                };
+
+                let request: usize = argument.try_into().or(Err(Error::LengthTooLarge))?;
+                let granted = request.min(oom_mitigation / size_of::<Self>());
+                let oom_mitigation = oom_mitigation - granted * size_of::<Self>();
+
+                let mut vec = Vec::with_capacity(granted);
+
+                for _ in 0..argument {
+                    vec.push(Self::read_from_inner(reader, recursion_limit, oom_mitigation)?);
+                }
+
                 Self::Array(vec)
             }
 
             Major::MAP => {
+                if argument > LENGTH_LIMIT {
+                    return Error::LengthTooLarge.into();
+                }
+
+                let Some(recursion_limit) = recursion_limit.checked_sub(1) else {
+                    return Error::LengthTooLarge.into();
+                };
+
                 let mut map = BTreeMap::new();
                 let mut prev = None;
 
                 for _ in 0..argument {
-                    let key = Self::read_from_inner(reader)?;
-                    let value = Self::read_from_inner(reader)?;
+                    let key = Self::read_from_inner(reader, recursion_limit, oom_mitigation)?;
+                    let value = Self::read_from_inner(reader, recursion_limit, oom_mitigation)?;
 
                     if let Some((prev_key, prev_value)) = prev.take() {
                         if prev_key >= key {
@@ -624,7 +654,11 @@ impl Value {
             }
 
             Major::TAG => {
-                let content = Box::new(Self::read_from_inner(reader)?);
+                let Some(recursion_limit) = recursion_limit.checked_sub(1) else {
+                    return Error::LengthTooLarge.into();
+                };
+
+                let content = Box::new(Self::read_from_inner(reader, recursion_limit, oom_mitigation)?);
 
                 // check if conforming bigint
                 if matches!(argument, Tag::POS_BIG_INT | Tag::NEG_BIG_INT)
@@ -700,7 +734,7 @@ impl Value {
         }
 
         let mut hex_reader = HexReader(reader, None);
-        let result = Self::read_from_inner(&mut hex_reader);
+        let result = Self::read_from_inner(&mut hex_reader, RECURSION_LIMIT, OOM_MITIGATION);
 
         if let Some(error) = hex_reader.1 {
             error.into()
@@ -1481,9 +1515,12 @@ impl Value {
 fn read_vec(reader: &mut impl io::Read, len: u64) -> crate::IoResult<Vec<u8>> {
     use io::Read;
 
-    let len_usize = usize::try_from(len).map_err(|_| Error::LengthTooLarge)?;
+    if len > LENGTH_LIMIT {
+        return Error::LengthTooLarge.into();
+    }
 
-    let mut buf = Vec::with_capacity(len_usize.min(100_000_000)); // Mitigate OOM
+    let len_usize = usize::try_from(len).or(Err(Error::LengthTooLarge))?;
+    let mut buf = Vec::with_capacity(len_usize.min(OOM_MITIGATION)); // Mitigate OOM
     let bytes_read = reader.take(len).read_to_end(&mut buf)?;
 
     if bytes_read == len_usize {

@@ -9,6 +9,7 @@
 - Optional `chrono` feature: conversions between `chrono::DateTime` and `DateTime`/`EpochTime`/`Value`.
 - Optional `time` feature: conversions between `time::UtcDateTime`/`time::OffsetDateTime` and `DateTime`/`EpochTime`/`Value`.
 - Optional `half` feature: `From`/`TryFrom` conversions between `Float`/`Value` and `half::f16`.
+- Decoder hardening against malicious input: recursion depth limit, collection length limit, and enhanced OOM mitigation with tracked allocation budgets.
 
 ### Changed
 
