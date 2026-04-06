@@ -62,6 +62,18 @@
 //! NaN values, including signaling NaNs and custom payloads, are preserved
 //! through encode/decode round-trips. Conversion between float widths uses
 //! bit-level manipulation to avoid hardware NaN canonicalization.
+//!
+//! # Optional features
+//!
+//! | Feature | Adds |
+//! |---|---|
+//! | `serde` | `Serialize`/`Deserialize` for `Value`, [`serde::to_value`], [`serde::from_value`] |
+//! | `chrono` | Conversions between `chrono::DateTime` and `DateTime`/`EpochTime`/`Value` |
+//! | `time` | Conversions between `time::UtcDateTime`/`OffsetDateTime` and `DateTime`/`EpochTime`/`Value` |
+//! | `half` | `From`/`TryFrom` between `Float`/`Value` and `half::f16` |
+//! | `num-bigint` | `From`/`TryFrom` between `Value` and `num_bigint::BigInt`/`BigUint` |
+//! | `crypto-bigint` | `From`/`TryFrom` between `Value` and `crypto_bigint::Uint`/`Int`/`NonZero` |
+//! | `rug` | `From`/`TryFrom` between `Value` and `rug::Integer` |
 
 mod array;
 mod consts;
@@ -88,6 +100,10 @@ pub use float::Float;
 pub use map::Map;
 pub use simple_value::SimpleValue;
 pub use value::Value;
+
+#[cfg(feature = "serde")]
+#[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
+pub use ext::serde;
 
 use consts::*;
 use integer::*;

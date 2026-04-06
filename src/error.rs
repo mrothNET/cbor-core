@@ -40,7 +40,7 @@ impl fmt::Display for Error {
             Self::IncompatibleType(t) => write!(f, "incompatible CBOR type {name}", name = t.name()),
             Self::Overflow => write!(f, "integer overflow"),
             Self::NegativeUnsigned => write!(f, "negative value for unsigned type"),
-            Self::Precision => write!(f, "precision loss"),
+            Self::Precision => write!(f, "float precision loss"),
             Self::InvalidSimpleValue => write!(f, "invalid CBOR simple value"),
             Self::Malformed => write!(f, "malformed CBOR encoding"),
             Self::NonDeterministic => write!(f, "non-deterministic CBOR encoding"),

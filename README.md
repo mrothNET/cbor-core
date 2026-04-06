@@ -51,12 +51,13 @@ add the relevant feature flag to `Cargo.toml`.
 
 | Feature name | Enables |
 |---|---|
+| `serde` | `Serialize`/`Deserialize` for `Value`, plus `to_value()`/`from_value()` for converting between Rust types and `Value` |
+| `chrono` | Conversions between `chrono::DateTime` and `DateTime`/`EpochTime`/`Value` |
+| `time` | Conversions between `time::UtcDateTime`/`time::OffsetDateTime` and `DateTime`/`EpochTime`/`Value` |
 | `half` | `From`/`TryFrom` conversions between `Float`/`Value` and `half::f16` |
 | `num-bigint` | `From`/`TryFrom` conversions between `Value` and `num_bigint::BigInt`/`BigUint` |
 | `crypto-bigint` | `From`/`TryFrom` conversions between `Value` and `crypto_bigint::Uint`/`Int`/`NonZero` |
 | `rug` | `From`/`TryFrom` conversions between `Value` and `rug::Integer` |
-| `chrono` | Conversions between `chrono::DateTime` and `DateTime`/`EpochTime`/`Value` |
-| `time` | Conversions between `time::UtcDateTime`/`time::OffsetDateTime` and `DateTime`/`EpochTime`/`Value` |
 
 ## Usage
 

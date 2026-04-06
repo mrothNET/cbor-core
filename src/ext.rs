@@ -21,3 +21,7 @@ mod time;
 #[cfg(feature = "half")]
 #[cfg_attr(docsrs, doc(cfg(feature = "half")))]
 mod half;
+
+#[cfg(feature = "serde")]
+#[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
+pub mod serde;

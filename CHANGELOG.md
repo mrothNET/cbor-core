@@ -4,6 +4,7 @@
 
 ### Added
 
+- Optional `serde` feature: `Serialize`/`Deserialize` impls for `Value`, plus `serde::to_value()` and `serde::from_value()` for converting between Rust types and `Value` via serde.
 - Optional `crypto-bigint` feature: `From`/`TryFrom` conversions between `Value` and `crypto_bigint::Uint`/`Int`/`NonZero`.
 - Optional `rug` feature: `From`/`TryFrom` conversions between `Value` and `rug::Integer`.
 - Optional `chrono` feature: conversions between `chrono::DateTime` and `DateTime`/`EpochTime`/`Value`.
