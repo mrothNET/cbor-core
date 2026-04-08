@@ -1,19 +1,34 @@
 #! /bin/sh
 set -eu
 
-IMAGE_NAME=cbor-core-ci
+IMAGE_NAME=localhost/cbor-core-ci
+CACHE_DIR=.cache
+
+if [ "$(sed -n '1p' Cargo.toml 2>/dev/null)" != '[package]' ] \
+  || [ "$(sed -n '2p' Cargo.toml 2>/dev/null)" != 'name = "cbor-core"' ]; then
+  echo "Error: must be run from the cbor-core project root directory" >&2
+  exit 1
+fi
+
+if [ "${1:-}" = "--clean" ]; then
+  rm -rf "$CACHE_DIR/cargo-amd64" "$CACHE_DIR/cargo-i386" \
+         "$CACHE_DIR/target-amd64" "$CACHE_DIR/target-i386"
+  rmdir "$CACHE_DIR" 2>/dev/null || true
+  exit 0
+fi
 
 if [ "${1:-}" = "--build" ]; then
-  docker build -f Dockerfile.ci --pull --platform linux/amd64 -t $IMAGE_NAME:amd64 .
-  docker build -f Dockerfile.ci --pull --platform linux/386   -t $IMAGE_NAME:i386  .
+  podman build -f Dockerfile.ci --pull --platform linux/amd64 -t $IMAGE_NAME:amd64 .
+  podman build -f Dockerfile.ci --pull --platform linux/386   -t $IMAGE_NAME:i386  .
   exit 0
 fi
 
 run_ci() {
-  docker run --rm -t --platform "linux/$1" \
+  mkdir -p "$CACHE_DIR/cargo-$1" "$CACHE_DIR/target-$1"
+  podman run --rm -t --platform "linux/$1" \
     -v "$PWD:/work" -w /work \
-    -v "$PWD/.cache/cargo-$1:/usr/local/cargo/registry" \
-    -v "$PWD/.cache/target-$1:/target" \
+    -v "$PWD/$CACHE_DIR/cargo-$1:/usr/local/cargo/registry" \
+    -v "$PWD/$CACHE_DIR/target-$1:/target" \
     -e CARGO_TARGET_DIR=/target \
     "$IMAGE_NAME:$1" \
     bash -c "
