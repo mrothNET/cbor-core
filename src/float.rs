@@ -252,41 +252,23 @@ impl From<f32> for Float {
 
 // --- From integer types (lossless conversion to f64, like std) ---
 
-impl From<u8> for Float {
-    fn from(value: u8) -> Self {
-        Self::from(value as f64)
-    }
+macro_rules! try_from {
+    ($type:ty) => {
+        impl From<$type> for Float {
+            fn from(value: $type) -> Self {
+                Self::from(value as f64)
+            }
+        }
+    };
 }
 
-impl From<u16> for Float {
-    fn from(value: u16) -> Self {
-        Self::from(value as f64)
-    }
-}
+try_from!(u8);
+try_from!(u16);
+try_from!(u32);
 
-impl From<u32> for Float {
-    fn from(value: u32) -> Self {
-        Self::from(value as f64)
-    }
-}
-
-impl From<i8> for Float {
-    fn from(value: i8) -> Self {
-        Self::from(value as f64)
-    }
-}
-
-impl From<i16> for Float {
-    fn from(value: i16) -> Self {
-        Self::from(value as f64)
-    }
-}
-
-impl From<i32> for Float {
-    fn from(value: i32) -> Self {
-        Self::from(value as f64)
-    }
-}
+try_from!(i8);
+try_from!(i16);
+try_from!(i32);
 
 impl From<bool> for Float {
     fn from(value: bool) -> Self {

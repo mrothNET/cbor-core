@@ -90,78 +90,30 @@ fn from_int<T: TryInto<u64>>(value: T) -> Result<EpochTime> {
     }
 }
 
-impl TryFrom<u8> for EpochTime {
-    type Error = Error;
-    fn try_from(value: u8) -> Result<Self> {
-        from_int(value)
-    }
+macro_rules! try_from {
+    ($type:ty) => {
+        impl TryFrom<$type> for EpochTime {
+            type Error = Error;
+            fn try_from(value: $type) -> Result<Self> {
+                from_int(value)
+            }
+        }
+    };
 }
-impl TryFrom<u16> for EpochTime {
-    type Error = Error;
-    fn try_from(value: u16) -> Result<Self> {
-        from_int(value)
-    }
-}
-impl TryFrom<u32> for EpochTime {
-    type Error = Error;
-    fn try_from(value: u32) -> Result<Self> {
-        from_int(value)
-    }
-}
-impl TryFrom<u64> for EpochTime {
-    type Error = Error;
-    fn try_from(value: u64) -> Result<Self> {
-        from_int(value)
-    }
-}
-impl TryFrom<u128> for EpochTime {
-    type Error = Error;
-    fn try_from(value: u128) -> Result<Self> {
-        from_int(value)
-    }
-}
-impl TryFrom<usize> for EpochTime {
-    type Error = Error;
-    fn try_from(value: usize) -> Result<Self> {
-        from_int(value)
-    }
-}
-impl TryFrom<i8> for EpochTime {
-    type Error = Error;
-    fn try_from(value: i8) -> Result<Self> {
-        from_int(value)
-    }
-}
-impl TryFrom<i16> for EpochTime {
-    type Error = Error;
-    fn try_from(value: i16) -> Result<Self> {
-        from_int(value)
-    }
-}
-impl TryFrom<i32> for EpochTime {
-    type Error = Error;
-    fn try_from(value: i32) -> Result<Self> {
-        from_int(value)
-    }
-}
-impl TryFrom<i64> for EpochTime {
-    type Error = Error;
-    fn try_from(value: i64) -> Result<Self> {
-        from_int(value)
-    }
-}
-impl TryFrom<i128> for EpochTime {
-    type Error = Error;
-    fn try_from(value: i128) -> Result<Self> {
-        from_int(value)
-    }
-}
-impl TryFrom<isize> for EpochTime {
-    type Error = Error;
-    fn try_from(value: isize) -> Result<Self> {
-        from_int(value)
-    }
-}
+
+try_from!(u8);
+try_from!(u16);
+try_from!(u32);
+try_from!(u64);
+try_from!(u128);
+try_from!(usize);
+
+try_from!(i8);
+try_from!(i16);
+try_from!(i32);
+try_from!(i64);
+try_from!(i128);
+try_from!(isize);
 
 impl TryFrom<f32> for EpochTime {
     type Error = Error;

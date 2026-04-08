@@ -1,30 +1,21 @@
 use super::*;
 
-// --------- From ints ---------
+// --------- From unsigned ints ---------
 
-impl From<u8> for Value {
-    fn from(value: u8) -> Self {
-        Self::Unsigned(value.into())
-    }
+macro_rules! try_from_uint {
+    ($type:ty) => {
+        impl From<$type> for Value {
+            fn from(value: $type) -> Self {
+                Self::Unsigned(value.into())
+            }
+        }
+    };
 }
 
-impl From<u16> for Value {
-    fn from(value: u16) -> Self {
-        Self::Unsigned(value.into())
-    }
-}
-
-impl From<u32> for Value {
-    fn from(value: u32) -> Self {
-        Self::Unsigned(value.into())
-    }
-}
-
-impl From<u64> for Value {
-    fn from(value: u64) -> Self {
-        Self::Unsigned(value)
-    }
-}
+try_from_uint!(u8);
+try_from_uint!(u16);
+try_from_uint!(u32);
+try_from_uint!(u64);
 
 impl From<u128> for Value {
     fn from(value: u128) -> Self {
@@ -45,45 +36,26 @@ impl From<usize> for Value {
     }
 }
 
-impl From<i8> for Value {
-    fn from(value: i8) -> Self {
-        if value >= 0 {
-            Self::Unsigned(value as u64)
-        } else {
-            Self::Negative((!value) as u64)
+// --------- From signed ints ---------
+
+macro_rules! try_from_sint {
+    ($type:ty) => {
+        impl From<$type> for Value {
+            fn from(value: $type) -> Self {
+                if value >= 0 {
+                    Self::Unsigned(value as u64)
+                } else {
+                    Self::Negative((!value) as u64)
+                }
+            }
         }
-    }
+    };
 }
 
-impl From<i16> for Value {
-    fn from(value: i16) -> Self {
-        if value >= 0 {
-            Self::Unsigned(value as u64)
-        } else {
-            Self::Negative((!value) as u64)
-        }
-    }
-}
-
-impl From<i32> for Value {
-    fn from(value: i32) -> Self {
-        if value >= 0 {
-            Self::Unsigned(value as u64)
-        } else {
-            Self::Negative((!value) as u64)
-        }
-    }
-}
-
-impl From<i64> for Value {
-    fn from(value: i64) -> Self {
-        if value >= 0 {
-            Self::Unsigned(value as u64)
-        } else {
-            Self::Negative((!value) as u64)
-        }
-    }
-}
+try_from_sint!(i8);
+try_from_sint!(i16);
+try_from_sint!(i32);
+try_from_sint!(i64);
 
 impl From<i128> for Value {
     fn from(value: i128) -> Self {
@@ -116,169 +88,34 @@ impl From<isize> for Value {
 
 // --------- TryFrom Value ---------
 
-impl TryFrom<Value> for u8 {
-    type Error = Error;
-    fn try_from(value: Value) -> Result<Self> {
-        value.to_u8()
-    }
+macro_rules! try_from_value {
+    ($type:ty, $to_x:ident) => {
+        impl TryFrom<Value> for $type {
+            type Error = Error;
+            fn try_from(value: Value) -> Result<Self> {
+                value.$to_x()
+            }
+        }
+
+        impl TryFrom<&Value> for $type {
+            type Error = Error;
+            fn try_from(value: &Value) -> Result<Self> {
+                value.$to_x()
+            }
+        }
+    };
 }
 
-impl TryFrom<&Value> for u8 {
-    type Error = Error;
-    fn try_from(value: &Value) -> Result<Self> {
-        value.to_u8()
-    }
-}
+try_from_value!(u8, to_u8);
+try_from_value!(u16, to_u16);
+try_from_value!(u32, to_u32);
+try_from_value!(u64, to_u64);
+try_from_value!(u128, to_u128);
+try_from_value!(usize, to_usize);
 
-impl TryFrom<Value> for u16 {
-    type Error = Error;
-    fn try_from(value: Value) -> Result<Self> {
-        value.to_u16()
-    }
-}
-
-impl TryFrom<&Value> for u16 {
-    type Error = Error;
-    fn try_from(value: &Value) -> Result<Self> {
-        value.to_u16()
-    }
-}
-
-impl TryFrom<Value> for u32 {
-    type Error = Error;
-    fn try_from(value: Value) -> Result<Self> {
-        value.to_u32()
-    }
-}
-
-impl TryFrom<&Value> for u32 {
-    type Error = Error;
-    fn try_from(value: &Value) -> Result<Self> {
-        value.to_u32()
-    }
-}
-
-impl TryFrom<Value> for u64 {
-    type Error = Error;
-    fn try_from(value: Value) -> Result<Self> {
-        value.to_u64()
-    }
-}
-
-impl TryFrom<&Value> for u64 {
-    type Error = Error;
-    fn try_from(value: &Value) -> Result<Self> {
-        value.to_u64()
-    }
-}
-
-impl TryFrom<Value> for u128 {
-    type Error = Error;
-    fn try_from(value: Value) -> Result<Self> {
-        value.to_u128()
-    }
-}
-
-impl TryFrom<&Value> for u128 {
-    type Error = Error;
-    fn try_from(value: &Value) -> Result<Self> {
-        value.to_u128()
-    }
-}
-
-impl TryFrom<Value> for usize {
-    type Error = Error;
-    fn try_from(value: Value) -> Result<Self> {
-        value.to_usize()
-    }
-}
-
-impl TryFrom<&Value> for usize {
-    type Error = Error;
-    fn try_from(value: &Value) -> Result<Self> {
-        value.to_usize()
-    }
-}
-
-impl TryFrom<Value> for i8 {
-    type Error = Error;
-    fn try_from(value: Value) -> Result<Self> {
-        value.to_i8()
-    }
-}
-
-impl TryFrom<&Value> for i8 {
-    type Error = Error;
-    fn try_from(value: &Value) -> Result<Self> {
-        value.to_i8()
-    }
-}
-
-impl TryFrom<Value> for i16 {
-    type Error = Error;
-    fn try_from(value: Value) -> Result<Self> {
-        value.to_i16()
-    }
-}
-
-impl TryFrom<&Value> for i16 {
-    type Error = Error;
-    fn try_from(value: &Value) -> Result<Self> {
-        value.to_i16()
-    }
-}
-
-impl TryFrom<Value> for i32 {
-    type Error = Error;
-    fn try_from(value: Value) -> Result<Self> {
-        value.to_i32()
-    }
-}
-
-impl TryFrom<&Value> for i32 {
-    type Error = Error;
-    fn try_from(value: &Value) -> Result<Self> {
-        value.to_i32()
-    }
-}
-
-impl TryFrom<Value> for i64 {
-    type Error = Error;
-    fn try_from(value: Value) -> Result<Self> {
-        value.to_i64()
-    }
-}
-
-impl TryFrom<&Value> for i64 {
-    type Error = Error;
-    fn try_from(value: &Value) -> Result<Self> {
-        value.to_i64()
-    }
-}
-
-impl TryFrom<Value> for i128 {
-    type Error = Error;
-    fn try_from(value: Value) -> Result<Self> {
-        value.to_i128()
-    }
-}
-impl TryFrom<&Value> for i128 {
-    type Error = Error;
-    fn try_from(value: &Value) -> Result<Self> {
-        value.to_i128()
-    }
-}
-
-impl TryFrom<Value> for isize {
-    type Error = Error;
-    fn try_from(value: Value) -> Result<Self> {
-        value.to_isize()
-    }
-}
-
-impl TryFrom<&Value> for isize {
-    type Error = Error;
-    fn try_from(value: &Value) -> Result<Self> {
-        value.to_isize()
-    }
-}
+try_from_value!(i8, to_i8);
+try_from_value!(i16, to_i16);
+try_from_value!(i32, to_i32);
+try_from_value!(i64, to_i64);
+try_from_value!(i128, to_i128);
+try_from_value!(isize, to_isize);

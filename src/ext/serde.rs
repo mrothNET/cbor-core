@@ -229,6 +229,14 @@ impl<'de> Deserialize<'de> for Value {
 
 struct ValueVisitor;
 
+macro_rules! visit {
+    ($method:ident, $type:ty) => {
+        fn $method<E>(self, v: $type) -> Result<Value, E> {
+            Ok(Value::from(v))
+        }
+    };
+}
+
 impl<'de> Visitor<'de> for ValueVisitor {
     type Value = Value;
 
@@ -236,69 +244,37 @@ impl<'de> Visitor<'de> for ValueVisitor {
         f.write_str("any CBOR-compatible value")
     }
 
-    fn visit_bool<E>(self, v: bool) -> Result<Value, E> {
-        Ok(Value::from(v))
-    }
+    visit!(visit_bool, bool);
 
-    fn visit_i8<E>(self, v: i8) -> Result<Value, E> {
-        Ok(Value::from(v))
-    }
-    fn visit_i16<E>(self, v: i16) -> Result<Value, E> {
-        Ok(Value::from(v))
-    }
-    fn visit_i32<E>(self, v: i32) -> Result<Value, E> {
-        Ok(Value::from(v))
-    }
-    fn visit_i64<E>(self, v: i64) -> Result<Value, E> {
-        Ok(Value::from(v))
-    }
-    fn visit_i128<E>(self, v: i128) -> Result<Value, E> {
-        Ok(Value::from(v))
-    }
+    visit!(visit_i8, i8);
+    visit!(visit_i16, i16);
+    visit!(visit_i32, i32);
+    visit!(visit_i64, i64);
+    visit!(visit_i128, i128);
 
-    fn visit_u8<E>(self, v: u8) -> Result<Value, E> {
-        Ok(Value::from(v))
-    }
-    fn visit_u16<E>(self, v: u16) -> Result<Value, E> {
-        Ok(Value::from(v))
-    }
-    fn visit_u32<E>(self, v: u32) -> Result<Value, E> {
-        Ok(Value::from(v))
-    }
-    fn visit_u64<E>(self, v: u64) -> Result<Value, E> {
-        Ok(Value::from(v))
-    }
-    fn visit_u128<E>(self, v: u128) -> Result<Value, E> {
-        Ok(Value::from(v))
-    }
+    visit!(visit_u8, u8);
+    visit!(visit_u16, u16);
+    visit!(visit_u32, u32);
+    visit!(visit_u64, u64);
+    visit!(visit_u128, u128);
 
-    fn visit_f32<E>(self, v: f32) -> Result<Value, E> {
-        Ok(Value::float(v))
-    }
-    fn visit_f64<E>(self, v: f64) -> Result<Value, E> {
-        Ok(Value::float(v))
-    }
+    visit!(visit_f32, f32);
+    visit!(visit_f64, f64);
 
     fn visit_char<E>(self, v: char) -> Result<Value, E> {
         Ok(Value::from(v.to_string()))
     }
-    fn visit_str<E>(self, v: &str) -> Result<Value, E> {
-        Ok(Value::from(v))
-    }
-    fn visit_string<E>(self, v: String) -> Result<Value, E> {
-        Ok(Value::from(v))
-    }
 
-    fn visit_bytes<E>(self, v: &[u8]) -> Result<Value, E> {
-        Ok(Value::from(v))
-    }
-    fn visit_byte_buf<E>(self, v: Vec<u8>) -> Result<Value, E> {
-        Ok(Value::from(v))
-    }
+    visit!(visit_str, &str);
+    visit!(visit_string, String);
+
+    visit!(visit_bytes, &[u8]);
+    visit!(visit_byte_buf, Vec<u8>);
 
     fn visit_none<E>(self) -> Result<Value, E> {
         Ok(Value::null())
     }
+
     fn visit_some<D: de::Deserializer<'de>>(self, deserializer: D) -> Result<Value, D::Error> {
         Deserialize::deserialize(deserializer)
     }
@@ -331,6 +307,14 @@ impl<'de> Visitor<'de> for ValueVisitor {
 /// Serde `Serializer` that produces a CBOR [`Value`].
 struct ValueSerializer;
 
+macro_rules! serialize {
+    ($method:ident, $type:ty) => {
+        fn $method(self, v: $type) -> Result<Value, Error> {
+            Ok(Value::from(v))
+        }
+    };
+}
+
 impl ser::Serializer for ValueSerializer {
     type Ok = Value;
     type Error = Error;
@@ -343,63 +327,34 @@ impl ser::Serializer for ValueSerializer {
     type SerializeStruct = MapBuilder;
     type SerializeStructVariant = StructVariantBuilder;
 
-    fn serialize_bool(self, v: bool) -> Result<Value, Error> {
-        Ok(Value::from(v))
-    }
+    serialize!(serialize_bool, bool);
 
-    fn serialize_i8(self, v: i8) -> Result<Value, Error> {
-        Ok(Value::from(v))
-    }
-    fn serialize_i16(self, v: i16) -> Result<Value, Error> {
-        Ok(Value::from(v))
-    }
-    fn serialize_i32(self, v: i32) -> Result<Value, Error> {
-        Ok(Value::from(v))
-    }
-    fn serialize_i64(self, v: i64) -> Result<Value, Error> {
-        Ok(Value::from(v))
-    }
-    fn serialize_i128(self, v: i128) -> Result<Value, Error> {
-        Ok(Value::from(v))
-    }
+    serialize!(serialize_i8, i8);
+    serialize!(serialize_i16, i16);
+    serialize!(serialize_i32, i32);
+    serialize!(serialize_i64, i64);
+    serialize!(serialize_i128, i128);
 
-    fn serialize_u8(self, v: u8) -> Result<Value, Error> {
-        Ok(Value::from(v))
-    }
-    fn serialize_u16(self, v: u16) -> Result<Value, Error> {
-        Ok(Value::from(v))
-    }
-    fn serialize_u32(self, v: u32) -> Result<Value, Error> {
-        Ok(Value::from(v))
-    }
-    fn serialize_u64(self, v: u64) -> Result<Value, Error> {
-        Ok(Value::from(v))
-    }
-    fn serialize_u128(self, v: u128) -> Result<Value, Error> {
-        Ok(Value::from(v))
-    }
+    serialize!(serialize_u8, u8);
+    serialize!(serialize_u16, u16);
+    serialize!(serialize_u32, u32);
+    serialize!(serialize_u64, u64);
+    serialize!(serialize_u128, u128);
 
-    fn serialize_f32(self, v: f32) -> Result<Value, Error> {
-        Ok(Value::float(v))
-    }
-    fn serialize_f64(self, v: f64) -> Result<Value, Error> {
-        Ok(Value::float(v))
-    }
+    serialize!(serialize_f32, f32);
+    serialize!(serialize_f64, f64);
 
     fn serialize_char(self, v: char) -> Result<Value, Error> {
         Ok(Value::from(v.to_string()))
     }
-    fn serialize_str(self, v: &str) -> Result<Value, Error> {
-        Ok(Value::from(v))
-    }
 
-    fn serialize_bytes(self, v: &[u8]) -> Result<Value, Error> {
-        Ok(Value::from(v))
-    }
+    serialize!(serialize_str, &str);
+    serialize!(serialize_bytes, &[u8]);
 
     fn serialize_none(self) -> Result<Value, Error> {
         Ok(Value::null())
     }
+
     fn serialize_some<T: ?Sized + Serialize>(self, value: &T) -> Result<Value, Error> {
         value.serialize(self)
     }
@@ -407,6 +362,7 @@ impl ser::Serializer for ValueSerializer {
     fn serialize_unit(self) -> Result<Value, Error> {
         Ok(Value::null())
     }
+
     fn serialize_unit_struct(self, _name: &'static str) -> Result<Value, Error> {
         Ok(Value::null())
     }
@@ -620,6 +576,14 @@ impl ser::SerializeStructVariant for StructVariantBuilder {
 /// Serde `Deserializer` that reads from a CBOR [`Value`] reference.
 struct ValueDeserializer<'de>(&'de Value);
 
+macro_rules! deserialize {
+    ($method:ident, $visit:ident) => {
+        fn $method<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
+            visitor.$visit(self.0.try_into()?)
+        }
+    };
+}
+
 impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
     type Error = Error;
 
@@ -661,54 +625,25 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         }
     }
 
-    fn deserialize_bool<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
-        match self.0.to_bool() {
-            Ok(v) => visitor.visit_bool(v),
-            Err(_) => Err(de::Error::custom(format!(
-                "expected bool, got {}",
-                self.0.data_type().name()
-            ))),
-        }
-    }
+    deserialize!(deserialize_bool, visit_bool);
 
-    fn deserialize_i8<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
-        visitor.visit_i8(self.0.to_i8()?)
-    }
-    fn deserialize_i16<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
-        visitor.visit_i16(self.0.to_i16()?)
-    }
-    fn deserialize_i32<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
-        visitor.visit_i32(self.0.to_i32()?)
-    }
-    fn deserialize_i64<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
-        visitor.visit_i64(self.0.to_i64()?)
-    }
-    fn deserialize_i128<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
-        visitor.visit_i128(self.0.to_i128()?)
-    }
+    deserialize!(deserialize_i8, visit_i8);
+    deserialize!(deserialize_i16, visit_i16);
+    deserialize!(deserialize_i32, visit_i32);
+    deserialize!(deserialize_i64, visit_i64);
+    deserialize!(deserialize_i128, visit_i128);
 
-    fn deserialize_u8<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
-        visitor.visit_u8(self.0.to_u8()?)
-    }
-    fn deserialize_u16<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
-        visitor.visit_u16(self.0.to_u16()?)
-    }
-    fn deserialize_u32<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
-        visitor.visit_u32(self.0.to_u32()?)
-    }
-    fn deserialize_u64<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
-        visitor.visit_u64(self.0.to_u64()?)
-    }
-    fn deserialize_u128<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
-        visitor.visit_u128(self.0.to_u128()?)
-    }
+    deserialize!(deserialize_u8, visit_u8);
+    deserialize!(deserialize_u16, visit_u16);
+    deserialize!(deserialize_u32, visit_u32);
+    deserialize!(deserialize_u64, visit_u64);
+    deserialize!(deserialize_u128, visit_u128);
 
     fn deserialize_f32<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
         visitor.visit_f32(self.0.to_f64()? as f32)
     }
-    fn deserialize_f64<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
-        visitor.visit_f64(self.0.to_f64()?)
-    }
+
+    deserialize!(deserialize_f64, visit_f64);
 
     fn deserialize_char<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
         let s = self.0.as_str()?;
@@ -720,19 +655,11 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         visitor.visit_char(ch)
     }
 
-    fn deserialize_str<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
-        visitor.visit_borrowed_str(self.0.as_str()?)
-    }
-    fn deserialize_string<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
-        visitor.visit_borrowed_str(self.0.as_str()?)
-    }
+    deserialize!(deserialize_str, visit_borrowed_str);
+    deserialize!(deserialize_string, visit_borrowed_str);
 
-    fn deserialize_bytes<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
-        visitor.visit_borrowed_bytes(self.0.as_bytes()?)
-    }
-    fn deserialize_byte_buf<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
-        visitor.visit_borrowed_bytes(self.0.as_bytes()?)
-    }
+    deserialize!(deserialize_bytes, visit_borrowed_bytes);
+    deserialize!(deserialize_byte_buf, visit_borrowed_bytes);
 
     fn deserialize_option<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
         if self.0.untagged().data_type().is_null() {
