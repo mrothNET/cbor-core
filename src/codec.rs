@@ -123,9 +123,9 @@ impl Head {
         }
     }
 
-    pub(crate) fn read_from<R, T>(reader: &mut R) -> Result<Head, R::Error>
+    pub(crate) fn read_from<R>(reader: &mut R) -> Result<Head, R::Error>
     where
-        R: crate::io::MyReader<T>,
+        R: crate::io::MyReader,
     {
         let initial_byte = InitialByte(reader.read_bytes::<1>()?[0]);
 

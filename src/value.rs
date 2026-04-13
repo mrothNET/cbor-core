@@ -13,14 +13,12 @@ use std::{
     collections::BTreeMap,
     fmt,
     hash::{Hash, Hasher},
-    io,
     time::{Duration, SystemTime},
 };
 
 use crate::{
     Array, DataType, DateTime, EpochTime, Error, Float, IntegerBytes, Map, Result, SimpleValue,
     codec::{Argument, Head, Major},
-    io::MyReader,
     limits, tag,
     util::u128_from_slice,
     value_key::AsValueKey,
@@ -699,11 +697,13 @@ impl Value {
     /// assert_eq!(v.to_u32().unwrap(), 42);
     /// ```
     pub fn decode(bytes: impl AsRef<[u8]>) -> crate::Result<Self> {
-        let mut bytes = bytes.as_ref();
-        Self::read_from(&mut bytes).map_err(|error| match error {
-            crate::IoError::Io(_io_error) => unreachable!(),
-            crate::IoError::Data(error) => error,
-        })
+        // let mut bytes = bytes.as_ref();
+        // Self::read_from(&mut bytes).map_err(|error| match error {
+        //     crate::IoError::Io(_io_error) => unreachable!(),
+        //     crate::IoError::Data(error) => error,
+        // })
+        let mut reader = crate::io::SliceReader(bytes.as_ref());
+        Self::do_read(&mut reader, limits::RECURSION_LIMIT, limits::OOM_MITIGATION)
     }
 
     /// Decode a CBOR data item from hex-encoded bytes.
@@ -720,11 +720,8 @@ impl Value {
     /// assert_eq!(v.to_u32().unwrap(), 42);
     /// ```
     pub fn decode_hex(hex: impl AsRef<[u8]>) -> Result<Self> {
-        let mut bytes = hex.as_ref();
-        Self::read_hex_from(&mut bytes).map_err(|error| match error {
-            crate::IoError::Io(_io_error) => unreachable!(),
-            crate::IoError::Data(error) => error,
-        })
+        let mut reader = crate::io::HexSliceReader(hex.as_ref());
+        Self::do_read(&mut reader, limits::RECURSION_LIMIT, limits::OOM_MITIGATION)
     }
 
     /// Read a single CBOR data item from a binary stream.
@@ -735,13 +732,30 @@ impl Value {
     /// let v = Value::read_from(&mut bytes).unwrap();
     /// assert_eq!(v.to_u32().unwrap(), 42);
     /// ```
-    pub fn read_from(mut reader: impl io::Read) -> crate::IoResult<Self> {
+    pub fn read_from(mut reader: impl std::io::Read) -> crate::IoResult<Self> {
         Self::do_read(&mut reader, limits::RECURSION_LIMIT, limits::OOM_MITIGATION)
     }
 
-    fn do_read<R>(reader: &mut R, recursion_limit: u16, oom_mitigation: usize) -> crate::IoResult<Self>
+    /// Read a single CBOR data item from a hex-encoded stream.
+    ///
+    /// Each byte of CBOR is expected as two hex digits (uppercase or
+    /// lowercase).
+    ///
+    /// ```
+    /// use cbor_core::Value;
+    /// let mut hex = "182a".as_bytes();
+    /// let v = Value::read_hex_from(&mut hex).unwrap();
+    /// assert_eq!(v.to_u32().unwrap(), 42);
+    /// ```
+    pub fn read_hex_from(reader: impl std::io::Read) -> crate::IoResult<Self> {
+        let mut hex_reader = crate::io::HexReader(reader);
+        Self::do_read(&mut hex_reader, limits::RECURSION_LIMIT, limits::OOM_MITIGATION)
+    }
+
+    fn do_read<R>(reader: &mut R, recursion_limit: u16, oom_mitigation: usize) -> std::result::Result<Self, R::Error>
     where
-        R: MyReader<Vec<u8>, Error = crate::IoError>,
+        R: crate::io::MyReader,
+        R::Error: From<crate::Error>,
     {
         let head = Head::read_from(reader)?;
 
@@ -749,18 +763,28 @@ impl Value {
             && matches!(head.argument, Argument::U16(_) | Argument::U32(_) | Argument::U64(_));
 
         if !is_float && !head.argument.is_deterministic() {
-            return Error::NonDeterministic.into();
+            return Err(Error::NonDeterministic.into());
         }
 
         let this = match head.initial_byte.major() {
             Major::Unsigned => Self::Unsigned(head.value()),
             Major::Negative => Self::Negative(head.value()),
 
-            Major::ByteString => Self::ByteString(reader.read_data(head.value())?),
+            Major::ByteString => {
+                let len = head.value();
+                if len > limits::LENGTH_LIMIT {
+                    return Err(Error::LengthTooLarge.into());
+                }
+                Self::ByteString(reader.read_vec(len)?)
+            }
 
             Major::TextString => {
-                let bytes = reader.read_data(head.value())?;
-                let string = String::from_utf8(bytes)?;
+                let len = head.value();
+                if len > limits::LENGTH_LIMIT {
+                    return Err(Error::LengthTooLarge.into());
+                }
+                let bytes = reader.read_vec(len)?;
+                let string = String::from_utf8(bytes).map_err(crate::Error::from)?;
                 Self::TextString(string)
             }
 
@@ -768,11 +792,11 @@ impl Value {
                 let value = head.value();
 
                 if value > limits::LENGTH_LIMIT {
-                    return Error::LengthTooLarge.into();
+                    return Err(Error::LengthTooLarge.into());
                 }
 
                 let Some(recursion_limit) = recursion_limit.checked_sub(1) else {
-                    return Error::LengthTooLarge.into();
+                    return Err(Error::LengthTooLarge.into());
                 };
 
                 let request: usize = value.try_into().or(Err(Error::LengthTooLarge))?;
@@ -792,11 +816,11 @@ impl Value {
                 let value = head.value();
 
                 if value > limits::LENGTH_LIMIT {
-                    return Error::LengthTooLarge.into();
+                    return Err(Error::LengthTooLarge.into());
                 }
 
                 let Some(recursion_limit) = recursion_limit.checked_sub(1) else {
-                    return Error::LengthTooLarge.into();
+                    return Err(Error::LengthTooLarge.into());
                 };
 
                 let mut map = BTreeMap::new();
@@ -808,7 +832,7 @@ impl Value {
 
                     if let Some((prev_key, prev_value)) = prev.take() {
                         if prev_key >= key {
-                            return Error::NonDeterministic.into();
+                            return Err(Error::NonDeterministic.into());
                         }
                         map.insert(prev_key, prev_value);
                     }
@@ -825,7 +849,7 @@ impl Value {
 
             Major::Tag => {
                 let Some(recursion_limit) = recursion_limit.checked_sub(1) else {
-                    return Error::LengthTooLarge.into();
+                    return Err(Error::LengthTooLarge.into());
                 };
 
                 let tag_number = head.value();
@@ -838,7 +862,7 @@ impl Value {
                     let bytes = this.as_bytes().unwrap();
                     let valid = bytes.len() >= 8 && bytes[0] != 0;
                     if !valid {
-                        return Error::NonDeterministic.into();
+                        return Err(Error::NonDeterministic.into());
                     }
                 }
 
@@ -853,64 +877,11 @@ impl Value {
                 Argument::U32(bits) => Self::Float(Float::from_u32(bits)?),
                 Argument::U64(bits) => Self::Float(Float::from_u64(bits)?),
 
-                _ => return Error::Malformed.into(),
+                _ => return Err(Error::Malformed.into()),
             },
         };
 
         Ok(this)
-    }
-
-    /// Read a single CBOR data item from a hex-encoded stream.
-    ///
-    /// Each byte of CBOR is expected as two hex digits (uppercase or
-    /// lowercase).
-    ///
-    /// ```
-    /// use cbor_core::Value;
-    /// let mut hex = "182a".as_bytes();
-    /// let v = Value::read_hex_from(&mut hex).unwrap();
-    /// assert_eq!(v.to_u32().unwrap(), 42);
-    /// ```
-    pub fn read_hex_from(reader: impl io::Read) -> crate::IoResult<Self> {
-        struct HexReader<R>(R, Option<Error>);
-
-        impl<R: io::Read> io::Read for HexReader<R> {
-            fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-                fn nibble(char: u8) -> Option<u8> {
-                    match char {
-                        b'0'..=b'9' => Some(char - b'0'),
-                        b'a'..=b'f' => Some(char - b'a' + 10),
-                        b'A'..=b'F' => Some(char - b'A' + 10),
-                        _ => None,
-                    }
-                }
-
-                for byte in buf.iter_mut() {
-                    let mut hex = [0; 2];
-                    self.0.read_exact(&mut hex)?;
-
-                    if let Some(n0) = nibble(hex[0])
-                        && let Some(n1) = nibble(hex[1])
-                    {
-                        *byte = n0 << 4 | n1
-                    } else {
-                        self.1 = Some(Error::InvalidHex);
-                        return Err(io::Error::other("invalid hex character"));
-                    }
-                }
-
-                Ok(buf.len())
-            }
-        }
-
-        let mut hex_reader = HexReader(reader, None);
-        let result = Self::do_read(&mut hex_reader, limits::RECURSION_LIMIT, limits::OOM_MITIGATION);
-
-        if let Some(error) = hex_reader.1 {
-            error.into()
-        } else {
-            result
-        }
     }
 
     /// Write this value as binary CBOR to a stream.
@@ -921,11 +892,11 @@ impl Value {
     /// Value::from(42).write_to(&mut buf).unwrap();
     /// assert_eq!(buf, [0x18, 42]);
     /// ```
-    pub fn write_to(&self, mut writer: impl io::Write) -> crate::IoResult<()> {
+    pub fn write_to(&self, mut writer: impl std::io::Write) -> crate::IoResult<()> {
         self.do_write(&mut writer)
     }
 
-    fn do_write(&self, writer: &mut impl io::Write) -> crate::IoResult<()> {
+    fn do_write(&self, writer: &mut impl std::io::Write) -> crate::IoResult<()> {
         self.cbor_head().write_to(writer)?;
 
         match self {
@@ -964,17 +935,17 @@ impl Value {
     /// Value::from(42).write_hex_to(&mut buf).unwrap();
     /// assert_eq!(buf, b"182a");
     /// ```
-    pub fn write_hex_to(&self, writer: impl io::Write) -> crate::IoResult<()> {
+    pub fn write_hex_to(&self, writer: impl std::io::Write) -> crate::IoResult<()> {
         struct HexWriter<W>(W);
 
-        impl<W: io::Write> io::Write for HexWriter<W> {
-            fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        impl<W: std::io::Write> std::io::Write for HexWriter<W> {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
                 for &byte in buf {
                     write!(self.0, "{byte:02x}")?;
                 }
                 Ok(buf.len())
             }
-            fn flush(&mut self) -> io::Result<()> {
+            fn flush(&mut self) -> std::io::Result<()> {
                 Ok(())
             }
         }

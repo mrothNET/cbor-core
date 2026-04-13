@@ -2,30 +2,78 @@ use std::io;
 
 use crate::limits;
 
-pub(crate) trait MyReader<Data> {
+fn decode_nibble(char: u8) -> Result<u8, crate::Error> {
+    match char {
+        b'0'..=b'9' => Ok(char - b'0'),
+        b'a'..=b'f' => Ok(char - b'a' + 10),
+        b'A'..=b'F' => Ok(char - b'A' + 10),
+        _ => Err(crate::Error::InvalidHex),
+    }
+}
+
+fn decode_byte(pair: &[u8; 2]) -> Result<u8, crate::Error> {
+    Ok(decode_nibble(pair[0])? << 4 | decode_nibble(pair[1])?)
+}
+
+pub(crate) trait MyReader {
     type Error: From<crate::Error>;
 
     fn read_bytes<const N: usize>(&mut self) -> Result<[u8; N], Self::Error>;
-    fn read_data(&mut self, len: u64) -> Result<Data, Self::Error>;
+    fn read_vec(&mut self, len: u64) -> Result<Vec<u8>, Self::Error>;
 }
 
-impl<'a> MyReader<&'a [u8]> for &'a [u8] {
+#[repr(transparent)]
+pub(crate) struct SliceReader<'a>(pub(crate) &'a [u8]);
+
+impl<'a> MyReader for SliceReader<'a> {
     type Error = crate::Error;
 
     fn read_bytes<const N: usize>(&mut self) -> Result<[u8; N], Self::Error> {
-        let (bytes, rest) = self.split_first_chunk::<N>().ok_or(crate::Error::UnexpectedEof)?;
-        *self = rest;
+        let (bytes, rest) = self.0.split_first_chunk::<N>().ok_or(crate::Error::UnexpectedEof)?;
+        self.0 = rest;
         Ok(*bytes)
     }
 
-    fn read_data(&mut self, len: u64) -> Result<&'a [u8], Self::Error> {
-        // No length limit when reading from a slice
+    fn read_vec(&mut self, len: u64) -> Result<Vec<u8>, Self::Error> {
         let len = usize::try_from(len).or(Err(crate::Error::LengthTooLarge))?;
-        self.split_off(..len).ok_or(crate::Error::UnexpectedEof)
+        let slice = self.0.split_off(..len).ok_or(crate::Error::UnexpectedEof)?;
+        Ok(slice.to_vec())
     }
 }
 
-impl<R: io::Read> MyReader<Vec<u8>> for R {
+#[repr(transparent)]
+pub(crate) struct HexSliceReader<'a>(pub(crate) &'a [u8]);
+
+impl<'a> MyReader for HexSliceReader<'a> {
+    type Error = crate::Error;
+
+    fn read_bytes<const N: usize>(&mut self) -> Result<[u8; N], Self::Error> {
+        let hex = self.0.split_off(..N * 2).ok_or(crate::Error::UnexpectedEof)?;
+        let mut buf = [0_u8; N];
+
+        for (byte, pair) in buf.iter_mut().zip(hex.as_chunks::<2>().0) {
+            *byte = decode_byte(pair)?;
+        }
+
+        Ok(buf)
+    }
+
+    fn read_vec(&mut self, len: u64) -> Result<Vec<u8>, Self::Error> {
+        let len = usize::try_from(len).or(Err(crate::Error::LengthTooLarge))?;
+        let hex_len = len.checked_mul(2).ok_or(crate::Error::LengthTooLarge)?;
+        let hex = self.0.split_off(..hex_len).ok_or(crate::Error::UnexpectedEof)?;
+
+        let mut vec = Vec::with_capacity(len);
+        for pair in hex.as_chunks::<2>().0 {
+            vec.push(decode_byte(pair)?);
+        }
+
+        debug_assert_eq!(vec.len(), len);
+        Ok(vec)
+    }
+}
+
+impl<R: io::Read> MyReader for R {
     type Error = crate::IoError;
 
     fn read_bytes<const N: usize>(&mut self) -> Result<[u8; N], Self::Error> {
@@ -34,12 +82,8 @@ impl<R: io::Read> MyReader<Vec<u8>> for R {
         Ok(buf)
     }
 
-    fn read_data(&mut self, len: u64) -> Result<Vec<u8>, Self::Error> {
+    fn read_vec(&mut self, len: u64) -> Result<Vec<u8>, Self::Error> {
         use io::Read;
-
-        if len > limits::LENGTH_LIMIT {
-            return crate::Error::LengthTooLarge.into();
-        }
 
         let len_usize = usize::try_from(len).or(Err(crate::Error::LengthTooLarge))?;
         let mut buf = Vec::with_capacity(len_usize.min(limits::OOM_MITIGATION)); // Mitigate OOM
@@ -50,5 +94,47 @@ impl<R: io::Read> MyReader<Vec<u8>> for R {
         } else {
             crate::Error::UnexpectedEof.into()
         }
+    }
+}
+
+pub(crate) struct HexReader<R>(pub(crate) R);
+
+impl<R: io::Read> MyReader for HexReader<R> {
+    type Error = crate::IoError;
+
+    fn read_bytes<const N: usize>(&mut self) -> Result<[u8; N], Self::Error> {
+        let mut hex = [[0_u8; 2]; N];
+        self.0.read_exact(hex.as_flattened_mut())?;
+
+        let mut buf = [0_u8; N];
+
+        for (byte, pair) in buf.each_mut().into_iter().zip(hex.iter()) {
+            *byte = decode_byte(pair)?;
+        }
+
+        Ok(buf)
+    }
+
+    fn read_vec(&mut self, len: u64) -> Result<Vec<u8>, Self::Error> {
+        let len_usize = usize::try_from(len).or(Err(crate::Error::LengthTooLarge))?;
+        let mut vec = Vec::with_capacity(len_usize.min(limits::OOM_MITIGATION));
+
+        let mut buf = [0_u8; 1024];
+        let mut remaining = len_usize;
+
+        while remaining > 0 {
+            let chunk = remaining.min(512);
+            let hex_len = chunk * 2;
+            self.0.read_exact(&mut buf[..hex_len])?;
+
+            for pair in buf[..hex_len].as_chunks::<2>().0 {
+                vec.push(decode_byte(pair)?);
+            }
+
+            remaining -= chunk;
+        }
+
+        debug_assert_eq!(vec.len(), len_usize);
+        Ok(vec)
     }
 }
