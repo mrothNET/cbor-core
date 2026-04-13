@@ -2,8 +2,9 @@ use rug::Integer;
 use rug::integer::Order;
 
 use crate::{
-    Error, Result, Tag, Value,
+    Error, Result, Value,
     integer::IntegerBytes,
+    tag,
     util::{trim_leading_zeros, u64_from_slice},
 };
 
@@ -39,9 +40,9 @@ fn from_rug_integer(value: &Integer) -> Value {
             if let Ok(number) = u64_from_slice(trimmed) {
                 Value::Unsigned(number)
             } else if bytes.len() == trimmed.len() {
-                Value::tag(Tag::POS_BIG_INT, bytes)
+                Value::tag(tag::POS_BIG_INT, bytes)
             } else {
-                Value::tag(Tag::POS_BIG_INT, trimmed)
+                Value::tag(tag::POS_BIG_INT, trimmed)
             }
         }
         Ordering::Less => {
@@ -54,9 +55,9 @@ fn from_rug_integer(value: &Integer) -> Value {
             if let Ok(number) = u64_from_slice(trimmed) {
                 Value::Negative(number)
             } else if bytes.len() == trimmed.len() {
-                Value::tag(Tag::NEG_BIG_INT, bytes)
+                Value::tag(tag::NEG_BIG_INT, bytes)
             } else {
-                Value::tag(Tag::NEG_BIG_INT, trimmed)
+                Value::tag(tag::NEG_BIG_INT, trimmed)
             }
         }
     }

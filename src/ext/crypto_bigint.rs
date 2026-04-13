@@ -1,8 +1,9 @@
 use crypto_bigint::{Choice, Encoding, Int, NonZero, Uint};
 
 use crate::{
-    Error, Result, Tag, Value,
+    Error, Result, Value,
     integer::IntegerBytes,
+    tag,
     util::{trim_leading_zeros, u64_from_slice},
 };
 
@@ -54,7 +55,7 @@ where
     if let Ok(number) = u64_from_slice(trimmed) {
         Value::Unsigned(number)
     } else {
-        Value::tag(Tag::POS_BIG_INT, trimmed)
+        Value::tag(tag::POS_BIG_INT, trimmed)
     }
 }
 
@@ -98,7 +99,7 @@ where
         if let Ok(number) = u64_from_slice(trimmed) {
             Value::Negative(number)
         } else {
-            Value::tag(Tag::NEG_BIG_INT, trimmed)
+            Value::tag(tag::NEG_BIG_INT, trimmed)
         }
     }
 }

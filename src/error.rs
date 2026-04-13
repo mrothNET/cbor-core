@@ -33,7 +33,6 @@ use crate::DataType;
 #[non_exhaustive]
 pub enum Error {
     // --- Decoding errors ---
-
     /// Binary CBOR data is structurally broken.
     Malformed,
     /// CBOR encoding is valid but not deterministic (non-shortest form, unsorted map keys, etc.).
@@ -48,7 +47,6 @@ pub enum Error {
     InvalidHex,
 
     // --- Accessor errors ---
-
     /// Accessor called on a value of the wrong CBOR type.
     IncompatibleType(DataType),
     /// Integer does not fit in the target type.
@@ -61,7 +59,6 @@ pub enum Error {
     InvalidSimpleValue,
 
     // --- Validation errors ---
-
     /// A text field had invalid syntax for its expected format.
     InvalidFormat,
     /// A value violates semantic constraints.

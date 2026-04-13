@@ -1,4 +1,7 @@
-use crate::{ArgLength, DataType, Error, Result};
+use crate::{
+    DataType, Error, Result,
+    codec::{Argument, Head, Major},
+};
 
 // IEEE 754 half-precision conversion functions
 
@@ -176,11 +179,11 @@ impl Float {
         }
     }
 
-    pub(crate) const fn cbor_argument(&self) -> (u8, u64) {
+    pub(crate) fn cbor_head(&self) -> Head {
         match self.0 {
-            Inner::F16(arg) => (ArgLength::U16, arg as u64),
-            Inner::F32(arg) => (ArgLength::U32, arg as u64),
-            Inner::F64(arg) => (ArgLength::U64, arg),
+            Inner::F16(bits) => Head::new(Major::SimpleOrFloat, Argument::U16(bits)),
+            Inner::F32(bits) => Head::new(Major::SimpleOrFloat, Argument::U32(bits)),
+            Inner::F64(bits) => Head::new(Major::SimpleOrFloat, Argument::U64(bits)),
         }
     }
 

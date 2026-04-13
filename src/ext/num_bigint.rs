@@ -1,7 +1,7 @@
 use num_bigint::{BigInt, BigUint, Sign};
 
 use crate::{
-    Error, Result, Tag, Value,
+    Error, Result, Value, tag,
     util::{trim_leading_zeros, u64_from_slice},
 };
 
@@ -36,9 +36,9 @@ fn from_big_uint(value: &BigUint) -> Value {
     if let Ok(number) = u64_from_slice(trimmed) {
         Value::Unsigned(number)
     } else if bytes.len() == trimmed.len() {
-        Value::tag(Tag::POS_BIG_INT, bytes) // reuse Vec
+        Value::tag(tag::POS_BIG_INT, bytes) // reuse Vec
     } else {
-        Value::tag(Tag::POS_BIG_INT, trimmed) // implicit new Vec
+        Value::tag(tag::POS_BIG_INT, trimmed) // implicit new Vec
     }
 }
 
@@ -71,9 +71,9 @@ fn from_big_int(value: &BigInt) -> Value {
             if let Ok(number) = u64_from_slice(trimmed) {
                 Value::Negative(number)
             } else if bytes.len() == trimmed.len() {
-                Value::tag(Tag::NEG_BIG_INT, bytes) // reuse Vec
+                Value::tag(tag::NEG_BIG_INT, bytes) // reuse Vec
             } else {
-                Value::tag(Tag::NEG_BIG_INT, trimmed) // implicit new Vec
+                Value::tag(tag::NEG_BIG_INT, trimmed) // implicit new Vec
             }
         }
     }

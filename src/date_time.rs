@@ -1,7 +1,7 @@
 use std::time::{Duration, SystemTime};
 
 use crate::iso3339::Timestamp;
-use crate::{Error, Result, Tag, Value};
+use crate::{Error, Result, Value, tag};
 
 const LEAP_SECOND_DATES: [(u16, u8, u8); 27] = [
     (1972, 6, 30),
@@ -60,7 +60,7 @@ pub struct DateTime(String);
 
 impl From<DateTime> for Value {
     fn from(value: DateTime) -> Self {
-        Self::tag(Tag::DATE_TIME, value.0)
+        Self::tag(tag::DATE_TIME, value.0)
     }
 }
 

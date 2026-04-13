@@ -16,9 +16,8 @@ impl Eq for Value {}
 
 impl Ord for Value {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.cbor_major()
-            .cmp(&other.cbor_major())
-            .then_with(|| self.cbor_argument().cmp(&other.cbor_argument()))
+        self.cbor_head()
+            .cmp(&other.cbor_head())
             .then_with(|| match (self, other) {
                 (Self::TextString(a), Self::TextString(b)) => a.cmp(b),
                 (Self::ByteString(a), Self::ByteString(b)) => a.cmp(b),
@@ -38,8 +37,7 @@ impl PartialOrd for Value {
 
 impl Hash for Value {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.cbor_major().hash(state);
-        self.cbor_argument().hash(state);
+        self.cbor_head().hash(state);
         match self {
             Self::TextString(s) => s.hash(state),
             Self::ByteString(b) => b.hash(state),

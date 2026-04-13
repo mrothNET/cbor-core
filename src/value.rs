@@ -19,13 +19,12 @@ use std::{
 };
 
 use crate::{
-    ArgLength, Array, CtrlByte, DataType, DateTime, EpochTime, Error, Float, IntegerBytes, Major, Map, Result,
-    SimpleValue, Tag, util::u128_from_slice,
+    Array, DataType, DateTime, EpochTime, Error, Float, IntegerBytes, Map, Result, SimpleValue,
+    codec::{Argument, Head, Major},
+    io::MyReader,
+    limits, tag,
+    util::u128_from_slice,
 };
-
-const OOM_MITIGATION: usize = 100_000_000; // maximum size to reserve capacity
-const LENGTH_LIMIT: u64 = 1_000_000_000; // length limit for arrays, maps, test and byte strings
-const RECURSION_LIMIT: u16 = 200; // maximum hierarchical data structure depth
 
 /// A single CBOR data item.
 ///
@@ -571,7 +570,7 @@ impl Value {
     /// ```
     #[must_use]
     pub fn encode(&self) -> Vec<u8> {
-        let len = self.cbor_len();
+        let len = self.encoded_len();
         let mut bytes = Vec::with_capacity(len);
         self.write_to(&mut bytes).unwrap();
         debug_assert_eq!(bytes.len(), len);
@@ -589,7 +588,7 @@ impl Value {
     /// ```
     #[must_use]
     pub fn encode_hex(&self) -> String {
-        let len2 = self.cbor_len() * 2;
+        let len2 = self.encoded_len() * 2;
         let mut hex = Vec::with_capacity(len2);
         self.write_hex_to(&mut hex).unwrap();
         debug_assert_eq!(hex.len(), len2);
@@ -646,71 +645,38 @@ impl Value {
     /// assert_eq!(v.to_u32().unwrap(), 42);
     /// ```
     pub fn read_from(mut reader: impl io::Read) -> crate::IoResult<Self> {
-        Self::read_from_inner(&mut reader, RECURSION_LIMIT, OOM_MITIGATION)
+        Self::do_read(&mut reader, limits::RECURSION_LIMIT, limits::OOM_MITIGATION)
     }
 
-    fn read_from_inner(
-        reader: &mut impl io::Read,
-        recursion_limit: u16,
-        oom_mitigation: usize,
-    ) -> crate::IoResult<Self> {
-        let ctrl_byte = {
-            let mut buf = [0];
-            reader.read_exact(&mut buf)?;
-            buf[0]
-        };
+    fn do_read<R>(reader: &mut R, recursion_limit: u16, oom_mitigation: usize) -> crate::IoResult<Self>
+    where
+        R: MyReader<Vec<u8>, Error = crate::IoError>,
+    {
+        let head = Head::read_from(reader)?;
 
-        let is_float = matches!(ctrl_byte, CtrlByte::F16 | CtrlByte::F32 | CtrlByte::F64);
+        let is_float = head.initial_byte.major() == Major::SimpleOrFloat
+            && matches!(head.argument, Argument::U16(_) | Argument::U32(_) | Argument::U64(_));
 
-        let major = ctrl_byte >> 5;
-        let info = ctrl_byte & 0x1f;
-
-        let argument = {
-            let mut buf = [0; 8];
-
-            if info < ArgLength::U8 {
-                buf[7] = info;
-            } else {
-                match info {
-                    ArgLength::U8 => reader.read_exact(&mut buf[7..])?,
-                    ArgLength::U16 => reader.read_exact(&mut buf[6..])?,
-                    ArgLength::U32 => reader.read_exact(&mut buf[4..])?,
-                    ArgLength::U64 => reader.read_exact(&mut buf)?,
-                    _ => return Error::Malformed.into(),
-                }
-            }
-
-            u64::from_be_bytes(buf)
-        };
-
-        if !is_float {
-            let non_deterministic = match info {
-                ArgLength::U8 => argument < u64::from(ArgLength::U8),
-                ArgLength::U16 => argument <= u64::from(u8::MAX),
-                ArgLength::U32 => argument <= u64::from(u16::MAX),
-                ArgLength::U64 => argument <= u64::from(u32::MAX),
-                _ => false,
-            };
-
-            if non_deterministic {
+        if !is_float && !head.argument.is_deterministic() {
                 return Error::NonDeterministic.into();
             }
-        }
 
-        let this = match major {
-            Major::UNSIGNED => Self::Unsigned(argument),
-            Major::NEGATIVE => Self::Negative(argument),
+        let this = match head.initial_byte.major() {
+            Major::Unsigned => Self::Unsigned(head.value()),
+            Major::Negative => Self::Negative(head.value()),
 
-            Major::BYTE_STRING => Self::ByteString(read_vec(reader, argument)?),
+            Major::ByteString => Self::ByteString(reader.read_data(head.value())?),
 
-            Major::TEXT_STRING => {
-                let bytes = read_vec(reader, argument)?;
+            Major::TextString => {
+                let bytes = reader.read_data(head.value())?;
                 let string = String::from_utf8(bytes)?;
                 Self::TextString(string)
             }
 
-            Major::ARRAY => {
-                if argument > LENGTH_LIMIT {
+            Major::Array => {
+                let value = head.value();
+
+                if value > limits::LENGTH_LIMIT {
                     return Error::LengthTooLarge.into();
                 }
 
@@ -718,21 +684,23 @@ impl Value {
                     return Error::LengthTooLarge.into();
                 };
 
-                let request: usize = argument.try_into().or(Err(Error::LengthTooLarge))?;
+                let request: usize = value.try_into().or(Err(Error::LengthTooLarge))?;
                 let granted = request.min(oom_mitigation / size_of::<Self>());
                 let oom_mitigation = oom_mitigation - granted * size_of::<Self>();
 
                 let mut vec = Vec::with_capacity(granted);
 
-                for _ in 0..argument {
-                    vec.push(Self::read_from_inner(reader, recursion_limit, oom_mitigation)?);
+                for _ in 0..value {
+                    vec.push(Self::do_read(reader, recursion_limit, oom_mitigation)?);
                 }
 
                 Self::Array(vec)
             }
 
-            Major::MAP => {
-                if argument > LENGTH_LIMIT {
+            Major::Map => {
+                let value = head.value();
+
+                if value > limits::LENGTH_LIMIT {
                     return Error::LengthTooLarge.into();
                 }
 
@@ -743,9 +711,9 @@ impl Value {
                 let mut map = BTreeMap::new();
                 let mut prev = None;
 
-                for _ in 0..argument {
-                    let key = Self::read_from_inner(reader, recursion_limit, oom_mitigation)?;
-                    let value = Self::read_from_inner(reader, recursion_limit, oom_mitigation)?;
+                for _ in 0..value {
+                    let key = Self::do_read(reader, recursion_limit, oom_mitigation)?;
+                    let value = Self::do_read(reader, recursion_limit, oom_mitigation)?;
 
                     if let Some((prev_key, prev_value)) = prev.take() {
                         if prev_key >= key {
@@ -764,38 +732,38 @@ impl Value {
                 Self::Map(map)
             }
 
-            Major::TAG => {
+            Major::Tag => {
                 let Some(recursion_limit) = recursion_limit.checked_sub(1) else {
                     return Error::LengthTooLarge.into();
                 };
 
-                let content = Box::new(Self::read_from_inner(reader, recursion_limit, oom_mitigation)?);
+                let tag_number = head.value();
+                let tag_content = Box::new(Self::do_read(reader, recursion_limit, oom_mitigation)?);
 
+                let this = Self::Tag(tag_number, tag_content);
+
+                if this.data_type() == DataType::BigInt {
                 // check if conforming bigint
-                if matches!(argument, Tag::POS_BIG_INT | Tag::NEG_BIG_INT)
-                    && let Ok(bigint) = content.as_bytes()
-                {
-                    let valid = bigint.len() >= 8 && bigint[0] != 0;
+                    let bytes = this.as_bytes().unwrap();
+                    let valid = bytes.len() >= 8 && bytes[0] != 0;
                     if !valid {
                         return Error::NonDeterministic.into();
                     }
                 }
 
-                Self::Tag(argument, content)
+                this
             }
 
-            Major::SIMPLE_VALUE => match info {
-                0..ArgLength::U8 => Self::SimpleValue(SimpleValue(argument as u8)),
-                ArgLength::U8 if argument >= 32 => Self::SimpleValue(SimpleValue(argument as u8)),
+            Major::SimpleOrFloat => match head.argument {
+                Argument::None => Self::SimpleValue(SimpleValue(head.initial_byte.info())),
+                Argument::U8(n) if n >= 32 => Self::SimpleValue(SimpleValue(n)),
 
-                ArgLength::U16 => Self::Float(Float::from_u16(argument as u16)),
-                ArgLength::U32 => Self::Float(Float::from_u32(argument as u32)?),
-                ArgLength::U64 => Self::Float(Float::from_u64(argument)?),
+                Argument::U16(bits) => Self::Float(Float::from_u16(bits)),
+                Argument::U32(bits) => Self::Float(Float::from_u32(bits)?),
+                Argument::U64(bits) => Self::Float(Float::from_u64(bits)?),
 
                 _ => return Error::Malformed.into(),
             },
-
-            _ => unreachable!(),
         };
 
         Ok(this)
@@ -845,7 +813,7 @@ impl Value {
         }
 
         let mut hex_reader = HexReader(reader, None);
-        let result = Self::read_from_inner(&mut hex_reader, RECURSION_LIMIT, OOM_MITIGATION);
+        let result = Self::do_read(&mut hex_reader, limits::RECURSION_LIMIT, limits::OOM_MITIGATION);
 
         if let Some(error) = hex_reader.1 {
             error.into()
@@ -863,41 +831,28 @@ impl Value {
     /// assert_eq!(buf, [0x18, 42]);
     /// ```
     pub fn write_to(&self, mut writer: impl io::Write) -> crate::IoResult<()> {
-        self.write_to_inner(&mut writer)
+        self.do_write(&mut writer)
     }
 
-    fn write_to_inner(&self, writer: &mut impl io::Write) -> crate::IoResult<()> {
-        let major = self.cbor_major();
-        let (info, argument) = self.cbor_argument();
-
-        let ctrl_byte = major << 5 | info;
-        writer.write_all(&[ctrl_byte])?;
-
-        let buf = argument.to_be_bytes();
-        match info {
-            ArgLength::U8 => writer.write_all(&buf[7..])?,
-            ArgLength::U16 => writer.write_all(&buf[6..])?,
-            ArgLength::U32 => writer.write_all(&buf[4..])?,
-            ArgLength::U64 => writer.write_all(&buf)?,
-            _ => (), // argument embedded in ctrl byte
-        }
+    fn do_write(&self, writer: &mut impl io::Write) -> crate::IoResult<()> {
+        self.cbor_head().write_to(writer)?;
 
         match self {
             Value::ByteString(bytes) => writer.write_all(bytes)?,
             Value::TextString(string) => writer.write_all(string.as_bytes())?,
 
-            Value::Tag(_number, content) => content.write_to_inner(writer)?,
+            Value::Tag(_number, content) => content.do_write(writer)?,
 
             Value::Array(values) => {
                 for value in values {
-                    value.write_to_inner(writer)?;
+                    value.do_write(writer)?;
                 }
             }
 
             Value::Map(map) => {
                 for (key, value) in map {
-                    key.write_to_inner(writer)?;
-                    value.write_to_inner(writer)?;
+                    key.do_write(writer)?;
+                    value.do_write(writer)?;
                 }
             }
 
@@ -933,74 +888,35 @@ impl Value {
             }
         }
 
-        self.write_to_inner(&mut HexWriter(writer))
+        self.do_write(&mut HexWriter(writer))
     }
 
-    fn cbor_major(&self) -> u8 {
+    fn cbor_head(&self) -> Head {
         match self {
-            Value::Unsigned(_) => Major::UNSIGNED,
-            Value::Negative(_) => Major::NEGATIVE,
-            Value::ByteString(_) => Major::BYTE_STRING,
-            Value::TextString(_) => Major::TEXT_STRING,
-            Value::Array(_) => Major::ARRAY,
-            Value::Map(_) => Major::MAP,
-            Value::Tag(_, _) => Major::TAG,
-            Value::SimpleValue(_) => Major::SIMPLE_VALUE,
-            Value::Float(_) => Major::SIMPLE_VALUE,
-        }
-    }
-
-    fn cbor_argument(&self) -> (u8, u64) {
-        fn arg(value: u64) -> (u8, u64) {
-            if value < u64::from(ArgLength::U8) {
-                (value as u8, value)
-            } else {
-                let info = match value {
-                    0x00..=0xFF => ArgLength::U8,
-                    0x100..=0xFFFF => ArgLength::U16,
-                    0x10000..=0xFFFF_FFFF => ArgLength::U32,
-                    _ => ArgLength::U64,
-                };
-                (info, value)
-            }
-        }
-
-        match self {
-            Value::Unsigned(value) => arg(*value),
-            Value::Negative(value) => arg(*value),
-            Value::ByteString(vec) => arg(vec.len().try_into().unwrap()),
-            Value::TextString(str) => arg(str.len().try_into().unwrap()),
-            Value::Array(vec) => arg(vec.len().try_into().unwrap()),
-            Value::Map(map) => arg(map.len().try_into().unwrap()),
-            Value::Tag(number, _) => arg(*number),
-            Value::SimpleValue(value) => arg(value.0.into()),
-            Value::Float(float) => float.cbor_argument(),
+            Value::SimpleValue(sv) => Head::from_value(Major::SimpleOrFloat, sv.0.into()),
+            Value::Unsigned(n) => Head::from_value(Major::Unsigned, *n),
+            Value::Negative(n) => Head::from_value(Major::Negative, *n),
+            Value::Float(float) => float.cbor_head(),
+            Value::ByteString(bytes) => Head::from_value(Major::ByteString, bytes.len().try_into().unwrap()),
+            Value::TextString(text) => Head::from_value(Major::TextString, text.len().try_into().unwrap()),
+            Value::Array(vec) => Head::from_value(Major::Array, vec.len().try_into().unwrap()),
+            Value::Map(map) => Head::from_value(Major::Map, map.len().try_into().unwrap()),
+            Value::Tag(number, _content) => Head::from_value(Major::Tag, *number),
         }
     }
 
     /// Encoded length
-    fn cbor_len(&self) -> usize {
-        let (info, _) = self.cbor_argument();
-
-        let header_len = match info {
-            0..ArgLength::U8 => 1,
-            ArgLength::U8 => 2,
-            ArgLength::U16 => 3,
-            ArgLength::U32 => 5,
-            ArgLength::U64 => 9,
-            _ => unreachable!(),
-        };
-
+    fn encoded_len(&self) -> usize {
         let data_len = match self {
             Self::ByteString(bytes) => bytes.len(),
             Self::TextString(text) => text.len(),
-            Self::Array(vec) => vec.iter().map(Self::cbor_len).sum(),
-            Self::Map(map) => map.iter().map(|(k, v)| k.cbor_len() + v.cbor_len()).sum(),
-            Self::Tag(_, content) => content.cbor_len(),
+            Self::Array(vec) => vec.iter().map(Self::encoded_len).sum(),
+            Self::Map(map) => map.iter().map(|(k, v)| k.encoded_len() + v.encoded_len()).sum(),
+            Self::Tag(_, content) => content.encoded_len(),
             _ => 0,
         };
 
-        header_len + data_len
+        self.cbor_head().encoded_len() + data_len
     }
 
     // ------------------- constructors -------------------
@@ -1158,10 +1074,10 @@ impl Value {
             Self::Array(_) => DataType::Array,
             Self::Map(_) => DataType::Map,
 
-            Self::Tag(Tag::DATE_TIME, content) if content.data_type().is_text() => DataType::DateTime,
-            Self::Tag(Tag::EPOCH_TIME, content) if content.data_type().is_numeric() => DataType::EpochTime,
+            Self::Tag(tag::DATE_TIME, content) if content.data_type().is_text() => DataType::DateTime,
+            Self::Tag(tag::EPOCH_TIME, content) if content.data_type().is_numeric() => DataType::EpochTime,
 
-            Self::Tag(Tag::POS_BIG_INT | Tag::NEG_BIG_INT, content) if content.data_type().is_bytes() => {
+            Self::Tag(tag::POS_BIG_INT | tag::NEG_BIG_INT, content) if content.data_type().is_bytes() => {
                 DataType::BigInt
             }
 
@@ -1200,11 +1116,11 @@ impl Value {
             Self::Unsigned(x) => T::try_from(*x).or(Err(Error::Overflow)),
             Self::Negative(_) => Err(Error::NegativeUnsigned),
 
-            Self::Tag(Tag::POS_BIG_INT, content) if content.is_bytes() => {
+            Self::Tag(tag::POS_BIG_INT, content) if content.is_bytes() => {
                 T::try_from(u128_from_slice(self.as_bytes()?)?).or(Err(Error::Overflow))
             }
 
-            Self::Tag(Tag::NEG_BIG_INT, content) if content.is_bytes() => Err(Error::NegativeUnsigned),
+            Self::Tag(tag::NEG_BIG_INT, content) if content.is_bytes() => Err(Error::NegativeUnsigned),
             Self::Tag(_other_number, content) => content.peeled().to_uint(),
             _ => Err(Error::IncompatibleType(self.data_type())),
         }
@@ -1246,11 +1162,11 @@ impl Value {
             Self::Unsigned(x) => Ok(IntegerBytes::UnsignedOwned(x.to_be_bytes())),
             Self::Negative(x) => Ok(IntegerBytes::NegativeOwned(x.to_be_bytes())),
 
-            Self::Tag(Tag::POS_BIG_INT, content) if content.is_bytes() => {
+            Self::Tag(tag::POS_BIG_INT, content) if content.is_bytes() => {
                 Ok(IntegerBytes::UnsignedBorrowed(content.as_bytes()?))
             }
 
-            Self::Tag(Tag::NEG_BIG_INT, content) if content.is_bytes() => {
+            Self::Tag(tag::NEG_BIG_INT, content) if content.is_bytes() => {
                 Ok(IntegerBytes::NegativeBorrowed(content.as_bytes()?))
             }
 
@@ -1267,11 +1183,11 @@ impl Value {
             Self::Unsigned(x) => T::try_from(*x).or(Err(Error::Overflow)),
             Self::Negative(x) => T::try_from(*x).map(T::not).or(Err(Error::Overflow)),
 
-            Self::Tag(Tag::POS_BIG_INT, content) if content.is_bytes() => {
+            Self::Tag(tag::POS_BIG_INT, content) if content.is_bytes() => {
                 T::try_from(u128_from_slice(self.as_bytes()?)?).or(Err(Error::Overflow))
             }
 
-            Self::Tag(Tag::NEG_BIG_INT, content) if content.is_bytes() => {
+            Self::Tag(tag::NEG_BIG_INT, content) if content.is_bytes() => {
                 T::try_from(u128_from_slice(self.as_bytes()?)?)
                     .map(T::not)
                     .or(Err(Error::Overflow))
@@ -1638,25 +1554,5 @@ impl Value {
             self = *content;
         }
         self
-    }
-}
-
-// -------------------- Helpers --------------------
-
-fn read_vec(reader: &mut impl io::Read, len: u64) -> crate::IoResult<Vec<u8>> {
-    use io::Read;
-
-    if len > LENGTH_LIMIT {
-        return Error::LengthTooLarge.into();
-    }
-
-    let len_usize = usize::try_from(len).or(Err(Error::LengthTooLarge))?;
-    let mut buf = Vec::with_capacity(len_usize.min(OOM_MITIGATION)); // Mitigate OOM
-    let bytes_read = reader.take(len).read_to_end(&mut buf)?;
-
-    if bytes_read == len_usize {
-        Ok(buf)
-    } else {
-        Error::UnexpectedEof.into()
     }
 }

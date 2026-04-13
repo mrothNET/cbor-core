@@ -1,5 +1,4 @@
-use super::*;
-
+use crate::{Value, tag};
 // --------- From unsigned ints ---------
 
 macro_rules! try_from_uint {
@@ -24,7 +23,7 @@ impl From<u128> for Value {
         } else {
             let bytes: Vec<u8> = value.to_be_bytes().into_iter().skip_while(|&byte| byte == 0).collect();
             debug_assert!(bytes.len() > 8);
-            Self::tag(Tag::POS_BIG_INT, bytes)
+            Self::tag(tag::POS_BIG_INT, bytes)
         }
     }
 }
@@ -73,7 +72,7 @@ impl From<i128> for Value {
                     .skip_while(|&byte| byte == 0)
                     .collect();
                 debug_assert!(bytes.len() > 8);
-                Self::tag(Tag::NEG_BIG_INT, bytes)
+                Self::tag(tag::NEG_BIG_INT, bytes)
             }
         }
     }
@@ -91,15 +90,15 @@ impl From<isize> for Value {
 macro_rules! try_from_value {
     ($type:ty, $to_x:ident) => {
         impl TryFrom<Value> for $type {
-            type Error = Error;
-            fn try_from(value: Value) -> Result<Self> {
+            type Error = crate::Error;
+            fn try_from(value: Value) -> crate::Result<Self> {
                 value.$to_x()
             }
         }
 
         impl TryFrom<&Value> for $type {
-            type Error = Error;
-            fn try_from(value: &Value) -> Result<Self> {
+            type Error = crate::Error;
+            fn try_from(value: &Value) -> crate::Result<Self> {
                 value.$to_x()
             }
         }

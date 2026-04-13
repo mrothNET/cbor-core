@@ -1,6 +1,6 @@
 use std::time::{Duration, SystemTime};
 
-use crate::{Error, Result, Tag, Value};
+use crate::{Error, Result, Value, tag};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Inner {
@@ -56,8 +56,8 @@ impl std::hash::Hash for Inner {
 impl From<EpochTime> for Value {
     fn from(value: EpochTime) -> Self {
         match value.0 {
-            Inner::Int(int) => Self::tag(Tag::EPOCH_TIME, int),
-            Inner::Float(float) => Self::tag(Tag::EPOCH_TIME, float),
+            Inner::Int(int) => Self::tag(tag::EPOCH_TIME, int),
+            Inner::Float(float) => Self::tag(tag::EPOCH_TIME, float),
         }
     }
 }

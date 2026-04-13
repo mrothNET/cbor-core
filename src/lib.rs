@@ -77,7 +77,7 @@
 //! | `rug` | `From`/`TryFrom` between `Value` and `rug::Integer` |
 
 mod array;
-mod consts;
+mod codec;
 mod data_type;
 mod date_time;
 mod epoch_time;
@@ -85,10 +85,13 @@ mod error;
 mod ext;
 mod float;
 mod integer;
+mod io;
 mod iso3339;
+mod limits;
 mod macros;
 mod map;
 mod simple_value;
+mod tag;
 mod util;
 mod value;
 
@@ -106,7 +109,6 @@ pub use value::Value;
 #[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
 pub use ext::serde;
 
-use consts::*;
 use integer::*;
 
 #[cfg(test)]
