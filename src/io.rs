@@ -1,18 +1,9 @@
 use std::io;
 
-use crate::limits;
-
-fn decode_nibble(char: u8) -> Result<u8, crate::Error> {
-    match char {
-        b'0'..=b'9' => Ok(char - b'0'),
-        b'a'..=b'f' => Ok(char - b'a' + 10),
-        b'A'..=b'F' => Ok(char - b'A' + 10),
-        _ => Err(crate::Error::InvalidHex),
-    }
-}
+use crate::{limits, util::u8_from_hex_digit};
 
 fn decode_byte(pair: &[u8; 2]) -> Result<u8, crate::Error> {
-    Ok(decode_nibble(pair[0])? << 4 | decode_nibble(pair[1])?)
+    Ok(u8_from_hex_digit(pair[0])? << 4 | u8_from_hex_digit(pair[1])?)
 }
 
 pub(crate) trait MyReader {

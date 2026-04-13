@@ -23,3 +23,23 @@ pub(crate) fn u64_from_slice(bytes: &[u8]) -> Result<u64> {
 pub(crate) fn u128_from_slice(bytes: &[u8]) -> Result<u128> {
     Ok(u128::from_be_bytes(uint_from_slice(bytes)?))
 }
+
+pub(crate) fn u8_from_hex_digit(byte: u8) -> Result<u8> {
+    match byte {
+        b'0'..=b'9' => Ok(byte - b'0'),
+        b'a'..=b'f' => Ok(byte - b'a' + 10),
+        b'A'..=b'F' => Ok(byte - b'A' + 10),
+        _ => Err(crate::Error::InvalidHex),
+    }
+}
+
+pub(crate) fn u8_from_base64_digit(byte: u8) -> Result<u8> {
+    match byte {
+        b'A'..=b'Z' => Ok(byte - b'A'),
+        b'a'..=b'z' => Ok(byte - b'a' + 26),
+        b'0'..=b'9' => Ok(byte - b'0' + 52),
+        b'+' | b'-' => Ok(62),
+        b'/' | b'_' => Ok(63),
+        _ => Err(Error::InvalidBase64),
+    }
+}

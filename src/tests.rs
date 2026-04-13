@@ -1,7 +1,8 @@
 mod collections;
-mod diagnostic;
+mod debug;
 mod integers;
 mod limits;
+mod parse;
 mod rundgren;
 mod simple_value;
 mod value;

@@ -4,6 +4,9 @@
 
 ### Added
 
+- `FromStr` for `Value`: parse CBOR diagnostic notation (Section 2.3.6) via `"...".parse::<Value>()`. Supports integers in multiple bases with `_` separators, arbitrary-precision integers, floats (decimal, scientific, `float'hex'`, `NaN`, `Infinity`), text and byte strings (hex, base64, single-quoted, embedded `<<...>>`), arrays, maps, tags, simple values, and comments.
+- `Debug` output for floats now matches ECMAScript `Number.toString`, so diagnostic text round-trips through `format!("{value:?}").parse()`.
+- `Error::InvalidBase64` for base64 parse failures in diagnostic notation.
 - `Value::insert()` inserts into a map, or shift-inserts into an array when the key is a valid `0..=len` index. Always returns `None` for arrays; panics on out-of-bounds array index or non-array/non-map receiver.
 - `Value::remove()` removes an element by index (arrays) or key (maps). Arrays panic on out-of-bounds index; maps return `None` for a missing key.
 - `Value::append()` pushes a value to the end of an array in O(1). Panics on non-array.

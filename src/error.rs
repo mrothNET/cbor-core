@@ -11,7 +11,7 @@ use crate::DataType;
 /// and [`Value::read_hex_from`](crate::Value::read_hex_from) when the input is not valid deterministic
 /// CBOR: [`Malformed`](Self::Malformed), [`NonDeterministic`](Self::NonDeterministic),
 /// [`UnexpectedEof`](Self::UnexpectedEof), [`LengthTooLarge`](Self::LengthTooLarge),
-/// [`InvalidUtf8`](Self::InvalidUtf8), [`InvalidHex`](Self::InvalidHex).
+/// [`InvalidUtf8`](Self::InvalidUtf8), [`InvalidHex`](Self::InvalidHex), [`InvalidBase64`](Self::InvalidBase64).
 ///
 /// **Accessor errors** are returned by the `to_*`, `as_*`, and `into_*`
 /// methods on [`Value`](crate::Value) when the value does not match the requested type:
@@ -33,6 +33,7 @@ use crate::DataType;
 #[non_exhaustive]
 pub enum Error {
     // --- Decoding errors ---
+    //
     /// Binary CBOR data is structurally broken.
     Malformed,
     /// CBOR encoding is valid but not deterministic (non-shortest form, unsorted map keys, etc.).
@@ -45,8 +46,11 @@ pub enum Error {
     InvalidUtf8,
     /// Hex input contains invalid characters.
     InvalidHex,
+    /// Base64 input contains invalid characters.
+    InvalidBase64,
 
     // --- Accessor errors ---
+    //
     /// Accessor called on a value of the wrong CBOR type.
     IncompatibleType(DataType),
     /// Integer does not fit in the target type.
@@ -59,6 +63,7 @@ pub enum Error {
     InvalidSimpleValue,
 
     // --- Validation errors ---
+    //
     /// A text field had invalid syntax for its expected format.
     InvalidFormat,
     /// A value violates semantic constraints.
@@ -74,6 +79,7 @@ impl fmt::Display for Error {
             Self::LengthTooLarge => write!(f, "length exceeds reasonable size"),
             Self::InvalidUtf8 => write!(f, "invalid UTF-8 in text string"),
             Self::InvalidHex => write!(f, "invalid hex character"),
+            Self::InvalidBase64 => write!(f, "invalid base64 character"),
             Self::IncompatibleType(t) => write!(f, "incompatible CBOR type {name}", name = t.name()),
             Self::Overflow => write!(f, "integer overflow"),
             Self::NegativeUnsigned => write!(f, "negative value for unsigned type"),

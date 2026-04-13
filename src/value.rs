@@ -42,7 +42,7 @@ use crate::{
 /// let b = Value::from(true);
 /// ```
 ///
-/// For arrays and maps the `array!` and `map!` macros are convenient:
+/// The `array!` and `map!` macros build arrays and maps from literals:
 ///
 /// ```
 /// use cbor_core::{Value, array, map};
@@ -547,12 +547,7 @@ impl fmt::Debug for Value {
                         f.write_str("-Infinity")
                     }
                 } else {
-                    let s = format!("{value}");
-                    f.write_str(&s)?;
-                    if !s.contains('.') && !s.contains('e') && !s.contains('E') {
-                        f.write_str(".0")?; // ensure a decimal point is present
-                    }
-                    Ok(())
+                    format_ecmascript_float(f, value)
                 }
             }
 
@@ -615,6 +610,57 @@ impl fmt::Debug for Value {
                     write!(f, "{tag}({content:?})")
                 }
             }
+        }
+    }
+}
+
+/// Format a finite, non-NaN f64 in ECMAScript Number.toString style
+/// with the CBOR::Core enhancement that finite values always include
+/// a decimal point and at least one fractional digit.
+fn format_ecmascript_float(f: &mut fmt::Formatter<'_>, value: f64) -> fmt::Result {
+    if value == 0.0 {
+        return f.write_str(if value.is_sign_negative() { "-0.0" } else { "0.0" });
+    }
+
+    let sign = if value.is_sign_negative() { "-" } else { "" };
+    let scientific = format!("{:e}", value.abs());
+    let (mantissa, exponent) = scientific.split_once('e').unwrap();
+    let rust_exp: i32 = exponent.parse().unwrap();
+    let digits: String = mantissa.chars().filter(|c| *c != '.').collect();
+    let k = digits.len() as i32;
+    let e = rust_exp + 1;
+
+    f.write_str(sign)?;
+
+    if 0 < e && e <= 21 {
+        if e >= k {
+            f.write_str(&digits)?;
+            for _ in 0..(e - k) {
+                f.write_str("0")?;
+            }
+            f.write_str(".0")
+        } else {
+            let (int_part, frac_part) = digits.split_at(e as usize);
+            write!(f, "{int_part}.{frac_part}")
+        }
+    } else if -6 < e && e <= 0 {
+        f.write_str("0.")?;
+        for _ in 0..(-e) {
+            f.write_str("0")?;
+        }
+        f.write_str(&digits)
+    } else {
+        let exp_val = e - 1;
+        let (first, rest) = digits.split_at(1);
+        if rest.is_empty() {
+            write!(f, "{first}.0")?;
+        } else {
+            write!(f, "{first}.{rest}")?;
+        }
+        if exp_val >= 0 {
+            write!(f, "e+{exp_val}")
+        } else {
+            write!(f, "e{exp_val}")
         }
     }
 }

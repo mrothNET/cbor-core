@@ -30,9 +30,43 @@ form, and map keys are encoded in sorted canonical order. Decoding
 rejects non-deterministic data. NaN values, including signaling NaNs
 and custom payloads, are preserved through round-trips.
 
-`Debug` output uses CBOR::Core diagnostic notation. The `{:#?}`
-format produces multi-line output with indentation for nested arrays
-and maps.
+## Diagnostic notation
+
+`Value` implements both directions of CBOR::Core diagnostic notation
+(Section 2.3.6 of the draft):
+
+- `Debug` prints diagnostic text. `{:#?}` indents nested arrays and maps.
+- `FromStr` parses diagnostic text back into a `Value`.
+
+Parsing is useful on its own, beyond the round trip. For tests,
+fixtures, or examples it is often the shortest way to write a literal
+value, nested structures included:
+
+```rust
+use cbor_core::Value;
+
+let cert: Value = r#"{
+    "iss": "https://issuer.example",
+    "sub": "user-42",
+    "iat": 1700000000,
+    "cnf": {
+        "kty": "OKP",
+        "crv": "Ed25519",
+        "x":   h'd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a'
+    },
+    "scope": ["read", "write"]
+}"#.parse().unwrap();
+
+assert_eq!(cert["cnf"]["crv"].as_str(), Some("Ed25519"));
+```
+
+The grammar covers integers in any base (with `_` separators),
+arbitrary-precision integers, floats (decimal, scientific, `NaN`,
+`Infinity`, or `float'<hex>'` for explicit bit patterns), text strings
+with JSON-style escapes, byte strings (`h'...'`, `b64'...'`, `'...'`, or
+`<<...>>` for embedded CBOR), arrays, maps, tagged values, simple
+values, and comments. Input may be non-canonical; the parser sorts map
+keys and rejects duplicates, producing a canonical `Value`.
 
 ## Security
 
@@ -72,6 +106,11 @@ let value = map! {
 let bytes = value.encode();
 let decoded = Value::decode(&bytes).unwrap();
 assert_eq!(value, decoded);
+
+// Diagnostic notation round-trips through Debug / FromStr
+let text = format!("{value:?}");
+let parsed: Value = text.parse().unwrap();
+assert_eq!(value, parsed);
 ```
 
 Arrays and maps can also be built from standard Rust collections

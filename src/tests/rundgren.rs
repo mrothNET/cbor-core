@@ -1,8 +1,11 @@
 // cspell::disable-next-line
 //! Test vectors from draft-rundgren-cbor-core-25, Appendix A.
 //!
-//! Each test verifies both encoding (Value → bytes) and decoding (bytes → Value).
-//! Some tests may fail due to known bugs that will be fixed later.
+//! For each valid entry (tables 7, 8, 9) the helpers verify four directions:
+//!  1. `Value → bytes`   (encoding matches expected hex)
+//!  2. `bytes → Value`   (decoding yields the original value)
+//!  3. `Value → text`    (`Debug` output matches the diagnostic notation)
+//!  4. `text → bytes`    (parsing the diagnostic text re-encodes to the same hex)
 
 // Float literals in these test vectors are taken verbatim from the specification.
 // The exact digits are significant for encoding correctness.
@@ -10,19 +13,21 @@
 
 use crate::{Error, Value};
 
-/// Verify encode and decode match the expected CBOR bytes.
-fn check(value: &Value, expected: &[u8]) {
-    assert_eq!(value.encode(), expected, "encoding mismatch");
-    let decoded = Value::decode(expected).expect("decode failed");
-    assert_eq!(&decoded, value, "decoding mismatch");
-}
+/// Verify all four directions for a value whose `Value` equality is stable.
+fn check(value: &Value, expected_hex: &str, expected_diag: &str) {
+    // 1. encode
+    assert_eq!(value.encode_hex(), expected_hex, "encoding mismatch");
 
-/// Verify encode matches expected bytes. Decode and re-encode to check roundtrip.
-/// Used for NaN values where direct Value comparison doesn't work.
-fn check_bits(value: &Value, expected: &[u8]) {
-    assert_eq!(value.encode(), expected, "encoding mismatch");
-    let decoded = Value::decode(expected).expect("decode failed");
-    assert_eq!(decoded.encode(), expected, "roundtrip mismatch");
+    // 2. decode
+    let decoded = Value::decode_hex(expected_hex).expect("decode failed");
+    assert_eq!(&decoded, value, "decoding mismatch");
+
+    // 3. Debug → diagnostic notation
+    assert_eq!(format!("{value:?}"), expected_diag, "debug format mismatch");
+
+    // 4. parse diagnostic notation → encode
+    let parsed: Value = expected_diag.parse().expect("parse failed");
+    assert_eq!(parsed.encode_hex(), expected_hex, "parse+encode mismatch");
 }
 
 // =====================================================================
@@ -31,252 +36,256 @@ fn check_bits(value: &Value, expected: &[u8]) {
 
 #[test]
 fn int_0() {
-    check(&Value::from(0), &[0x00]);
+    check(&Value::from(0), "00", "0");
 }
 
 #[test]
 fn int_neg_1() {
-    // -1 is Negative(0) in CBOR: major 1, value 0
-    check(&Value::from(-1), &[0x20]);
+    check(&Value::from(-1), "20", "-1");
 }
 
 #[test]
 fn int_23() {
-    check(&Value::from(23), &[0x17]);
+    check(&Value::from(23), "17", "23");
 }
 
 #[test]
 fn int_neg_24() {
-    check(&Value::from(-24), &[0x37]);
+    check(&Value::from(-24), "37", "-24");
 }
 
 #[test]
 fn int_24() {
-    check(&Value::from(24), &[0x18, 0x18]);
+    check(&Value::from(24), "1818", "24");
 }
 
 #[test]
 fn int_neg_25() {
-    check(&Value::from(-25), &[0x38, 0x18]);
+    check(&Value::from(-25), "3818", "-25");
 }
 
 #[test]
 fn int_255() {
-    check(&Value::from(255), &[0x18, 0xff]);
+    check(&Value::from(255), "18ff", "255");
 }
 
 #[test]
 fn int_neg_256() {
-    check(&Value::from(-256), &[0x38, 0xff]);
+    check(&Value::from(-256), "38ff", "-256");
 }
 
 #[test]
 fn int_256() {
-    check(&Value::from(256), &[0x19, 0x01, 0x00]);
+    check(&Value::from(256), "190100", "256");
 }
 
 #[test]
 fn int_neg_257() {
-    check(&Value::from(-257), &[0x39, 0x01, 0x00]);
+    check(&Value::from(-257), "390100", "-257");
 }
 
 #[test]
 fn int_65535() {
-    check(&Value::from(65535), &[0x19, 0xff, 0xff]);
+    check(&Value::from(65535), "19ffff", "65535");
 }
 
 #[test]
 fn int_neg_65536() {
-    check(&Value::from(-65536), &[0x39, 0xff, 0xff]);
+    check(&Value::from(-65536), "39ffff", "-65536");
 }
 
 #[test]
 fn int_65536() {
-    check(&Value::from(65536), &[0x1a, 0x00, 0x01, 0x00, 0x00]);
+    check(&Value::from(65536), "1a00010000", "65536");
 }
 
 #[test]
 fn int_neg_65537() {
-    check(&Value::from(-65537), &[0x3a, 0x00, 0x01, 0x00, 0x00]);
+    check(&Value::from(-65537), "3a00010000", "-65537");
 }
 
 #[test]
 fn int_4294967295() {
-    check(&Value::from(4294967295_u64), &[0x1a, 0xff, 0xff, 0xff, 0xff]);
+    check(&Value::from(4294967295_u64), "1affffffff", "4294967295");
 }
 
 #[test]
 fn int_neg_4294967296() {
-    check(&Value::from(-4294967296_i64), &[0x3a, 0xff, 0xff, 0xff, 0xff]);
+    check(&Value::from(-4294967296_i64), "3affffffff", "-4294967296");
 }
 
 #[test]
 fn int_4294967296() {
-    check(
-        &Value::from(4294967296_i64),
-        &[0x1b, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00],
-    );
+    check(&Value::from(4294967296_i64), "1b0000000100000000", "4294967296");
 }
 
 #[test]
 fn int_neg_4294967297() {
-    check(
-        &Value::from(-4294967297_i64),
-        &[0x3b, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00],
-    );
+    check(&Value::from(-4294967297_i64), "3b0000000100000000", "-4294967297");
 }
 
 #[test]
 fn int_u64_max() {
-    // 18446744073709551615
-    check(
-        &Value::from(u64::MAX),
-        &[0x1b, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff],
-    );
+    check(&Value::from(u64::MAX), "1bffffffffffffffff", "18446744073709551615");
 }
 
 #[test]
 fn int_neg_u64_max_plus_1() {
-    // -18446744073709551616 = Negative(u64::MAX)
     check(
         &Value::Negative(u64::MAX),
-        &[0x3b, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff],
+        "3bffffffffffffffff",
+        "-18446744073709551616",
     );
 }
 
 #[test]
 fn bigint_pos_smallest() {
-    // 18446744073709551616 = u64::MAX + 1 → Tag(2, h'010000000000000000')
-    let v = Value::from(u64::MAX as u128 + 1);
-    check(&v, &[0xc2, 0x49, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+    check(
+        &Value::from(u64::MAX as u128 + 1),
+        "c249010000000000000000",
+        "18446744073709551616",
+    );
 }
 
 #[test]
 fn bigint_neg_smallest() {
-    // -18446744073709551617 → Tag(3, h'010000000000000000')
-    let v = Value::from(-(u64::MAX as i128) - 2);
-    check(&v, &[0xc3, 0x49, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+    check(
+        &Value::from(-(u64::MAX as i128) - 2),
+        "c349010000000000000000",
+        "-18446744073709551617",
+    );
 }
 
 // =====================================================================
 // A.2. Floating-Point Numbers (Table 8)
 // =====================================================================
 
-// --- f16 values ---
+// --- Special values ---
 
 #[test]
 fn float_zero() {
-    check(&Value::from(0.0), &[0xf9, 0x00, 0x00]);
+    check(&Value::from(0.0), "f90000", "0.0");
 }
 
 #[test]
 fn float_neg_zero() {
+    // Direct Value equality would compare bits through Float; using check_bits
+    // would also work. `check` is enough because f16 -0.0 is a single variant.
     let v = Value::from(-0.0);
-    assert_eq!(v.encode(), [0xf9, 0x80, 0x00]);
-    let decoded = Value::decode([0xf9, 0x80, 0x00]).unwrap();
+    assert_eq!(v.encode_hex(), "f98000");
+    assert_eq!(format!("{v:?}"), "-0.0");
+    let decoded = Value::decode_hex("f98000").unwrap();
     assert!(matches!(decoded, Value::Float(f) if f.to_f64().to_bits() == (-0.0_f64).to_bits()));
+    let parsed: Value = "-0.0".parse().unwrap();
+    assert_eq!(parsed.encode_hex(), "f98000");
 }
 
 #[test]
 fn float_infinity() {
-    check(&Value::from(f64::INFINITY), &[0xf9, 0x7c, 0x00]);
+    check(&Value::from(f64::INFINITY), "f97c00", "Infinity");
 }
 
 #[test]
 fn float_neg_infinity() {
-    check(&Value::from(f64::NEG_INFINITY), &[0xf9, 0xfc, 0x00]);
+    check(&Value::from(f64::NEG_INFINITY), "f9fc00", "-Infinity");
 }
 
 #[test]
 fn float_nan() {
-    check_bits(&Value::from(f64::NAN), &[0xf9, 0x7e, 0x00]);
+    check(&Value::from(f64::NAN), "f97e00", "NaN");
 }
+
+// --- f16 values ---
 
 #[test]
 fn float_f16_smallest_subnormal() {
-    // 5.960464477539063e-8 → f9 0001
-    check(&Value::from(5.960464477539063e-8), &[0xf9, 0x00, 0x01]);
+    check(&Value::from(5.960464477539063e-8), "f90001", "5.960464477539063e-8");
 }
 
 #[test]
 fn float_f16_largest_subnormal() {
-    // 0.00006097555160522461 → f9 03ff
-    check(&Value::from(0.00006097555160522461), &[0xf9, 0x03, 0xff]);
+    check(&Value::from(0.00006097555160522461), "f903ff", "0.00006097555160522461");
 }
 
 #[test]
 fn float_f16_smallest_normal() {
-    // 0.00006103515625 → f9 0400
-    check(&Value::from(0.00006103515625), &[0xf9, 0x04, 0x00]);
+    check(&Value::from(0.00006103515625), "f90400", "0.00006103515625");
 }
 
 #[test]
 fn float_f16_largest() {
-    // 65504.0 → f9 7bff
-    check(&Value::from(65504.0), &[0xf9, 0x7b, 0xff]);
+    check(&Value::from(65504.0), "f97bff", "65504.0");
 }
 
 // --- f32 values ---
 
 #[test]
 fn float_f32_smallest_subnormal() {
-    // 1.401298464324817e-45 → fa 00000001
-    check(&Value::from(1.401298464324817e-45), &[0xfa, 0x00, 0x00, 0x00, 0x01]);
+    check(
+        &Value::from(1.401298464324817e-45),
+        "fa00000001",
+        "1.401298464324817e-45",
+    );
 }
 
 #[test]
 fn float_f32_largest_subnormal() {
-    // 1.1754942106924411e-38 → fa 007fffff
-    check(&Value::from(1.1754942106924411e-38), &[0xfa, 0x00, 0x7f, 0xff, 0xff]);
+    check(
+        &Value::from(1.1754942106924411e-38),
+        "fa007fffff",
+        "1.1754942106924411e-38",
+    );
 }
 
 #[test]
 fn float_f32_smallest_normal() {
-    // 1.1754943508222875e-38 → fa 00800000
-    check(&Value::from(1.1754943508222875e-38), &[0xfa, 0x00, 0x80, 0x00, 0x00]);
+    check(
+        &Value::from(1.1754943508222875e-38),
+        "fa00800000",
+        "1.1754943508222875e-38",
+    );
 }
 
 #[test]
 fn float_f32_largest() {
-    // 3.4028234663852886e+38 → fa 7f7fffff
-    check(&Value::from(3.4028234663852886e+38), &[0xfa, 0x7f, 0x7f, 0xff, 0xff]);
+    check(
+        &Value::from(3.4028234663852886e+38),
+        "fa7f7fffff",
+        "3.4028234663852886e+38",
+    );
 }
 
 // --- f64 values ---
 
 #[test]
 fn float_f64_smallest_subnormal() {
-    // 5.0e-324 → fb 0000000000000001
-    check(
-        &Value::from(5.0e-324),
-        &[0xfb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01],
-    );
+    check(&Value::from(5.0e-324), "fb0000000000000001", "5.0e-324");
 }
 
 #[test]
 fn float_f64_largest_subnormal() {
-    // 2.225073858507201e-308 → fb 000fffffffffffff
     check(
         &Value::from(2.225073858507201e-308),
-        &[0xfb, 0x00, 0x0f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff],
+        "fb000fffffffffffff",
+        "2.225073858507201e-308",
     );
 }
 
 #[test]
 fn float_f64_smallest_normal() {
-    // 2.2250738585072014e-308 → fb 0010000000000000
     check(
         &Value::from(2.2250738585072014e-308),
-        &[0xfb, 0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+        "fb0010000000000000",
+        "2.2250738585072014e-308",
     );
 }
 
 #[test]
 fn float_f64_largest() {
-    // 1.7976931348623157e+308 → fb 7fefffffffffffff
     check(
         &Value::from(1.7976931348623157e+308),
-        &[0xfb, 0x7f, 0xef, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff],
+        "fb7fefffffffffffff",
+        "1.7976931348623157e+308",
     );
 }
 
@@ -284,167 +293,175 @@ fn float_f64_largest() {
 
 #[test]
 fn float_random_negative() {
-    // -0.0000033333333333333333 → fb becbf647612f3696
     check(
         &Value::from(-0.0000033333333333333333),
-        &[0xfb, 0xbe, 0xcb, 0xf6, 0x47, 0x61, 0x2f, 0x36, 0x96],
+        "fbbecbf647612f3696",
+        "-0.0000033333333333333333",
     );
 }
 
 #[test]
 fn float_f32_random() {
-    // 10.559998512268066 → fa 4128f5c1
-    check(&Value::from(10.559998512268066), &[0xfa, 0x41, 0x28, 0xf5, 0xc1]);
+    check(&Value::from(10.559998512268066), "fa4128f5c1", "10.559998512268066");
 }
 
 #[test]
 fn float_f64_next_in_succession() {
-    // 10.559998512268068 → fb 40251eb820000001
     check(
         &Value::from(10.559998512268068),
-        &[0xfb, 0x40, 0x25, 0x1e, 0xb8, 0x20, 0x00, 0x00, 0x01],
+        "fb40251eb820000001",
+        "10.559998512268068",
     );
 }
 
 #[test]
 fn float_2_pow_68() {
-    // 295147905179352830000.0 → fa 61800000 (2^68)
-    check(&Value::from(295147905179352830000.0), &[0xfa, 0x61, 0x80, 0x00, 0x00]);
+    check(
+        &Value::from(295147905179352830000.0),
+        "fa61800000",
+        "295147905179352830000.0",
+    );
 }
 
 #[test]
 fn float_two() {
-    // 2.0 → f9 4000
-    check(&Value::from(2.0), &[0xf9, 0x40, 0x00]);
+    check(&Value::from(2.0), "f94000", "2.0");
 }
 
 // --- Negative smallest f16 subnormal and adjacents ---
 
 #[test]
 fn float_neg_f16_smallest_subnormal() {
-    // -5.960464477539063e-8 → f9 8001
-    check(&Value::from(-5.960464477539063e-8), &[0xf9, 0x80, 0x01]);
+    check(&Value::from(-5.960464477539063e-8), "f98001", "-5.960464477539063e-8");
 }
 
 #[test]
 fn float_adjacent_neg_f16_subnormal_lower() {
-    // -5.960464477539062e-8 → fb be6fffffffffffff
     check(
         &Value::from(-5.960464477539062e-8),
-        &[0xfb, 0xbe, 0x6f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff],
+        "fbbe6fffffffffffff",
+        "-5.960464477539062e-8",
     );
 }
 
 #[test]
 fn float_adjacent_neg_f16_subnormal_upper() {
-    // -5.960464477539064e-8 → fb be70000000000001
     check(
         &Value::from(-5.960464477539064e-8),
-        &[0xfb, 0xbe, 0x70, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01],
+        "fbbe70000000000001",
+        "-5.960464477539064e-8",
     );
 }
 
 #[test]
 fn float_adjacent_neg_f16_subnormal_f32() {
-    // -5.960465188081798e-8 → fa b3800001
-    check(&Value::from(-5.960465188081798e-8), &[0xfa, 0xb3, 0x80, 0x00, 0x01]);
+    check(
+        &Value::from(-5.960465188081798e-8),
+        "fab3800001",
+        "-5.960465188081798e-8",
+    );
 }
 
 // --- Adjacents of largest f16 subnormal ---
 
 #[test]
 fn float_adjacent_f16_largest_subnormal_lower() {
-    // 0.0000609755516052246 → fb 3f0ff7ffffffffff
     check(
         &Value::from(0.0000609755516052246),
-        &[0xfb, 0x3f, 0x0f, 0xf7, 0xff, 0xff, 0xff, 0xff, 0xff],
+        "fb3f0ff7ffffffffff",
+        "0.0000609755516052246",
     );
 }
 
 #[test]
 fn float_adjacent_f16_largest_subnormal_upper() {
-    // 0.000060975551605224616 → fb 3f0ff80000000001
     check(
         &Value::from(0.000060975551605224616),
-        &[0xfb, 0x3f, 0x0f, 0xf8, 0x00, 0x00, 0x00, 0x00, 0x01],
+        "fb3f0ff80000000001",
+        "0.000060975551605224616",
     );
 }
 
 #[test]
 fn float_adjacent_f16_largest_subnormal_f32() {
-    // 0.000060975555243203416 → fa 387fc001
-    check(&Value::from(0.000060975555243203416), &[0xfa, 0x38, 0x7f, 0xc0, 0x01]);
+    check(
+        &Value::from(0.000060975555243203416),
+        "fa387fc001",
+        "0.000060975555243203416",
+    );
 }
 
 // --- Adjacents of smallest f16 normal ---
 
 #[test]
 fn float_adjacent_f16_smallest_normal_lower() {
-    // 0.00006103515624999999 → fb 3f0fffffffffffff
     check(
         &Value::from(0.00006103515624999999),
-        &[0xfb, 0x3f, 0x0f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff],
+        "fb3f0fffffffffffff",
+        "0.00006103515624999999",
     );
 }
 
 #[test]
 fn float_adjacent_f16_smallest_normal_upper() {
-    // 0.00006103515625000001 → fb 3f10000000000001
     check(
         &Value::from(0.00006103515625000001),
-        &[0xfb, 0x3f, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01],
+        "fb3f10000000000001",
+        "0.00006103515625000001",
     );
 }
 
 #[test]
 fn float_adjacent_f16_smallest_normal_f32() {
-    // 0.00006103516352595761 → fa 38800001
-    check(&Value::from(0.00006103516352595761), &[0xfa, 0x38, 0x80, 0x00, 0x01]);
+    check(
+        &Value::from(0.00006103516352595761),
+        "fa38800001",
+        "0.00006103516352595761",
+    );
 }
 
 // --- Adjacents of largest f16 ---
 
 #[test]
 fn float_adjacent_f16_largest_lower() {
-    // 65503.99999999999 → fb 40effbffffffffff
     check(
         &Value::from(65503.99999999999),
-        &[0xfb, 0x40, 0xef, 0xfb, 0xff, 0xff, 0xff, 0xff, 0xff],
+        "fb40effbffffffffff",
+        "65503.99999999999",
     );
 }
 
 #[test]
 fn float_adjacent_f16_largest_upper() {
-    // 65504.00000000001 → fb 40effc0000000001
     check(
         &Value::from(65504.00000000001),
-        &[0xfb, 0x40, 0xef, 0xfc, 0x00, 0x00, 0x00, 0x00, 0x01],
+        "fb40effc0000000001",
+        "65504.00000000001",
     );
 }
 
 #[test]
 fn float_adjacent_f16_largest_f32() {
-    // 65504.00390625 → fa 477fe001
-    check(&Value::from(65504.00390625), &[0xfa, 0x47, 0x7f, 0xe0, 0x01]);
+    check(&Value::from(65504.00390625), "fa477fe001", "65504.00390625");
 }
 
 // --- Adjacents of smallest f32 subnormal ---
 
 #[test]
 fn float_adjacent_f32_smallest_subnormal_lower() {
-    // 1.4012984643248169e-45 → fb 369fffffffffffff
     check(
         &Value::from(1.4012984643248169e-45),
-        &[0xfb, 0x36, 0x9f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff],
+        "fb369fffffffffffff",
+        "1.4012984643248169e-45",
     );
 }
 
 #[test]
 fn float_adjacent_f32_smallest_subnormal_upper() {
-    // 1.4012984643248174e-45 → fb 36a0000000000001
     check(
         &Value::from(1.4012984643248174e-45),
-        &[0xfb, 0x36, 0xa0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01],
+        "fb36a0000000000001",
+        "1.4012984643248174e-45",
     );
 }
 
@@ -452,19 +469,19 @@ fn float_adjacent_f32_smallest_subnormal_upper() {
 
 #[test]
 fn float_adjacent_f32_largest_subnormal_lower() {
-    // 1.175494210692441e-38 → fb 380fffffbfffffff
     check(
         &Value::from(1.175494210692441e-38),
-        &[0xfb, 0x38, 0x0f, 0xff, 0xff, 0xbf, 0xff, 0xff, 0xff],
+        "fb380fffffbfffffff",
+        "1.175494210692441e-38",
     );
 }
 
 #[test]
 fn float_adjacent_f32_largest_subnormal_upper() {
-    // 1.1754942106924412e-38 → fb 380fffffc0000001
     check(
         &Value::from(1.1754942106924412e-38),
-        &[0xfb, 0x38, 0x0f, 0xff, 0xff, 0xc0, 0x00, 0x00, 0x01],
+        "fb380fffffc0000001",
+        "1.1754942106924412e-38",
     );
 }
 
@@ -472,19 +489,19 @@ fn float_adjacent_f32_largest_subnormal_upper() {
 
 #[test]
 fn float_adjacent_f32_smallest_normal_lower() {
-    // 1.1754943508222874e-38 → fb 380fffffffffffff
     check(
         &Value::from(1.1754943508222874e-38),
-        &[0xfb, 0x38, 0x0f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff],
+        "fb380fffffffffffff",
+        "1.1754943508222874e-38",
     );
 }
 
 #[test]
 fn float_adjacent_f32_smallest_normal_upper() {
-    // 1.1754943508222878e-38 → fb 3810000000000001
     check(
         &Value::from(1.1754943508222878e-38),
-        &[0xfb, 0x38, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01],
+        "fb3810000000000001",
+        "1.1754943508222878e-38",
     );
 }
 
@@ -492,19 +509,19 @@ fn float_adjacent_f32_smallest_normal_upper() {
 
 #[test]
 fn float_adjacent_f32_largest_lower() {
-    // 3.4028234663852882e+38 → fb 47efffffdfffffff
     check(
         &Value::from(3.4028234663852882e+38),
-        &[0xfb, 0x47, 0xef, 0xff, 0xff, 0xdf, 0xff, 0xff, 0xff],
+        "fb47efffffdfffffff",
+        "3.4028234663852882e+38",
     );
 }
 
 #[test]
 fn float_adjacent_f32_largest_upper() {
-    // 3.402823466385289e+38 → fb 47efffffe0000001
     check(
         &Value::from(3.402823466385289e+38),
-        &[0xfb, 0x47, 0xef, 0xff, 0xff, 0xe0, 0x00, 0x00, 0x01],
+        "fb47efffffe0000001",
+        "3.402823466385289e+38",
     );
 }
 
@@ -514,42 +531,36 @@ fn float_adjacent_f32_largest_upper() {
 
 #[test]
 fn misc_true() {
-    check(&Value::from(true), &[0xf5]);
+    check(&Value::from(true), "f5", "true");
 }
 
 #[test]
 fn misc_null() {
-    check(&Value::null(), &[0xf6]);
+    check(&Value::null(), "f6", "null");
 }
 
 #[test]
 fn misc_simple_99() {
-    check(&Value::simple_value(99), &[0xf8, 0x63]);
+    check(&Value::simple_value(99), "f863", "simple(99)");
 }
 
 #[test]
 fn misc_tagged_date() {
-    // 0("2025-03-30T12:24:16Z")
-    let v = Value::tag(0, "2025-03-30T12:24:16Z");
     check(
-        &v,
-        &[
-            0xc0, 0x74, 0x32, 0x30, 0x32, 0x35, 0x2d, 0x30, 0x33, 0x2d, 0x33, 0x30, 0x54, 0x31, 0x32, 0x3a, 0x32, 0x34,
-            0x3a, 0x31, 0x36, 0x5a,
-        ],
+        &Value::tag(0, "2025-03-30T12:24:16Z"),
+        "c074323032352d30332d33305431323a32343a31365a",
+        r#"0("2025-03-30T12:24:16Z")"#,
     );
 }
 
 #[test]
 fn misc_nested_arrays() {
-    // [1, [2, 3], [4, 5]]
     let v = Value::from([Value::from(1), Value::array([2, 3]), Value::array([4, 5])]);
-    check(&v, &[0x83, 0x01, 0x82, 0x02, 0x03, 0x82, 0x04, 0x05]);
+    check(&v, "8301820203820405", "[1, [2, 3], [4, 5]]");
 }
 
 #[test]
 fn misc_map() {
-    // {"a": 0, "b": 1, "aa": 2} — keys sorted by CBOR deterministic encoding
     use std::collections::BTreeMap;
 
     let mut map = BTreeMap::new();
@@ -558,44 +569,47 @@ fn misc_map() {
     map.insert(Value::from("aa"), Value::from(2));
 
     let v = Value::Map(map);
-    // Deterministic encoding: "a"(6161) < "b"(6162) < "aa"(626161) (shorter first)
-    check(&v, &[0xa3, 0x61, 0x61, 0x00, 0x61, 0x62, 0x01, 0x62, 0x61, 0x61, 0x02]);
+    check(
+        &v,
+        "a3616100616201626161 02".replace(' ', "").as_str(),
+        r#"{"a": 0, "b": 1, "aa": 2}"#,
+    );
 }
 
 #[test]
 fn misc_byte_string() {
-    // h'48656c6c6f2043424f5221' = "Hello CBOR!"
-    let v = Value::from(b"Hello CBOR!");
     check(
-        &v,
-        &[0x4b, 0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x20, 0x43, 0x42, 0x4f, 0x52, 0x21],
+        &Value::from(b"Hello CBOR!"),
+        "4b48656c6c6f2043424f5221",
+        "h'48656c6c6f2043424f5221'",
     );
 }
 
 #[test]
 fn misc_text_string_emoji() {
-    // "🚀 science"
-    let v = Value::from("🚀 science");
     check(
-        &v,
-        &[
-            0x6c, 0xf0, 0x9f, 0x9a, 0x80, 0x20, 0x73, 0x63, 0x69, 0x65, 0x6e, 0x63, 0x65,
-        ],
+        &Value::from("🚀 science"),
+        "6cf09f9a8020736369656e6365",
+        r#""🚀 science""#,
     );
 }
 
 #[test]
 fn misc_nan_with_payload_f32() {
-    // float'7f800001' — NaN with payload, encoded as fa 7f800001
-    let v = Value::from(f32::from_bits(0x7f800001));
-    check_bits(&v, &[0xfa, 0x7f, 0x80, 0x00, 0x01]);
+    check(
+        &Value::from(f32::from_bits(0x7f800001)),
+        "fa7f800001",
+        "float'7f800001'",
+    );
 }
 
 #[test]
 fn misc_nan_with_payload_and_sign() {
-    // float'fff0001230000000' — negative NaN with payload
-    let v = Value::from(f64::from_bits(0xfff0001230000000));
-    check_bits(&v, &[0xfb, 0xff, 0xf0, 0x00, 0x12, 0x30, 0x00, 0x00, 0x00]);
+    check(
+        &Value::from(f64::from_bits(0xfff0001230000000)),
+        "fbfff0001230000000",
+        "float'fff0001230000000'",
+    );
 }
 
 // =====================================================================
