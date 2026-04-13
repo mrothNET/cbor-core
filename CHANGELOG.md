@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `Value::insert()` inserts into a map, or shift-inserts into an array when the key is a valid `0..=len` index. Always returns `None` for arrays; panics on out-of-bounds array index or non-array/non-map receiver.
+- `Value::remove()` removes an element by index (arrays) or key (maps). Arrays panic on out-of-bounds index; maps return `None` for a missing key.
+- `Value::append()` pushes a value to the end of an array in O(1). Panics on non-array.
+- `Value::contains()` tests whether an array index is in range or a map contains a key; `false` for all other types.
+- `Value::len()` returns `Some` for arrays and maps, `None` for all other types.
+- `ValueKey` type: the parameter type for `Value::get()`, `Value::get_mut()`, `Value::remove()`, `Value::contains()`, and `Index`/`IndexMut`. Accepts integers, `&str`, `&[u8]`, `&Value`, and primitive CBOR types via `Into<ValueKey>`.
+
+### Changed
+
+- `Value::get()` and `Value::get_mut()` now accept `impl Into<ValueKey>` instead of `impl Into<Value>`. Lookups with `&str`/`&[u8]` no longer allocate a full `Value` to compare against map keys.
+
 ## 0.5.0 — 2026-04-06
 
 ### Added

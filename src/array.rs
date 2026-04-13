@@ -33,7 +33,7 @@ use crate::Value;
 ///
 /// // Empty array via ():
 /// let d = Value::array(());
-/// assert_eq!(d.as_array().unwrap().len(), 0);
+/// assert_eq!(d.len(), Some(0));
 /// ```
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
 pub struct Array(pub(crate) Vec<Value>);

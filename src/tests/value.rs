@@ -250,8 +250,76 @@ fn map_operations() {
     assert!(v.data_type().is_map());
     v.as_map_mut().unwrap().insert("key".into(), 42_u32.into());
     assert_eq!(v.as_map().unwrap().len(), 1);
-    v.as_map_mut().unwrap().remove(&"key".into());
+    assert_eq!(v.remove("key").unwrap().to_u32(), Ok(42));
+    assert!(v.remove("key").is_none());
     assert_eq!(v.as_map().unwrap().len(), 0);
+}
+
+#[test]
+fn index_by_various_key_types() {
+    // Integer keys (small and large), negative, float, bool, byte-string.
+    let m = map! {
+        0_u64 => "zero",
+        u64::MAX => "u64max",
+        u128::MAX => "u128max",
+        -1_i64 => "neg1",
+        i128::MIN => "i128min",
+        true => "yes",
+        1.5_f64 => "one-point-five",
+        Value::from(vec![0xAA_u8, 0xBB]) => "bytes",
+    };
+
+    assert_eq!(m.get(0_u64).unwrap().as_str(), Ok("zero"));
+    assert_eq!(m.get(u64::MAX).unwrap().as_str(), Ok("u64max"));
+    assert_eq!(m.get(u128::MAX).unwrap().as_str(), Ok("u128max"));
+    assert_eq!(m.get(-1_i64).unwrap().as_str(), Ok("neg1"));
+    assert_eq!(m.get(i128::MIN).unwrap().as_str(), Ok("i128min"));
+    assert_eq!(m.get(true).unwrap().as_str(), Ok("yes"));
+    assert_eq!(m.get(1.5_f64).unwrap().as_str(), Ok("one-point-five"));
+    assert_eq!(m.get(&[0xAA_u8, 0xBB][..]).unwrap().as_str(), Ok("bytes"));
+    assert!(m.get(42_u32).is_none());
+
+    // usize also does map lookup (not just array).
+    let m2 = map! { 7_u64 => "seven" };
+    assert_eq!(m2.get(7_usize).unwrap().as_str(), Ok("seven"));
+}
+
+#[test]
+fn index_by_bigint_key_finds_tagged_byte_string() {
+    // u128/i128 values that overflow u64 encode as Tag(2|3, ByteString).
+    // Index lookup must build an equivalent key and match the stored entry.
+    let big_pos = u64::MAX as u128 + 1;
+    let big_neg = -(i64::MIN as i128) - 2;
+
+    let m = map! {
+        big_pos => "pos_big",
+        big_neg => "neg_big",
+        // Regression: small 128-bit values must still match their u64 form.
+        42_u128 => "forty-two",
+        -7_i128 => "minus-seven",
+    };
+
+    assert_eq!(m.get(big_pos).unwrap().as_str(), Ok("pos_big"));
+    assert_eq!(m.get(big_neg).unwrap().as_str(), Ok("neg_big"));
+    assert_eq!(m.get(42_u128).unwrap().as_str(), Ok("forty-two"));
+    assert_eq!(m.get(-7_i128).unwrap().as_str(), Ok("minus-seven"));
+
+    let mut mm = m;
+    assert_eq!(mm.remove(big_pos).unwrap().as_str(), Ok("pos_big"));
+    assert!(mm.remove(big_pos).is_none());
+}
+
+#[test]
+fn index_remove_by_various_key_types() {
+    let mut m = map! {
+        "text" => 1_u32,
+        42_u64 => 2_u32,
+        u128::MAX => 3_u32,
+    };
+    assert_eq!(m.remove("text").unwrap().to_u32(), Ok(1));
+    assert_eq!(m.remove(42_u64).unwrap().to_u32(), Ok(2));
+    assert_eq!(m.remove(u128::MAX).unwrap().to_u32(), Ok(3));
+    assert_eq!(m.as_map().unwrap().len(), 0);
 }
 
 #[test]

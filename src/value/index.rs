@@ -1,6 +1,8 @@
-use super::*;
+use std::ops::{Index, IndexMut};
 
-impl<I: Into<Value>> Index<I> for Value {
+use crate::Value;
+
+impl<'a, I: Into<crate::ValueKey<'a>>> Index<I> for Value {
     type Output = Value;
 
     fn index(&self, index: I) -> &Value {
@@ -9,7 +11,7 @@ impl<I: Into<Value>> Index<I> for Value {
     }
 }
 
-impl<I: Into<Value>> IndexMut<I> for Value {
+impl<'a, I: Into<crate::ValueKey<'a>>> IndexMut<I> for Value {
     fn index_mut(&mut self, index: I) -> &mut Value {
         self.get_mut(index)
             .expect("value should be an array or map containing the given key")

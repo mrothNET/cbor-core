@@ -94,6 +94,7 @@ mod simple_value;
 mod tag;
 mod util;
 mod value;
+mod value_key;
 
 pub use array::Array;
 pub use data_type::DataType;
@@ -104,6 +105,7 @@ pub use float::Float;
 pub use map::Map;
 pub use simple_value::SimpleValue;
 pub use value::Value;
+pub use value_key::ValueKey;
 
 #[cfg(feature = "serde")]
 #[cfg_attr(docsrs, doc(cfg(feature = "serde")))]

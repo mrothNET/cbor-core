@@ -14,7 +14,6 @@ use std::{
     fmt,
     hash::{Hash, Hasher},
     io,
-    ops::{Index, IndexMut},
     time::{Duration, SystemTime},
 };
 
@@ -24,6 +23,7 @@ use crate::{
     io::MyReader,
     limits, tag,
     util::u128_from_slice,
+    value_key::AsValueKey,
 };
 
 /// A single CBOR data item.
@@ -81,8 +81,8 @@ use crate::{
 /// let empty_array = Value::array(());
 /// let empty_map = Value::map(());
 ///
-/// assert_eq!(empty_array.as_array().unwrap().len(), 0);
-/// assert_eq!(empty_map.as_map().unwrap().len(), 0);
+/// assert_eq!(empty_array.len(), Some(0));
+/// assert_eq!(empty_map.len(), Some(0));
 /// ```
 ///
 /// Named constructors are available for cases where `From` is ambiguous:
@@ -249,7 +249,10 @@ use crate::{
 ///
 /// Arrays are stored as `Vec<Value>`. Use [`as_array`](Self::as_array)
 /// to borrow the elements as a slice, or [`as_array_mut`](Self::as_array_mut)
-/// to modify them in place.
+/// to modify them in place. For element access by index, see
+/// [`get`](Self::get), [`get_mut`](Self::get_mut), [`remove`](Self::remove),
+/// and the [`Index`](std::ops::Index)/[`IndexMut`](std::ops::IndexMut)
+/// impls — see the [Indexing](#indexing) section below.
 ///
 /// | Method | Returns |
 /// |---|---|
@@ -266,15 +269,18 @@ use crate::{
 ///
 /// // Modify in place
 /// let mut v = array![1, 2];
-/// v.as_array_mut().unwrap().push(3.into());
-/// assert_eq!(v.as_array().unwrap().len(), 3);
+/// v.append(3);
+/// assert_eq!(v.len(), Some(3));
 /// ```
 ///
 /// ## Maps
 ///
 /// Maps are stored as `BTreeMap<Value, Value>`, giving canonical key
-/// order. Use standard `BTreeMap` methods on the result of
-/// [`as_map`](Self::as_map) to look up entries.
+/// order. Use [`as_map`](Self::as_map) for direct access to the
+/// underlying `BTreeMap`, or [`get`](Self::get), [`get_mut`](Self::get_mut),
+/// [`remove`](Self::remove), and the [`Index`](std::ops::Index)/
+/// [`IndexMut`](std::ops::IndexMut) impls for key lookups — see the
+/// [Indexing](#indexing) section below.
 ///
 /// | Method | Returns |
 /// |---|---|
@@ -290,25 +296,110 @@ use crate::{
 ///
 /// // Modify in place
 /// let mut v = map! { "count" => 1 };
-/// v.as_map_mut().unwrap().insert("count".into(), 2.into());
+/// v.insert("count", 2);
 /// assert_eq!(v["count"].to_u32().unwrap(), 2);
 /// ```
 ///
 /// ## Indexing
 ///
-/// Arrays and maps support `Index` and `IndexMut` with any type that
-/// converts into `Value`. For arrays the index is converted to `usize`;
-/// for maps it is used as a key lookup. Panics on type mismatch or
-/// missing key, just like `Vec` and `BTreeMap`.
+/// Arrays and maps share a uniform interface for element access,
+/// summarized below. Entries with a shaded "Panics" cell never panic
+/// under any inputs.
+///
+/// | Method | Returns | Non-collection receiver | Invalid / missing key |
+/// |---|---|---|---|
+/// | [`len`](Self::len)              | `Option<usize>`      | `None`  | — |
+/// | [`contains`](Self::contains)    | `bool`               | `false` | `false` |
+/// | [`get`](Self::get)              | `Option<&Value>`     | `None`  | `None` |
+/// | [`get_mut`](Self::get_mut)      | `Option<&mut Value>` | `None`  | `None` |
+/// | [`insert`](Self::insert)        | `Option<Value>` (arrays: always `None`) | **panics** | array: **panics**; map: inserts |
+/// | [`remove`](Self::remove)        | `Option<Value>`      | **panics** | array: **panics**; map: `None` |
+/// | [`append`](Self::append)        | `()`                 | **panics** (maps included) | — |
+/// | `v[key]`, `v[key] = …`          | `&Value`, `&mut Value` | **panics** | **panics** |
+///
+/// The methods split into two flavors:
+///
+/// - **Soft** — [`len`](Self::len), [`contains`](Self::contains),
+///   [`get`](Self::get), and [`get_mut`](Self::get_mut): never panic.
+///   They return `Option`/`bool` and treat a wrong-type receiver the
+///   same as a missing key.
+/// - **Hard** — [`insert`](Self::insert), [`remove`](Self::remove),
+///   [`append`](Self::append), and the `[]` operators: panic when the
+///   receiver is not an array or map, when an array index is not a
+///   valid `usize` (negative, non-integer key), or when the index is
+///   out of range. This mirrors [`Vec`] and
+///   [`BTreeMap`](std::collections::BTreeMap).
+///
+/// All keyed methods accept any type implementing
+/// `Into<`[`ValueKey`](crate::ValueKey)`>`: integers (for array indices
+/// and integer map keys), `&str`, `&[u8]`, `&Value`, and the primitive
+/// CBOR types.
+/// [`insert`](Self::insert) takes `Into<Value>` for the key, since a
+/// map insert has to own the key anyway.
+///
+/// All methods see through tags transparently — operating on a
+/// [`Tag`](Self::Tag) dispatches to the innermost tagged content.
+///
+/// ### Arrays
+///
+/// The key is always a `usize` index. Valid ranges differ by method:
+///
+/// - [`get`](Self::get), [`get_mut`](Self::get_mut),
+///   [`contains`](Self::contains), [`remove`](Self::remove), and `v[i]`
+///   require `i` to be in `0..len`.
+///   [`get`](Self::get)/[`get_mut`](Self::get_mut)/[`contains`](Self::contains)
+///   return `None`/`false` for invalid or out-of-range indices;
+///   [`remove`](Self::remove) and `v[i]` panic.
+/// - [`insert`](Self::insert) accepts `0..=len` (appending at `len`
+///   is allowed) and shifts subsequent elements right. It always
+///   returns `None`, and panics if the index is invalid or out of
+///   range.
+/// - [`append`](Self::append) pushes to the end in O(1) and never
+///   cares about an index.
+/// - [`insert`](Self::insert) and [`remove`](Self::remove) shift
+///   elements, which is O(n) and can be slow for large arrays. Prefer
+///   [`append`](Self::append) when order at the end is all you need.
+/// - To replace an element in place (O(1), no shift), assign through
+///   [`get_mut`](Self::get_mut) or `v[i] = …`.
+///
+/// ### Maps
+///
+/// The key is any CBOR-convertible value:
+///
+/// - [`insert`](Self::insert) returns the previous value if the key
+///   was already present, otherwise `None` — matching
+///   [`BTreeMap::insert`](std::collections::BTreeMap::insert).
+/// - [`remove`](Self::remove) returns the removed value, or `None` if
+///   the key was absent. It never panics on a missing key (maps have
+///   no notion of an out-of-range key).
+/// - [`get`](Self::get), [`get_mut`](Self::get_mut), and
+///   [`contains`](Self::contains) return `None`/`false` for missing
+///   keys; `v[key]` panics.
+/// - [`append`](Self::append) is an array-only operation and panics
+///   when called on a map.
+///
+/// ### Example
 ///
 /// ```
 /// use cbor_core::{Value, array, map};
 ///
-/// let a = array![10, 20, 30];
-/// assert_eq!(a[1].to_u32().unwrap(), 20);
+/// // --- arrays ---
+/// let mut a = array![10, 30];
+/// a.insert(1, 20);                          // shift-insert at index 1
+/// a.append(40);                             // push to end
+/// assert_eq!(a.len(), Some(4));
+/// a[0] = Value::from(99);                   // O(1) in-place replace
+/// assert_eq!(a.remove(0).unwrap().to_u32().unwrap(), 99);
+/// assert!(a.contains(0));
+/// assert_eq!(a.get(5), None);               // out of range: soft miss
 ///
-/// let m = map! { "x" => 10, "y" => 20 };
-/// assert_eq!(m["x"].to_u32().unwrap(), 10);
+/// // --- maps ---
+/// let mut m = map! { "x" => 10 };
+/// assert_eq!(m.insert("y", 20), None);      // new key
+/// assert_eq!(m.insert("x", 99).unwrap().to_u32().unwrap(), 10);
+/// assert_eq!(m["x"].to_u32().unwrap(), 99);
+/// assert_eq!(m.remove("missing"), None);    // missing key: no panic
+/// assert!(!m.contains("missing"));
 /// ```
 ///
 /// ## Tags
@@ -658,8 +749,8 @@ impl Value {
             && matches!(head.argument, Argument::U16(_) | Argument::U32(_) | Argument::U64(_));
 
         if !is_float && !head.argument.is_deterministic() {
-                return Error::NonDeterministic.into();
-            }
+            return Error::NonDeterministic.into();
+        }
 
         let this = match head.initial_byte.major() {
             Major::Unsigned => Self::Unsigned(head.value()),
@@ -743,7 +834,7 @@ impl Value {
                 let this = Self::Tag(tag_number, tag_content);
 
                 if this.data_type() == DataType::BigInt {
-                // check if conforming bigint
+                    // check if conforming bigint
                     let bytes = this.as_bytes().unwrap();
                     let valid = bytes.len() >= 8 && bytes[0] != 0;
                     if !valid {
@@ -891,7 +982,7 @@ impl Value {
         self.do_write(&mut HexWriter(writer))
     }
 
-    fn cbor_head(&self) -> Head {
+    pub(crate) fn cbor_head(&self) -> Head {
         match self {
             Value::SimpleValue(sv) => Head::from_value(Major::SimpleOrFloat, sv.0.into()),
             Value::Unsigned(n) => Head::from_value(Major::Unsigned, *n),
@@ -1026,7 +1117,7 @@ impl Value {
     /// ```
     /// # use cbor_core::Value;
     /// let a = Value::array([1, 2, 3]);
-    /// assert_eq!(a.as_array().unwrap().len(), 3);
+    /// assert_eq!(a.len(), Some(3));
     /// ```
     pub fn array(array: impl Into<Array>) -> Self {
         Self::Array(array.into().0)
@@ -1041,7 +1132,7 @@ impl Value {
     /// ```
     /// # use cbor_core::Value;
     /// let m = Value::map([("x", 1), ("y", 2)]);
-    /// assert_eq!(m.as_map().unwrap().len(), 2);
+    /// assert_eq!(m.len(), Some(2));
     /// ```
     pub fn map(map: impl Into<Map>) -> Self {
         Self::Map(map.into().0)
@@ -1402,8 +1493,13 @@ impl Value {
 
     /// Look up an element by index (arrays) or key (maps).
     ///
-    /// Returns `None` if the value is not an array or map, the index
-    /// is out of bounds, or the key is missing.
+    /// Accepts anything convertible into [`ValueKey`](crate::ValueKey):
+    /// integers for array indices, and `&str`, `&[u8]`, integers, `&Value`,
+    /// etc. for map keys. Transparent through tags.
+    ///
+    /// Returns `None` if the value is not an array or map, the index is
+    /// out of bounds, the key is missing, or the key type does not match
+    /// the collection (e.g. a string index into an array).
     ///
     /// ```
     /// use cbor_core::{Value, array, map};
@@ -1416,11 +1512,11 @@ impl Value {
     /// assert_eq!(m.get("x").unwrap().to_u32().unwrap(), 10);
     /// assert!(m.get("missing").is_none());
     /// ```
-    pub fn get(&self, index: impl Into<Value>) -> Option<&Value> {
+    pub fn get<'a>(&self, index: impl Into<crate::ValueKey<'a>>) -> Option<&Value> {
         let key = index.into();
         match self.untagged() {
-            Value::Array(arr) => key.to_usize().ok().and_then(|i| arr.get(i)),
-            Value::Map(map) => map.get(&key),
+            Value::Array(arr) => key.to_usize().and_then(|idx| arr.get(idx)),
+            Value::Map(map) => map.get(&key as &dyn AsValueKey),
             _ => None,
         }
     }
@@ -1434,11 +1530,180 @@ impl Value {
     /// *a.get_mut(1).unwrap() = Value::from(99);
     /// assert_eq!(a[1].to_u32().unwrap(), 99);
     /// ```
-    pub fn get_mut(&mut self, index: impl Into<Value>) -> Option<&mut Value> {
+    pub fn get_mut<'a>(&mut self, index: impl Into<crate::ValueKey<'a>>) -> Option<&mut Value> {
         let key = index.into();
         match self.untagged_mut() {
-            Value::Array(arr) => key.to_usize().ok().and_then(|i| arr.get_mut(i)),
-            Value::Map(map) => map.get_mut(&key),
+            Value::Array(arr) => key.to_usize().and_then(|idx| arr.get_mut(idx)),
+            Value::Map(map) => map.get_mut(&key as &dyn AsValueKey),
+            _ => None,
+        }
+    }
+
+    /// Remove and return an element by index (arrays) or key (maps).
+    ///
+    /// For **arrays**, shifts subsequent elements down like
+    /// [`Vec::remove`] (O(n)) and returns the removed element. The key
+    /// must be a valid `usize` index in range `0..len`; otherwise this
+    /// method **panics**, matching [`Vec::remove`] and the indexing
+    /// operator `v[i]`.
+    ///
+    /// For **maps**, removes and returns the entry for the given key,
+    /// or `None` if the key is missing — matching [`BTreeMap::remove`].
+    ///
+    /// Transparent through tags, matching [`get`](Self::get).
+    ///
+    /// # Panics
+    ///
+    /// - If the value is not an array or map.
+    /// - If the value is an array and the key is not a valid `usize`
+    ///   index in range `0..len`.
+    ///
+    /// ```
+    /// use cbor_core::{array, map};
+    ///
+    /// let mut a = array![10, 20, 30];
+    /// assert_eq!(a.remove(1).unwrap().to_u32().unwrap(), 20);
+    /// assert_eq!(a.len().unwrap(), 2);
+    ///
+    /// let mut m = map! { "x" => 10, "y" => 20 };
+    /// assert_eq!(m.remove("x").unwrap().to_u32().unwrap(), 10);
+    /// assert!(m.remove("missing").is_none());
+    /// ```
+    ///
+    /// [`BTreeMap::remove`]: std::collections::BTreeMap::remove
+    pub fn remove<'a>(&mut self, index: impl Into<crate::ValueKey<'a>>) -> Option<Value> {
+        let key = index.into();
+        match self.untagged_mut() {
+            Value::Array(arr) => {
+                let idx = key.to_usize().expect("array index must be a non-negative integer");
+                assert!(idx < arr.len(), "array index {idx} out of bounds (len {})", arr.len());
+                Some(arr.remove(idx))
+            }
+            Value::Map(map) => map.remove(&key as &dyn AsValueKey),
+            other => panic!("remove called on {:?}, expected array or map", other.data_type()),
+        }
+    }
+
+    /// Insert an element into a map or array.
+    ///
+    /// For **maps**, behaves like [`BTreeMap::insert`]: inserts the
+    /// key/value pair and returns the previous value if the key was
+    /// already present, otherwise `None`.
+    ///
+    /// For **arrays**, the key is a `usize` index in range `0..=len`.
+    /// The value is inserted at that position, shifting subsequent
+    /// elements right like [`Vec::insert`] (O(n)). Insertion into an
+    /// array **always returns `None`**.
+    ///
+    /// Transparent through tags.
+    ///
+    /// # Panics
+    ///
+    /// - If the value is not an array or map.
+    /// - If the value is an array and the key is not a valid `usize`
+    ///   index in range `0..=len`.
+    ///
+    /// ```
+    /// use cbor_core::{array, map};
+    ///
+    /// let mut m = map! { "x" => 10 };
+    /// assert_eq!(m.insert("y", 20), None);
+    /// assert_eq!(m.insert("x", 99).unwrap().to_u32().unwrap(), 10);
+    /// assert_eq!(m["x"].to_u32().unwrap(), 99);
+    ///
+    /// let mut a = array![10, 30];
+    /// assert_eq!(a.insert(1, 20), None); // always None for arrays
+    /// assert_eq!(a[1].to_u32().unwrap(), 20);
+    /// assert_eq!(a.len().unwrap(), 3);
+    /// ```
+    ///
+    /// [`BTreeMap::insert`]: std::collections::BTreeMap::insert
+    pub fn insert(&mut self, key: impl Into<Value>, value: impl Into<Value>) -> Option<Value> {
+        let key = key.into();
+        let value = value.into();
+        match self.untagged_mut() {
+            Value::Array(arr) => {
+                let idx = key.to_usize().expect("array index must be a non-negative integer");
+                assert!(idx <= arr.len(), "array index {idx} out of bounds (len {})", arr.len());
+                arr.insert(idx, value);
+                None
+            }
+            Value::Map(map) => map.insert(key, value),
+            other => panic!("insert called on {:?}, expected array or map", other.data_type()),
+        }
+    }
+
+    /// Append a value to the end of an array (O(1)), like [`Vec::push`].
+    ///
+    /// Transparent through tags.
+    ///
+    /// # Panics
+    ///
+    /// If the value is not an array.
+    ///
+    /// ```
+    /// use cbor_core::array;
+    ///
+    /// let mut a = array![1, 2];
+    /// a.append(3);
+    /// a.append(4);
+    /// assert_eq!(a.len().unwrap(), 4);
+    /// assert_eq!(a[3].to_u32().unwrap(), 4);
+    /// ```
+    pub fn append(&mut self, value: impl Into<Value>) {
+        match self.untagged_mut() {
+            Value::Array(arr) => arr.push(value.into()),
+            other => panic!("append called on {:?}, expected array", other.data_type()),
+        }
+    }
+
+    /// Test whether an array contains an index or a map contains a key.
+    ///
+    /// For **arrays**, returns `true` if the key converts to a `usize`
+    /// in range `0..len`. For **maps**, returns `true` if the key is
+    /// present. All other types return `false`. Transparent through tags.
+    ///
+    /// ```
+    /// use cbor_core::{Value, array, map};
+    ///
+    /// let a = array![10, 20, 30];
+    /// assert!(a.contains(1));
+    /// assert!(!a.contains(5));
+    ///
+    /// let m = map! { "x" => 10 };
+    /// assert!(m.contains("x"));
+    /// assert!(!m.contains("missing"));
+    ///
+    /// assert!(!Value::from(42).contains(0));
+    /// ```
+    pub fn contains<'a>(&self, key: impl Into<crate::ValueKey<'a>>) -> bool {
+        let key = key.into();
+        match self.untagged() {
+            Value::Array(arr) => key.to_usize().is_some_and(|idx| idx < arr.len()),
+            Value::Map(map) => map.contains_key(&key as &dyn AsValueKey),
+            _ => false,
+        }
+    }
+
+    /// Number of elements in an array or map, or `None` for any other type.
+    ///
+    /// Transparent through tags. For text and byte strings, use
+    /// [`as_str`](Self::as_str) or [`as_bytes`](Self::as_bytes) and call
+    /// `len()` on the slice.
+    ///
+    /// ```
+    /// use cbor_core::{Value, array, map};
+    ///
+    /// assert_eq!(array![1, 2, 3].len(), Some(3));
+    /// assert_eq!(map! { "x" => 1, "y" => 2 }.len(), Some(2));
+    /// assert_eq!(Value::from("hello").len(), None);
+    /// assert_eq!(Value::from(42).len(), None);
+    /// ```
+    #[allow(clippy::len_without_is_empty)]
+    pub fn len(&self) -> Option<usize> {
+        match self.untagged() {
+            Value::Array(arr) => Some(arr.len()),
+            Value::Map(map) => Some(map.len()),
             _ => None,
         }
     }

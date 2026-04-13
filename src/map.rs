@@ -48,7 +48,7 @@ use crate::Value;
 ///
 /// // Empty map via ():
 /// let m = Value::map(());
-/// assert_eq!(m.as_map().unwrap().len(), 0);
+/// assert_eq!(m.len(), Some(0));
 /// ```
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Map(pub(crate) BTreeMap<Value, Value>);
