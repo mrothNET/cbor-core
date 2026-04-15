@@ -1,17 +1,16 @@
 # Design Notes
 
 This file documents design decisions that are not obvious from the
-source code or API documentation alone. It covers deliberate trade-offs,
-things that were intentionally left out, and choices that might
-otherwise look like oversights.
+source code or API documentation. It covers trade-offs and omissions
+that might otherwise look like oversights.
 
 ## Panicking constructors
 
 `simple_value()`, `date_time()`, and `epoch_time()` accept
-`impl TryInto<T>` and panic on conversion failure. This is a
-convenience trade-off. Users who want to handle errors can use
-the underlying `TryInto` conversions (`SimpleValue`, `DateTime`,
-`EpochTime`) directly.
+`impl TryInto<T>` and panic on conversion failure. This keeps the
+common case ergonomic at the cost of forcing users who need to
+handle errors to go through the underlying `TryInto` conversions
+(`SimpleValue`, `DateTime`, `EpochTime`) directly.
 
 ## No Int53 support
 
@@ -25,8 +24,8 @@ within the 53-bit range.
 Float width conversions (f16/f32/f64) use raw bit manipulation
 instead of hardware casts to avoid NaN canonicalization. A hardware
 `as f64` cast may silently alter NaN payloads and sign bits.
-Bit-level conversion preserves these exactly, which is required for
-deterministic round-trips.
+Bit-level conversion preserves them exactly. Deterministic
+round-trips require this.
 
 ## Shortest float encoding
 
@@ -39,12 +38,11 @@ for deterministic encoding.
 ## Ordering follows CBOR structure, not semantics
 
 `Ord`, `Eq`, and `Hash` on `Value` follow CBOR canonical ordering:
-major type first, then argument, then content. This means
-`Value::from(1) < Value::from(-1)` returns *true*!
+major type first, then argument, then content. One consequence is
+that `Value::from(1) < Value::from(-1)` holds.
 
-This is intentional because CBOR::Core requires ordering on the
-resulting byte encoding. For integers that means positive integers
-are sorted before negative integers.
+CBOR::Core requires ordering on the resulting byte encoding. For
+integers that means positive integers sort before negative integers.
 
 ## Decoder hardening
 
@@ -65,23 +63,20 @@ re-allocation occurs for strings or collections beyond 100 MB.
 
 CBOR::Core compliance is only guaranteed when values are created and
 modified through the provided methods and trait implementations.
+Users may also construct enum variants directly, but the crate
+cannot guarantee deterministic encoding in that case, and some
+accessors may not work on non-compliant values.
 
-Because `Value` is a public enum, users can also
-build CBOR structures by constructing enum variants directly but
-the crate cannot guarantee deterministic encoding in that case.
-Even some accessors may not work on non-compliant values.
-
-This is intentional: exposing the enum gives users the freedom to do
-special things when needed, but compliance becomes their
-responsibility.
+Exposing the enum lets users bypass the compliance layer when they
+need to; they then own the compliance check.
 
 ## No `is_*()` methods on Value
 
-This crate has a dedicated `DataType` abstraction with grouped
-predicates (e.g. `is_integer()` covers both normal and big integers,
-`is_simple_value()` covers null, booleans, and other simple values).
-This introduces one extra call like `v.data_type().is_array()` but
-makes clear that the CBOR data type is being tested.
+The `DataType` type carries grouped predicates (e.g. `is_integer()`
+covers both normal and big integers, `is_simple_value()` covers null,
+booleans, and other simple values). Callers write
+`v.data_type().is_array()` — one call longer than a bare
+`v.is_array()`, and the extra hop names what is being tested.
 
 To check whether a CBOR value can be converted into a specific Rust
 type, standard idioms like `to_i64().is_ok()` or
@@ -115,26 +110,25 @@ easier to search for.
 
 ## Accessors return `Result`, not `Option`
 
-Other Value-like crates (`serde_json`, `toml`) return `Option` from
-accessors because their type mismatch is binary: right type or not.
-This crate distinguishes several failure modes (`IncompatibleType`,
-`Overflow`, `NegativeUnsigned`, `Precision`). In particular, narrowing
-accessors like `to_u8()` benefit from distinguishing "wrong type
-entirely" from "value doesn't fit".
+Accessors report several distinct failure modes (`IncompatibleType`,
+`Overflow`, `NegativeUnsigned`, `Precision`). Narrowing accessors such
+as `to_u8()` need to separate "wrong CBOR type" from "value does not
+fit the target type", which `Option` cannot express. `Result` carries
+the specific error so callers can react to each case.
 
 ## No strict `const fn` goal
 
 Methods are only made `const fn` when it comes at low effort and
 without sacrificing code clarity.
 
-## Accessor naming: `to_`, `as_`, `into_`
-
-The naming follows standard Rust conventions (`to_` for checked
-conversion, `as_` for borrowing, `into_` for consuming) rather than
-the `as_`-for-everything pattern used by other similar crates.
-
 ## `usize` is assumed to fit in `u64`
 
 Internal paths convert `usize` to `u64` with `try_into().unwrap()`
 and will panic on platforms where `usize` exceeds 64 bits. No such
 platform is targeted.
+
+## Accessor naming: `to_`, `as_`, `into_`
+
+The naming follows standard Rust conventions (`to_` for checked
+conversion, `as_` for borrowing, `into_` for consuming) rather than
+the `as_`-for-everything pattern used by other similar crates.

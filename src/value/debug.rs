@@ -1,12 +1,13 @@
+//! --- CBOR::Core diagnostic notation (Section 2.3.6) ---
+//!
+//! `Debug` outputs diagnostic notation. The `#` (alternate/pretty) flag
+//! enables multi-line output for arrays and maps with indentation.
+//! `Display` forwards to `Debug`, so both produce the same text.
+
 use std::fmt;
 
 use crate::{SimpleValue, Value};
 
-// --- CBOR::Core diagnostic notation (Section 2.3.6) ---
-//
-// `Debug` outputs diagnostic notation. The `#` (alternate/pretty) flag
-// enables multi-line output for arrays and maps with indentation.
-// `Display` forwards to `Debug`, so both produce the same text.
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Debug::fmt(self, f)
