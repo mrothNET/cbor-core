@@ -132,3 +132,9 @@ without sacrificing code clarity.
 The naming follows standard Rust conventions (`to_` for checked
 conversion, `as_` for borrowing, `into_` for consuming) rather than
 the `as_`-for-everything pattern used by other similar crates.
+
+## `usize` is assumed to fit in `u64`
+
+Internal paths convert `usize` to `u64` with `try_into().unwrap()`
+and will panic on platforms where `usize` exceeds 64 bits. No such
+platform is targeted.

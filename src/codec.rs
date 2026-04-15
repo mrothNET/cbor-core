@@ -71,7 +71,7 @@ impl Argument {
 }
 
 impl Head {
-    pub(crate) fn from_value(major: Major, value: u64) -> Self {
+    pub(crate) fn from_u64(major: Major, value: u64) -> Self {
         if let Ok(x) = u8::try_from(value) {
             if x <= 23 {
                 let initial_byte = InitialByte(major.bits() | x);
@@ -87,6 +87,10 @@ impl Head {
         } else {
             Self::new(major, Argument::U64(value))
         }
+    }
+
+    pub(crate) fn from_usize(major: Major, value: usize) -> Self {
+        Self::from_u64(major, value.try_into().unwrap())
     }
 
     pub(crate) fn new(major: Major, argument: Argument) -> Self {

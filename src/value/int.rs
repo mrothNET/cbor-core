@@ -28,10 +28,9 @@ impl From<u128> for Value {
     }
 }
 
-#[cfg(any(target_pointer_width = "32", target_pointer_width = "64"))]
 impl From<usize> for Value {
     fn from(value: usize) -> Self {
-        Self::Unsigned(value as u64)
+        Self::Unsigned(value.try_into().unwrap())
     }
 }
 
@@ -78,10 +77,9 @@ impl From<i128> for Value {
     }
 }
 
-#[cfg(any(target_pointer_width = "32", target_pointer_width = "64"))]
 impl From<isize> for Value {
     fn from(value: isize) -> Self {
-        Self::from(value as i64)
+        Self::from(i64::try_from(value).unwrap())
     }
 }
 
