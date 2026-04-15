@@ -68,7 +68,7 @@ fn nested_arrays_at_limit() {
 #[test]
 fn nested_arrays_exceeds_limit() {
     let bytes = nested_arrays(201);
-    assert_eq!(Value::decode(&bytes), Err(Error::LengthTooLarge));
+    assert_eq!(Value::decode(&bytes), Err(Error::NestingTooDeep));
 }
 
 #[test]
@@ -86,7 +86,7 @@ fn nested_maps_at_limit() {
 #[test]
 fn nested_maps_exceeds_limit() {
     let bytes = nested_maps(201);
-    assert_eq!(Value::decode(&bytes), Err(Error::LengthTooLarge));
+    assert_eq!(Value::decode(&bytes), Err(Error::NestingTooDeep));
 }
 
 #[test]
@@ -104,13 +104,45 @@ fn nested_tags_at_limit() {
 #[test]
 fn nested_tags_exceeds_limit() {
     let bytes = nested_tags(201);
-    assert_eq!(Value::decode(&bytes), Err(Error::LengthTooLarge));
+    assert_eq!(Value::decode(&bytes), Err(Error::NestingTooDeep));
 }
 
 #[test]
 fn nested_mixed_exceeds_limit() {
     let bytes = nested_mixed(201);
-    assert_eq!(Value::decode(&bytes), Err(Error::LengthTooLarge));
+    assert_eq!(Value::decode(&bytes), Err(Error::NestingTooDeep));
+}
+
+// --------------- Parser recursion limit ---------------
+
+#[test]
+fn parse_nested_arrays_within_limit() {
+    let text = "[".repeat(200) + "0" + &"]".repeat(200);
+    assert!(text.parse::<Value>().is_ok());
+}
+
+#[test]
+fn parse_nested_arrays_exceeds_limit() {
+    let text = "[".repeat(201) + "0" + &"]".repeat(201);
+    assert_eq!(text.parse::<Value>(), Err(Error::NestingTooDeep));
+}
+
+#[test]
+fn parse_nested_maps_exceeds_limit() {
+    let text = "{0:".repeat(201) + "0" + &"}".repeat(201);
+    assert_eq!(text.parse::<Value>(), Err(Error::NestingTooDeep));
+}
+
+#[test]
+fn parse_nested_tags_exceeds_limit() {
+    let text = "55799(".repeat(201) + "0" + &")".repeat(201);
+    assert_eq!(text.parse::<Value>(), Err(Error::NestingTooDeep));
+}
+
+#[test]
+fn parse_nested_embedded_bstr_exceeds_limit() {
+    let text = "<<".repeat(201) + "0" + &">>".repeat(201);
+    assert_eq!(text.parse::<Value>(), Err(Error::NestingTooDeep));
 }
 
 // --------------- Length limit ---------------

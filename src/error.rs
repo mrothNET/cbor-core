@@ -11,6 +11,7 @@ use crate::DataType;
 /// and [`Value::read_hex_from`](crate::Value::read_hex_from) when the input is not valid deterministic
 /// CBOR: [`Malformed`](Self::Malformed), [`NonDeterministic`](Self::NonDeterministic),
 /// [`UnexpectedEof`](Self::UnexpectedEof), [`LengthTooLarge`](Self::LengthTooLarge),
+/// [`NestingTooDeep`](Self::NestingTooDeep),
 /// [`InvalidUtf8`](Self::InvalidUtf8), [`InvalidHex`](Self::InvalidHex), [`InvalidBase64`](Self::InvalidBase64).
 ///
 /// **Accessor errors** are returned by the `to_*`, `as_*`, and `into_*`
@@ -42,6 +43,8 @@ pub enum Error {
     UnexpectedEof,
     /// Declared length exceeds addressable memory or reasonable size.
     LengthTooLarge,
+    /// Nesting depth of arrays, maps, or tags exceeds the recursion limit.
+    NestingTooDeep,
     /// Text string contains invalid UTF-8.
     InvalidUtf8,
     /// Hex input contains invalid characters.
@@ -77,6 +80,7 @@ impl fmt::Display for Error {
             Self::NonDeterministic => write!(f, "non-deterministic CBOR encoding"),
             Self::UnexpectedEof => write!(f, "unexpected end of input"),
             Self::LengthTooLarge => write!(f, "length exceeds reasonable size"),
+            Self::NestingTooDeep => write!(f, "nesting exceeds recursion limit"),
             Self::InvalidUtf8 => write!(f, "invalid UTF-8 in text string"),
             Self::InvalidHex => write!(f, "invalid hex character"),
             Self::InvalidBase64 => write!(f, "invalid base64 character"),

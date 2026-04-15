@@ -12,7 +12,8 @@
 
 ### Changed
 
-- `DataType::name()` now returns `"BigInt"` instead of `"Bigint"`, matching the variant identifier and the casing of the other names.
+- `DataType::name()` now returns `"BigInt"` instead of `"Bigint"`.
+- Diagnostic-notation parsing now enforces the nesting depth limit. New `Error::NestingTooDeep` variant, returned by the parser and the decoder (which previously used `LengthTooLarge`).
 
 
 ## 0.6.0 — 2026-04-14

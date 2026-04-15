@@ -8,7 +8,7 @@ use std::{collections::BTreeMap, str::FromStr};
 use crate::{
     Error, Float, Result, SimpleValue, Value,
     float::Inner,
-    tag,
+    limits, tag,
     util::{trim_leading_zeros, u8_from_base64_digit, u8_from_hex_digit, u64_from_slice},
 };
 
@@ -30,11 +30,25 @@ impl FromStr for Value {
 struct Parser<'a> {
     src: &'a [u8],
     pos: usize,
+    depth: u16,
 }
 
 impl<'a> Parser<'a> {
     fn new(src: &'a [u8]) -> Self {
-        Self { src, pos: 0 }
+        Self {
+            src,
+            pos: 0,
+            depth: limits::RECURSION_LIMIT,
+        }
+    }
+
+    fn enter(&mut self) -> Result<()> {
+        self.depth = self.depth.checked_sub(1).ok_or(Error::NestingTooDeep)?;
+        Ok(())
+    }
+
+    fn leave(&mut self) {
+        self.depth += 1;
     }
 
     fn peek(&self) -> Option<u8> {
@@ -156,7 +170,8 @@ impl<'a> Parser<'a> {
         if self.eat(b']') {
             Ok(Value::Array(items))
         } else {
-            loop {
+            self.enter()?;
+            let result = loop {
                 items.push(self.parse_value()?);
                 self.skip_ws()?;
                 if self.eat(b',') {
@@ -166,7 +181,9 @@ impl<'a> Parser<'a> {
                 } else {
                     break Err(Error::InvalidFormat);
                 }
-            }
+            };
+            self.leave();
+            result
         }
     }
 
@@ -177,13 +194,16 @@ impl<'a> Parser<'a> {
         if self.eat(b'}') {
             Ok(Value::Map(map))
         } else {
-            loop {
+            self.enter()?;
+            let result = loop {
                 let key = self.parse_value()?;
                 self.skip_ws()?;
-                self.expect(b':')?;
+                if let Err(error) = self.expect(b':') {
+                    break Err(error);
+                }
                 let value = self.parse_value()?;
                 if map.insert(key, value).is_some() {
-                    return Err(Error::NonDeterministic);
+                    break Err(Error::NonDeterministic);
                 }
                 self.skip_ws()?;
                 if self.eat(b',') {
@@ -193,7 +213,9 @@ impl<'a> Parser<'a> {
                 } else {
                     break Err(Error::InvalidFormat);
                 }
-            }
+            };
+            self.leave();
+            result
         }
     }
 
@@ -225,7 +247,10 @@ impl<'a> Parser<'a> {
             let Value::Unsigned(tag_number) = value else {
                 return Err(Error::InvalidFormat);
             };
-            let inner = self.parse_value()?;
+            self.enter()?;
+            let inner = self.parse_value();
+            self.leave();
+            let inner = inner?;
             self.skip_ws()?;
             self.expect(b')')?;
             Ok(Value::tag(tag_number, inner))
@@ -528,18 +553,21 @@ impl<'a> Parser<'a> {
         if self.consume(b">>") {
             Ok(Value::ByteString(buf))
         } else {
-            loop {
+            self.enter()?;
+            let result = loop {
                 let value = self.parse_value()?;
                 buf.extend(value.encode());
                 self.skip_ws()?;
                 if self.eat(b',') {
                     continue;
                 } else if self.consume(b">>") {
-                    return Ok(Value::ByteString(buf));
+                    break Ok(Value::ByteString(buf));
                 } else {
-                    return Err(Error::InvalidFormat);
+                    break Err(Error::InvalidFormat);
                 }
-            }
+            };
+            self.leave();
+            result
         }
     }
 }

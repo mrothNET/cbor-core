@@ -941,7 +941,7 @@ impl Value {
                 }
 
                 let Some(recursion_limit) = recursion_limit.checked_sub(1) else {
-                    return Err(Error::LengthTooLarge.into());
+                    return Err(Error::NestingTooDeep.into());
                 };
 
                 let request: usize = value.try_into().or(Err(Error::LengthTooLarge))?;
@@ -965,7 +965,7 @@ impl Value {
                 }
 
                 let Some(recursion_limit) = recursion_limit.checked_sub(1) else {
-                    return Err(Error::LengthTooLarge.into());
+                    return Err(Error::NestingTooDeep.into());
                 };
 
                 let mut map = BTreeMap::new();
@@ -994,7 +994,7 @@ impl Value {
 
             Major::Tag => {
                 let Some(recursion_limit) = recursion_limit.checked_sub(1) else {
-                    return Err(Error::LengthTooLarge.into());
+                    return Err(Error::NestingTooDeep.into());
                 };
 
                 let tag_number = head.value();
