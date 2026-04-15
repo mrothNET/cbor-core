@@ -49,9 +49,19 @@ impl TryFrom<&Value> for f64 {
 impl TryFrom<Value> for Float {
     type Error = Error;
     fn try_from(value: Value) -> Result<Self> {
-        match value {
+        match value.into_untagged() {
             Value::Float(f) => Ok(f),
-            _ => Err(Error::IncompatibleType(value.data_type())),
+            other => Err(Error::IncompatibleType(other.data_type())),
+        }
+    }
+}
+
+impl TryFrom<&Value> for Float {
+    type Error = Error;
+    fn try_from(value: &Value) -> Result<Self> {
+        match value.untagged() {
+            Value::Float(f) => Ok(*f),
+            other => Err(Error::IncompatibleType(other.data_type())),
         }
     }
 }

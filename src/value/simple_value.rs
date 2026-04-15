@@ -29,9 +29,9 @@ impl TryFrom<&Value> for bool {
 impl TryFrom<Value> for SimpleValue {
     type Error = Error;
     fn try_from(value: Value) -> Result<Self> {
-        match value {
+        match value.into_untagged() {
             Value::SimpleValue(sv) => Ok(sv),
-            _ => Err(Error::IncompatibleType(value.data_type())),
+            other => Err(Error::IncompatibleType(other.data_type())),
         }
     }
 }
@@ -39,9 +39,9 @@ impl TryFrom<Value> for SimpleValue {
 impl TryFrom<&Value> for SimpleValue {
     type Error = Error;
     fn try_from(value: &Value) -> Result<Self> {
-        match value {
+        match value.untagged() {
             Value::SimpleValue(sv) => Ok(*sv),
-            _ => Err(Error::IncompatibleType(value.data_type())),
+            other => Err(Error::IncompatibleType(other.data_type())),
         }
     }
 }
