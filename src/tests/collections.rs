@@ -190,7 +190,7 @@ fn map_with_null_key() {
         Value::null() => "nothing",
     };
     assert_eq!(m.as_map().unwrap().len(), 1);
-    assert_eq!(m[Value::null()].as_str(), Ok("nothing"));
+    assert_eq!(m[()].as_str(), Ok("nothing"));
 }
 
 #[test]
@@ -211,11 +211,11 @@ fn map_with_simple_value_keys() {
 #[test]
 fn map_with_byte_string_keys() {
     let m = map! {
-        Value::from(vec![0x01]) => "one",
-        Value::from(vec![0x02]) => "two",
+        Value::byte_string([0x01]) => "one",
+        Value::byte_string([0x02]) => "two",
     };
     assert_eq!(m.as_map().unwrap().len(), 2);
-    assert_eq!(m[Value::from(vec![0x01])].as_str(), Ok("one"));
+    assert_eq!(m[&[0x01]].as_str(), Ok("one"));
 }
 
 #[test]
@@ -225,14 +225,14 @@ fn map_with_mixed_key_types() {
         "key" => "string",
         true => "bool",
         Value::null() => "null",
-        Value::from(vec![0xAA]) => "bytes",
+        Value::byte_string([0xAA]) => "bytes",
     };
     assert_eq!(m.as_map().unwrap().len(), 5);
     assert_eq!(m[0].as_str(), Ok("int"));
     assert_eq!(m["key"].as_str(), Ok("string"));
     assert_eq!(m[true].as_str(), Ok("bool"));
-    assert_eq!(m[Value::null()].as_str(), Ok("null"));
-    assert_eq!(m[Value::from(vec![0xAA])].as_str(), Ok("bytes"));
+    assert_eq!(m[()].as_str(), Ok("null"));
+    assert_eq!(m[&[0xAA]].as_str(), Ok("bytes"));
 }
 
 // ===== Map with different value types =====

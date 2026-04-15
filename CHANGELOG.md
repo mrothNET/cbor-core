@@ -8,6 +8,7 @@
 - `Value::byte_string()` constructor, accepting any `impl Into<Vec<u8>>`.
 - `Value::text_string()` constructor, accepting any `impl Into<String>`.
 - `Display` impl for `Value`, forwarding to `Debug` (CBOR::Core diagnostic notation).
+- `ValueKey` accepts array- and map-valued keys zero-copy: `&[Value]`, `&Vec<Value>`, `&[Value; N]`, `&Array`, `&Map`, and `&BTreeMap` now bypass the full-`Value` allocation that was previously required to use a composite key.
 
 ### Changed
 

@@ -21,7 +21,7 @@ use crate::{
     codec::{Argument, Head, Major},
     limits, tag,
     util::u128_from_slice,
-    value_key::AsValueKey,
+    view::{Payload, ValueView},
 };
 
 /// A single CBOR data item.
@@ -592,6 +592,12 @@ impl Default for Value {
     }
 }
 
+impl From<()> for Value {
+    fn from(_: ()) -> Self {
+        Value::null()
+    }
+}
+
 /// Constructors
 impl Value {
     /// Create a CBOR null value.
@@ -1104,7 +1110,7 @@ impl Value {
     }
 
     fn do_write(&self, writer: &mut impl std::io::Write) -> crate::IoResult<()> {
-        self.cbor_head().write_to(writer)?;
+        self.head().write_to(writer)?;
 
         match self {
             Value::ByteString(bytes) => writer.write_all(bytes)?,
@@ -1131,32 +1137,35 @@ impl Value {
         Ok(())
     }
 
-    pub(crate) fn cbor_head(&self) -> Head {
+    pub(crate) fn encoded_len(&self) -> usize {
+        self.head().encoded_len() + self.payload().encoded_len()
+    }
+}
+
+impl ValueView for Value {
+    fn head(&self) -> Head {
         match self {
-            Value::SimpleValue(sv) => Head::from_value(Major::SimpleOrFloat, sv.0.into()),
-            Value::Unsigned(n) => Head::from_value(Major::Unsigned, *n),
-            Value::Negative(n) => Head::from_value(Major::Negative, *n),
+            Value::SimpleValue(sv) => Head::from_u64(Major::SimpleOrFloat, sv.0.into()),
+            Value::Unsigned(n) => Head::from_u64(Major::Unsigned, *n),
+            Value::Negative(n) => Head::from_u64(Major::Negative, *n),
             Value::Float(float) => float.cbor_head(),
-            Value::ByteString(bytes) => Head::from_value(Major::ByteString, bytes.len().try_into().unwrap()),
-            Value::TextString(text) => Head::from_value(Major::TextString, text.len().try_into().unwrap()),
-            Value::Array(vec) => Head::from_value(Major::Array, vec.len().try_into().unwrap()),
-            Value::Map(map) => Head::from_value(Major::Map, map.len().try_into().unwrap()),
-            Value::Tag(number, _content) => Head::from_value(Major::Tag, *number),
+            Value::ByteString(bytes) => Head::from_usize(Major::ByteString, bytes.len()),
+            Value::TextString(text) => Head::from_usize(Major::TextString, text.len()),
+            Value::Array(vec) => Head::from_usize(Major::Array, vec.len()),
+            Value::Map(map) => Head::from_usize(Major::Map, map.len()),
+            Value::Tag(number, _content) => Head::from_u64(Major::Tag, *number),
         }
     }
 
-    /// Encoded length
-    fn encoded_len(&self) -> usize {
-        let data_len = match self {
-            Self::ByteString(bytes) => bytes.len(),
-            Self::TextString(text) => text.len(),
-            Self::Array(vec) => vec.iter().map(Self::encoded_len).sum(),
-            Self::Map(map) => map.iter().map(|(k, v)| k.encoded_len() + v.encoded_len()).sum(),
-            Self::Tag(_, content) => content.encoded_len(),
-            _ => 0,
-        };
-
-        self.cbor_head().encoded_len() + data_len
+    fn payload(&self) -> Payload<'_> {
+        match self {
+            Value::SimpleValue(_) | Value::Unsigned(_) | Value::Negative(_) | Value::Float(_) => Payload::None,
+            Value::ByteString(bytes) => Payload::Bytes(bytes),
+            Value::TextString(text) => Payload::Text(text),
+            Value::Array(arr) => Payload::Array(arr),
+            Value::Map(map) => Payload::Map(map),
+            Value::Tag(_, content) => Payload::TagContent(content),
+        }
     }
 }
 
@@ -1567,7 +1576,7 @@ impl Value {
         let key = index.into();
         match self.untagged() {
             Value::Array(arr) => key.to_usize().and_then(|idx| arr.get(idx)),
-            Value::Map(map) => map.get(&key as &dyn AsValueKey),
+            Value::Map(map) => map.get(&key as &dyn ValueView),
             _ => None,
         }
     }
@@ -1585,7 +1594,7 @@ impl Value {
         let key = index.into();
         match self.untagged_mut() {
             Value::Array(arr) => key.to_usize().and_then(|idx| arr.get_mut(idx)),
-            Value::Map(map) => map.get_mut(&key as &dyn AsValueKey),
+            Value::Map(map) => map.get_mut(&key as &dyn ValueView),
             _ => None,
         }
     }
@@ -1630,7 +1639,7 @@ impl Value {
                 assert!(idx < arr.len(), "array index {idx} out of bounds (len {})", arr.len());
                 Some(arr.remove(idx))
             }
-            Value::Map(map) => map.remove(&key as &dyn AsValueKey),
+            Value::Map(map) => map.remove(&key as &dyn ValueView),
             other => panic!("remove called on {:?}, expected array or map", other.data_type()),
         }
     }
@@ -1731,7 +1740,7 @@ impl Value {
         let key = key.into();
         match self.untagged() {
             Value::Array(arr) => key.to_usize().is_some_and(|idx| idx < arr.len()),
-            Value::Map(map) => map.contains_key(&key as &dyn AsValueKey),
+            Value::Map(map) => map.contains_key(&key as &dyn ValueView),
             _ => false,
         }
     }

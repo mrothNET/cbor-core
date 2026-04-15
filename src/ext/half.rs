@@ -1,6 +1,6 @@
 use half::f16;
 
-use crate::{Error, Float, Result, Value, float::Inner};
+use crate::{Error, Float, Result, Value, ValueKey, float::Inner};
 
 impl Float {
     /// Convert to `half::f16`.
@@ -44,6 +44,12 @@ impl TryFrom<Value> for f16 {
     type Error = Error;
     fn try_from(value: Value) -> Result<Self> {
         value.to_f16()
+    }
+}
+
+impl From<f16> for ValueKey<'_> {
+    fn from(value: f16) -> Self {
+        Float::from(value).into()
     }
 }
 

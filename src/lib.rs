@@ -176,6 +176,7 @@ mod tag;
 mod util;
 mod value;
 mod value_key;
+mod view;
 
 pub use array::Array;
 pub use data_type::DataType;
@@ -189,7 +190,6 @@ pub use value::Value;
 pub use value_key::ValueKey;
 
 #[cfg(feature = "serde")]
-#[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
 pub use ext::serde;
 
 use integer::*;
