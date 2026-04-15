@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `Value::new()` constructor, inferring the variant from the input type. Delegates to `TryFrom`; panics only for types whose `TryFrom` impl can fail (e.g. date/time).
+- `Value::byte_string()` constructor, accepting any `impl Into<Vec<u8>>`.
+- `Value::text_string()` constructor, accepting any `impl Into<String>`.
+- `Display` impl for `Value`, forwarding to `Debug` (CBOR::Core diagnostic notation).
+
+### Changed
+
+- `DataType::name()` now returns `"BigInt"` instead of `"Bigint"`, matching the variant identifier and the casing of the other names.
+
+
 ## 0.6.0 — 2026-04-14
 
 ### Added

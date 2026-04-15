@@ -1,11 +1,5 @@
 use super::*;
 
-impl Default for Value {
-    fn default() -> Self {
-        Self::null()
-    }
-}
-
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
         self.cmp(other) == cmp::Ordering::Equal

@@ -1,6 +1,7 @@
 mod array;
 mod bytes;
-mod default_eq_ord_hash;
+mod debug;
+mod eq_ord_hash;
 mod float;
 mod index;
 mod int;
@@ -11,7 +12,6 @@ mod string;
 use std::{
     cmp,
     collections::BTreeMap,
-    fmt,
     hash::{Hash, Hasher},
     time::{Duration, SystemTime},
 };
@@ -83,15 +83,21 @@ use crate::{
 /// assert_eq!(empty_map.len(), Some(0));
 /// ```
 ///
-/// Named constructors are available for cases where `From` is ambiguous:
+/// Named constructors are available for cases where `From` is ambiguous
+/// or unavailable:
 ///
 /// | Constructor | Builds |
 /// |---|---|
+/// | [`Value::new(v)`](Value::new) | Any variant via `TryFrom`, panicking on fallible failures |
 /// | [`Value::null()`] | Null simple value |
 /// | [`Value::simple_value(v)`](Value::simple_value) | Arbitrary simple value |
 /// | [`Value::float(v)`](Value::float) | Float in shortest CBOR form |
+/// | [`Value::byte_string(v)`](Value::byte_string) | Byte string from `impl Into<Vec<u8>>` |
+/// | [`Value::text_string(v)`](Value::text_string) | Text string from `impl Into<String>` |
 /// | [`Value::array(v)`](Value::array) | Array from slice, `Vec`, or fixed-size array |
 /// | [`Value::map(v)`](Value::map) | Map from `BTreeMap`, `HashMap`, slice of pairs, etc. |
+/// | [`Value::date_time(v)`](Value::date_time) | Date/time string (tag 0) |
+/// | [`Value::epoch_time(v)`](Value::epoch_time) | Epoch time (tag 1) |
 /// | [`Value::tag(n, v)`](Value::tag) | Tagged value |
 ///
 /// # Encoding and decoding
@@ -105,8 +111,19 @@ use crate::{
 /// assert_eq!(original, decoded);
 /// ```
 ///
-/// For streaming use, [`write_to`](Value::write_to) and
-/// [`read_from`](Value::read_from) operate on any `io::Write` / `io::Read`.
+/// CBOR can be produced and consumed as binary bytes, as a hex string,
+/// or as diagnostic notation text:
+///
+/// | Direction | Binary | Hex string | Diagnostic text |
+/// |---|---|---|---|
+/// | Produce (owned) | [`encode`](Value::encode) → `Vec<u8>` | [`encode_hex`](Value::encode_hex) → `String` | `format!("{v:?}")` (compact) or `format!("{v:#?}")` (pretty) via [`Debug`](std::fmt::Debug); `format!("{v}")` via [`Display`](std::fmt::Display) |
+/// | Produce (streaming) | [`write_to`](Value::write_to)(`impl Write`) | [`write_hex_to`](Value::write_hex_to)(`impl Write`) | — |
+/// | Consume (owned) | [`decode`](Value::decode)(`impl AsRef<[u8]>`) | [`decode_hex`](Value::decode_hex)(`impl AsRef<[u8]>`) | [`str::parse`](str::parse) via [`FromStr`](std::str::FromStr) |
+/// | Consume (streaming) | [`read_from`](Value::read_from)(`impl Read`) | [`read_hex_from`](Value::read_hex_from)(`impl Read`) | — |
+///
+/// `Debug` output follows CBOR::Core diagnostic notation (Section 2.3.6);
+/// `Display` forwards to `Debug` so both produce the same text.
+/// `format!("{v:?}").parse::<Value>()` always round-trips.
 ///
 /// # Accessors
 ///
@@ -483,253 +500,329 @@ pub enum Value {
     /// A `Value::from(true)` is stored as `SimpleValue(21)` and is
     /// accessible through both [`to_bool`](Self::to_bool) and
     /// [`to_simple_value`](Self::to_simple_value).
+    ///
+    /// ```
+    /// # use cbor_core::Value;
+    /// let sv = Value::null();
+    /// assert!(sv.data_type().is_simple_value() && sv.data_type().is_null());
+    ///
+    /// let sv = Value::new(false);
+    /// assert!(sv.data_type().is_simple_value() && sv.data_type().is_bool());
+    /// ```
     SimpleValue(SimpleValue),
 
     /// Unsigned integer (major type 0). Stores values 0 through 2^64-1.
+    ///
+    /// ```
+    /// # use cbor_core::Value;
+    /// let v = Value::new(42);
+    /// # assert!(v.data_type().is_integer());
+    /// ```
     Unsigned(u64),
 
     /// Negative integer (major type 1). The actual value is -1 - n,
     /// covering -1 through -2^64.
+    ///
+    /// ```
+    /// # use cbor_core::Value;
+    /// let v = Value::new(-42);
+    /// # assert!(v.data_type().is_integer());
+    /// ```
     Negative(u64),
 
     /// IEEE 754 floating-point number (major type 7, additional info 25-27).
+    ///
+    /// ```
+    /// # use cbor_core::Value;
+    /// let v = Value::new(1.234);
+    /// # assert!(v.data_type().is_float());
+    /// ```
     Float(Float),
 
     /// Byte string (major type 2).
+    ///
+    /// ```
+    /// # use cbor_core::Value;
+    /// let v = Value::new(b"this is a byte string");
+    /// # assert!(v.data_type().is_bytes());
+    /// ```
     ByteString(Vec<u8>),
 
     /// UTF-8 text string (major type 3).
+    ///
+    /// ```
+    /// # use cbor_core::Value;
+    /// let v = Value::new("Rust + CBOR::Core");
+    /// # assert!(v.data_type().is_text());
+    /// ```
     TextString(String),
 
     /// Array of data items (major type 4).
+    ///
+    /// ```
+    /// use cbor_core::array;
+    /// let v = array![1, 2, 3, "text", b"bytes", true, 1.234, array![4,5,6]];
+    /// # assert!(v.data_type().is_array());
+    /// ```
     Array(Vec<Value>),
 
     /// Map of key-value pairs in canonical order (major type 5).
+    ///
+    /// ```
+    /// use cbor_core::{map, array};
+    /// let v = map!{"answer" => 42, array![1,2,3] => "arrays as keys" };
+    /// # assert!(v.data_type().is_map());
+    /// ```
     Map(BTreeMap<Value, Value>),
 
     /// Tagged data item (major type 6). The first field is the tag number,
     /// the second is the enclosed content.
+    ///
+    /// ```
+    /// # use cbor_core::Value;
+    /// let v = Value::tag(0, "1955-11-12T22:04:00-08:00");
+    /// # assert!(v.data_type().is_tag());
+    /// ```
     Tag(u64, Box<Value>),
 }
 
-// --- CBOR::Core diagnostic notation (Section 2.3.6) ---
-//
-// `Debug` outputs diagnostic notation. The `#` (alternate/pretty) flag
-// enables multi-line output for arrays and maps with indentation.
-impl fmt::Debug for Value {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::SimpleValue(sv) => match *sv {
-                SimpleValue::FALSE => f.write_str("false"),
-                SimpleValue::TRUE => f.write_str("true"),
-                SimpleValue::NULL => f.write_str("null"),
-                other => write!(f, "simple({})", other.0),
-            },
-
-            Self::Unsigned(n) => write!(f, "{n}"),
-
-            Self::Negative(n) => write!(f, "{actual}", actual = -i128::from(*n) - 1),
-
-            Self::Float(float) => {
-                let value = float.to_f64();
-                if value.is_nan() {
-                    use crate::float::Inner;
-                    match float.0 {
-                        Inner::F16(0x7e00) => f.write_str("NaN"), // Default NaN is the canonical f16 quiet NaN (f97e00)
-                        Inner::F16(bits) => write!(f, "float'{bits:04x}'"),
-                        Inner::F32(bits) => write!(f, "float'{bits:08x}'"),
-                        Inner::F64(bits) => write!(f, "float'{bits:016x}'"),
-                    }
-                } else if value.is_infinite() {
-                    if value.is_sign_positive() {
-                        f.write_str("Infinity")
-                    } else {
-                        f.write_str("-Infinity")
-                    }
-                } else {
-                    format_ecmascript_float(f, value)
-                }
-            }
-
-            Self::ByteString(bytes) => {
-                f.write_str("h'")?;
-                for b in bytes {
-                    write!(f, "{b:02x}")?;
-                }
-                f.write_str("'")
-            }
-
-            Self::TextString(s) => {
-                f.write_str("\"")?;
-                for c in s.chars() {
-                    match c {
-                        '"' => f.write_str("\\\"")?,
-                        '\\' => f.write_str("\\\\")?,
-                        '\u{08}' => f.write_str("\\b")?,
-                        '\u{0C}' => f.write_str("\\f")?,
-                        '\n' => f.write_str("\\n")?,
-                        '\r' => f.write_str("\\r")?,
-                        '\t' => f.write_str("\\t")?,
-                        c if c.is_control() => write!(f, "\\u{:04x}", c as u32)?,
-                        c => write!(f, "{c}")?,
-                    }
-                }
-                f.write_str("\"")
-            }
-
-            Self::Array(items) => {
-                let mut list = f.debug_list();
-                for item in items {
-                    list.entry(item);
-                }
-                list.finish()
-            }
-
-            Self::Map(map) => {
-                let mut m = f.debug_map();
-                for (key, value) in map {
-                    m.entry(key, value);
-                }
-                m.finish()
-            }
-
-            Self::Tag(tag, content) => {
-                // Big integers: show as decimal when they fit in i128/u128
-                if self.data_type().is_integer() {
-                    if let Ok(n) = self.to_u128() {
-                        return write!(f, "{n}");
-                    }
-                    if let Ok(n) = self.to_i128() {
-                        return write!(f, "{n}");
-                    }
-                }
-
-                if f.alternate() {
-                    write!(f, "{tag}({content:#?})")
-                } else {
-                    write!(f, "{tag}({content:?})")
-                }
-            }
-        }
+impl Default for Value {
+    fn default() -> Self {
+        Self::null()
     }
 }
 
-/// Format a finite, non-NaN f64 in ECMAScript Number.toString style
-/// with the CBOR::Core enhancement that finite values always include
-/// a decimal point and at least one fractional digit.
-fn format_ecmascript_float(f: &mut fmt::Formatter<'_>, value: f64) -> fmt::Result {
-    if value == 0.0 {
-        return f.write_str(if value.is_sign_negative() { "-0.0" } else { "0.0" });
-    }
-
-    let sign = if value.is_sign_negative() { "-" } else { "" };
-    let scientific = format!("{:e}", value.abs());
-    let (mantissa, exponent) = scientific.split_once('e').unwrap();
-    let rust_exp: i32 = exponent.parse().unwrap();
-    let digits: String = mantissa.chars().filter(|c| *c != '.').collect();
-    let k = digits.len() as i32;
-    let e = rust_exp + 1;
-
-    f.write_str(sign)?;
-
-    if 0 < e && e <= 21 {
-        if e >= k {
-            f.write_str(&digits)?;
-            for _ in 0..(e - k) {
-                f.write_str("0")?;
-            }
-            f.write_str(".0")
-        } else {
-            let (int_part, frac_part) = digits.split_at(e as usize);
-            write!(f, "{int_part}.{frac_part}")
-        }
-    } else if -6 < e && e <= 0 {
-        f.write_str("0.")?;
-        for _ in 0..(-e) {
-            f.write_str("0")?;
-        }
-        f.write_str(&digits)
-    } else {
-        let exp_val = e - 1;
-        let (first, rest) = digits.split_at(1);
-        if rest.is_empty() {
-            write!(f, "{first}.0")?;
-        } else {
-            write!(f, "{first}.{rest}")?;
-        }
-        if exp_val >= 0 {
-            write!(f, "e+{exp_val}")
-        } else {
-            write!(f, "e{exp_val}")
-        }
-    }
-}
-
+/// Constructors
 impl Value {
-    /// Take the value out, leaving `null` in its place.
+    /// Create a CBOR null value.
+    ///
+    /// In CBOR, null is the simple value 22.
     ///
     /// ```
     /// use cbor_core::Value;
     ///
-    /// let mut v = Value::from(42);
-    /// let taken = v.take();
-    /// assert_eq!(taken.to_u32().unwrap(), 42);
+    /// let v = Value::null();
     /// assert!(v.data_type().is_null());
-    /// ```
-    pub fn take(&mut self) -> Self {
-        std::mem::take(self)
-    }
-
-    /// Replace the value, returning the old one.
-    ///
-    /// ```
-    /// use cbor_core::Value;
-    ///
-    /// let mut v = Value::from("hello");
-    /// let old = v.replace(Value::from("world"));
-    /// assert_eq!(old.as_str().unwrap(), "hello");
-    /// assert_eq!(v.as_str().unwrap(), "world");
-    /// ```
-    pub fn replace(&mut self, value: Self) -> Self {
-        std::mem::replace(self, value)
-    }
-
-    /// Encode this value to binary CBOR bytes.
-    ///
-    /// This is a convenience wrapper around [`write_to`](Self::write_to).
-    ///
-    /// ```
-    /// use cbor_core::Value;
-    /// let bytes = Value::from(42).encode();
-    /// assert_eq!(bytes, [0x18, 42]);
+    /// assert!(v.data_type().is_simple_value());
+    /// assert_eq!(v.to_simple_value(), Ok(22));
     /// ```
     #[must_use]
-    pub fn encode(&self) -> Vec<u8> {
-        let len = self.encoded_len();
-        let mut bytes = Vec::with_capacity(len);
-        self.write_to(&mut bytes).unwrap();
-        debug_assert_eq!(bytes.len(), len);
-        bytes
+    pub const fn null() -> Self {
+        Self::SimpleValue(SimpleValue::NULL)
     }
 
-    /// Encode this value to a hex-encoded CBOR string.
+    /// Create a CBOR simple value.
     ///
-    /// This is a convenience wrapper around [`write_hex_to`](Self::write_hex_to).
+    /// # Panics
+    ///
+    /// Panics if the value is in the reserved range 24-31.
+    /// Use [`SimpleValue::try_from`] for a fallible alternative.
     ///
     /// ```
     /// use cbor_core::Value;
-    /// let hex = Value::from(42).encode_hex();
-    /// assert_eq!(hex, "182a");
+    ///
+    /// let v = Value::simple_value(42);
+    /// assert_eq!(v.to_simple_value(), Ok(42));
     /// ```
-    #[must_use]
-    pub fn encode_hex(&self) -> String {
-        let len2 = self.encoded_len() * 2;
-        let mut hex = Vec::with_capacity(len2);
-        self.write_hex_to(&mut hex).unwrap();
-        debug_assert_eq!(hex.len(), len2);
-        String::from_utf8(hex).unwrap()
+    pub fn simple_value(value: impl TryInto<SimpleValue>) -> Self {
+        match value.try_into() {
+            Ok(sv) => Self::SimpleValue(sv),
+            Err(_) => panic!("Invalid simple value"),
+        }
     }
 
+    /// Create a CBOR value, inferring the variant from the input type.
+    ///
+    /// Equivalent to `Value::try_from(value).unwrap()`.
+    ///
+    /// Not every CBOR variant is reachable this way. Use the dedicated
+    /// constructors for the remaining cases.
+    ///
+    /// Whether this can panic depends on which conversion the input
+    /// type provides:
+    ///
+    /// - Types with `impl From<T> for Value` never panic here. `From`
+    ///   is infallible by contract, and the standard blanket
+    ///   `impl<T, U: Into<T>> TryFrom<U> for T` routes through it
+    ///   without introducing a failure case. For these types,
+    ///   [`Value::from`] is the more direct spelling.
+    /// - Types with an explicit `impl TryFrom<T> for Value` (mainly
+    ///   the date- and time-related ones) can fail. `Value::new`
+    ///   unwraps the error and panics. Call `Value::try_from` instead
+    ///   to handle it.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the input cannot be converted into a CBOR value.
+    pub fn new(value: impl TryInto<Value>) -> Self {
+        match value.try_into() {
+            Ok(value) => value,
+            Err(_) => panic!("Invalid CBOR value"),
+        }
+    }
+
+    /// Create a CBOR byte string (major type 2).
+    ///
+    /// Accepts anything that converts into `Vec<u8>`:
+    /// - owned `Vec<u8>`, borrowed `&[u8]` and fixed-size `[u8; N]` (copied)
+    /// - `Box<[u8]>`, and `Cow<'_, [u8]>`
+    ///
+    /// Owned inputs are moved without copying.
+    ///
+    /// ```
+    /// use cbor_core::Value;
+    ///
+    /// let v = Value::byte_string("ABC");
+    /// assert_eq!(v.as_bytes(), Ok([65, 66, 67].as_slice()));
+    /// ```
+    pub fn byte_string(value: impl Into<Vec<u8>>) -> Self {
+        Self::ByteString(value.into())
+    }
+
+    /// Create a CBOR text string (major type 3).
+    ///
+    /// Accepts anything that converts into `String`:
+    /// - owned `String`, `&str` (copied), `Box<str>`
+    /// - `Cow<'_, str>`, and `char`.
+    ///
+    /// Owned inputs are moved without reallocating.
+    ///
+    /// ```
+    /// use cbor_core::Value;
+    ///
+    /// let v = Value::text_string('A'); // char
+    /// assert_eq!(v.as_str(), Ok("A")); // &str
+    /// ```
+    pub fn text_string(value: impl Into<String>) -> Self {
+        Self::TextString(value.into())
+    }
+
+    /// Create a CBOR date/time string value (tag 0).
+    ///
+    /// Accepts `&str`, `String`, and [`SystemTime`] via the
+    /// [`DateTime`] helper.
+    ///
+    /// The date must be within
+    /// `0001-01-01T00:00:00Z` to `9999-12-31T23:59:59Z`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the input is not a valid RFC 3339 (ISO 8601 profile)
+    /// UTC timestamp or is out of range.
+    ///
+    /// ```
+    /// use cbor_core::{DataType, Value};
+    ///
+    /// let v = Value::date_time("2000-01-01T00:00:00.000+01:00");
+    /// assert!(v.data_type().is_date_time());
+    /// assert_eq!(v.as_str(), Ok("2000-01-01T00:00:00.000+01:00"));
+    ///
+    /// use std::time::SystemTime;
+    /// let v = Value::date_time(SystemTime::UNIX_EPOCH);
+    /// assert!(v.data_type().is_date_time());
+    /// assert_eq!(v.as_str(), Ok("1970-01-01T00:00:00Z"));
+    /// ```
+    pub fn date_time(value: impl TryInto<DateTime>) -> Self {
+        match value.try_into() {
+            Ok(dt) => dt.into(),
+            Err(_) => panic!("Invalid date/time"),
+        }
+    }
+
+    /// Create a CBOR epoch time value (tag 1).
+    ///
+    /// Accepts integers, floats, and [`SystemTime`] via the
+    /// [`EpochTime`] helper. The value must be in the range 0 to
+    /// 253402300799.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the value is out of range or negative.
+    ///
+    /// ```
+    /// use std::time::{Duration, UNIX_EPOCH};
+    /// use cbor_core::Value;
+    ///
+    /// let v = Value::epoch_time(1_000_000);
+    /// assert_eq!(v.to_system_time(), Ok(UNIX_EPOCH + Duration::from_secs(1_000_000)));
+    /// ```
+    pub fn epoch_time(value: impl TryInto<EpochTime>) -> Self {
+        match value.try_into() {
+            Ok(et) => et.into(),
+            Err(_) => panic!("Invalid epoch time"),
+        }
+    }
+
+    /// Create a CBOR float.
+    ///
+    /// Via the [`Float`] type floats can be created out of integers and booleans too.
+    ///
+    /// ```
+    /// use cbor_core::Value;
+    ///
+    /// let f1 = Value::float(1.0);
+    /// assert!(f1.to_f64() == Ok(1.0));
+    ///
+    /// let f2 = Value::float(2);
+    /// assert!(f2.to_f64() == Ok(2.0));
+    ///
+    /// let f3 = Value::float(true);
+    /// assert!(f3.to_f64() == Ok(1.0));
+    /// ```
+    ///
+    /// The value is stored in the shortest IEEE 754 form (f16, f32,
+    /// or f64) that preserves it exactly.
+    pub fn float(value: impl Into<Float>) -> Self {
+        Self::Float(value.into())
+    }
+
+    /// Create a CBOR array.
+    ///
+    /// Accepts any type that converts into [`Array`], including
+    /// `Vec<T>`, `[T; N]`, `&[T]`, and `Box<[T]>` where `T: Into<Value>`.
+    ///
+    /// See [`Array`] for the full list of accepted types.
+    ///
+    /// ```
+    /// # use cbor_core::Value;
+    /// let a = Value::array([1, 2, 3]);
+    /// assert_eq!(a.len(), Some(3));
+    /// ```
+    pub fn array(array: impl Into<Array>) -> Self {
+        Self::Array(array.into().0)
+    }
+
+    /// Create a CBOR map. Keys are stored in canonical order.
+    ///
+    /// Accepts any type that converts into [`Map`], including
+    /// `BTreeMap`, `&HashMap`, `Vec<(K, V)>`, `[(K, V); N]`, and
+    /// `&[(K, V)]`.
+    ///
+    /// See [`Map`] for the full list of accepted types.
+    ///
+    /// ```
+    /// # use cbor_core::Value;
+    /// let m = Value::map([("x", 1), ("y", 2)]);
+    /// assert_eq!(m.len(), Some(2));
+    /// ```
+    pub fn map(map: impl Into<Map>) -> Self {
+        Self::Map(map.into().0)
+    }
+
+    /// Wrap a value with a CBOR tag.
+    ///
+    /// ```
+    /// use cbor_core::Value;
+    /// let uri = Value::tag(32, "https://example.com");
+    /// assert_eq!(uri.tag_number().unwrap(), 32);
+    /// ```
+    pub fn tag(number: u64, content: impl Into<Value>) -> Self {
+        Self::Tag(number, Box::new(content.into()))
+    }
+}
+
+/// Decoding and reading
+impl Value {
     /// Decode a CBOR data item from binary bytes.
     ///
     /// Accepts any byte source (`&[u8]`, `&str`, `String`, `Vec<u8>`, etc.).
@@ -929,6 +1022,45 @@ impl Value {
 
         Ok(this)
     }
+}
+
+/// Encoding and writing
+impl Value {
+    /// Encode this value to binary CBOR bytes.
+    ///
+    /// This is a convenience wrapper around [`write_to`](Self::write_to).
+    ///
+    /// ```
+    /// use cbor_core::Value;
+    /// let bytes = Value::from(42).encode();
+    /// assert_eq!(bytes, [0x18, 42]);
+    /// ```
+    #[must_use]
+    pub fn encode(&self) -> Vec<u8> {
+        let len = self.encoded_len();
+        let mut bytes = Vec::with_capacity(len);
+        self.write_to(&mut bytes).unwrap();
+        debug_assert_eq!(bytes.len(), len);
+        bytes
+    }
+
+    /// Encode this value to a hex-encoded CBOR string.
+    ///
+    /// This is a convenience wrapper around [`write_hex_to`](Self::write_hex_to).
+    ///
+    /// ```
+    /// use cbor_core::Value;
+    /// let hex = Value::from(42).encode_hex();
+    /// assert_eq!(hex, "182a");
+    /// ```
+    #[must_use]
+    pub fn encode_hex(&self) -> String {
+        let len2 = self.encoded_len() * 2;
+        let mut hex = Vec::with_capacity(len2);
+        self.write_hex_to(&mut hex).unwrap();
+        debug_assert_eq!(hex.len(), len2);
+        String::from_utf8(hex).unwrap()
+    }
 
     /// Write this value as binary CBOR to a stream.
     ///
@@ -940,34 +1072,6 @@ impl Value {
     /// ```
     pub fn write_to(&self, mut writer: impl std::io::Write) -> crate::IoResult<()> {
         self.do_write(&mut writer)
-    }
-
-    fn do_write(&self, writer: &mut impl std::io::Write) -> crate::IoResult<()> {
-        self.cbor_head().write_to(writer)?;
-
-        match self {
-            Value::ByteString(bytes) => writer.write_all(bytes)?,
-            Value::TextString(string) => writer.write_all(string.as_bytes())?,
-
-            Value::Tag(_number, content) => content.do_write(writer)?,
-
-            Value::Array(values) => {
-                for value in values {
-                    value.do_write(writer)?;
-                }
-            }
-
-            Value::Map(map) => {
-                for (key, value) in map {
-                    key.do_write(writer)?;
-                    value.do_write(writer)?;
-                }
-            }
-
-            _ => (),
-        }
-
-        Ok(())
     }
 
     /// Write this value as hex-encoded CBOR to a stream.
@@ -999,6 +1103,34 @@ impl Value {
         self.do_write(&mut HexWriter(writer))
     }
 
+    fn do_write(&self, writer: &mut impl std::io::Write) -> crate::IoResult<()> {
+        self.cbor_head().write_to(writer)?;
+
+        match self {
+            Value::ByteString(bytes) => writer.write_all(bytes)?,
+            Value::TextString(string) => writer.write_all(string.as_bytes())?,
+
+            Value::Tag(_number, content) => content.do_write(writer)?,
+
+            Value::Array(values) => {
+                for value in values {
+                    value.do_write(writer)?;
+                }
+            }
+
+            Value::Map(map) => {
+                for (key, value) in map {
+                    key.do_write(writer)?;
+                    value.do_write(writer)?;
+                }
+            }
+
+            _ => (),
+        }
+
+        Ok(())
+    }
+
     pub(crate) fn cbor_head(&self) -> Head {
         match self {
             Value::SimpleValue(sv) => Head::from_value(Major::SimpleOrFloat, sv.0.into()),
@@ -1026,146 +1158,10 @@ impl Value {
 
         self.cbor_head().encoded_len() + data_len
     }
+}
 
-    // ------------------- constructors -------------------
-
-    /// Create a CBOR null value.
-    #[must_use]
-    pub const fn null() -> Self {
-        Self::SimpleValue(SimpleValue::NULL)
-    }
-
-    /// Create a CBOR simple value.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the value is in the reserved range 24-31.
-    /// Use [`SimpleValue::from_u8`] for a fallible alternative.
-    pub fn simple_value(value: impl TryInto<SimpleValue>) -> Self {
-        match value.try_into() {
-            Ok(sv) => Self::SimpleValue(sv),
-            Err(_) => panic!("Invalid simple value"),
-        }
-    }
-
-    /// Create a CBOR date/time string value (tag 0).
-    ///
-    /// Accepts `&str`, `String`, and [`SystemTime`] via the
-    /// [`DateTime`] helper. The date must be within
-    /// `0001-01-01T00:00:00Z` to `9999-12-31T23:59:59Z`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the input is not a valid RFC 3339 (ISO 8601 profile)
-    /// UTC timestamp or is out of range.
-    ///
-    /// ```
-    /// use cbor_core::{DataType, Value};
-    ///
-    /// let v = Value::date_time("2000-01-01T00:00:00.000Z");
-    /// assert_eq!(v.data_type(), DataType::DateTime);
-    /// assert_eq!(v.as_str(), Ok("2000-01-01T00:00:00.000Z"));
-    ///
-    /// use std::time::SystemTime;
-    /// let v = Value::date_time(SystemTime::UNIX_EPOCH);
-    /// assert_eq!(v.data_type(), DataType::DateTime);
-    /// assert_eq!(v.as_str(), Ok("1970-01-01T00:00:00Z"));
-    /// ```
-    pub fn date_time(value: impl TryInto<DateTime>) -> Self {
-        match value.try_into() {
-            Ok(dt) => dt.into(),
-            Err(_) => panic!("Invalid date/time"),
-        }
-    }
-
-    /// Create a CBOR epoch time value (tag 1).
-    ///
-    /// Accepts integers, floats, and [`SystemTime`] via the
-    /// [`EpochTime`] helper. The value must be in the range 0 to
-    /// 253402300799.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the value is out of range or negative.
-    ///
-    /// ```
-    /// use std::time::{Duration, UNIX_EPOCH};
-    /// use cbor_core::Value;
-    ///
-    /// let v = Value::epoch_time(1_000_000);
-    /// assert_eq!(v.to_system_time(), Ok(UNIX_EPOCH + Duration::from_secs(1_000_000)));
-    /// ```
-    pub fn epoch_time(value: impl TryInto<EpochTime>) -> Self {
-        match value.try_into() {
-            Ok(et) => et.into(),
-            Err(_) => panic!("Invalid epoch time"),
-        }
-    }
-
-    /// Create a CBOR float.
-    ///
-    /// Via the [`Float`] type floats can be created out of integers and booleans too.
-    ///
-    /// ```
-    /// use cbor_core::Value;
-    ///
-    /// let f1 = Value::float(1.0);
-    /// assert!(f1.to_f64() == Ok(1.0));
-    ///
-    /// let f2 = Value::float(2);
-    /// assert!(f2.to_f64() == Ok(2.0));
-    ///
-    /// let f3 = Value::float(true);
-    /// assert!(f3.to_f64() == Ok(1.0));
-    /// ```
-    ///
-    /// The value is stored in the shortest IEEE 754 form (f16, f32,
-    /// or f64) that preserves it exactly.
-    pub fn float(value: impl Into<Float>) -> Self {
-        Self::Float(value.into())
-    }
-
-    /// Create a CBOR array.
-    ///
-    /// Accepts any type that converts into [`Array`], including
-    /// `Vec<T>`, `[T; N]`, `&[T]`, and `Box<[T]>` where `T: Into<Value>`.
-    /// See [`Array`] for the full list of accepted types.
-    ///
-    /// ```
-    /// # use cbor_core::Value;
-    /// let a = Value::array([1, 2, 3]);
-    /// assert_eq!(a.len(), Some(3));
-    /// ```
-    pub fn array(array: impl Into<Array>) -> Self {
-        Self::Array(array.into().0)
-    }
-
-    /// Create a CBOR map. Keys are stored in canonical order.
-    ///
-    /// Accepts any type that converts into [`Map`], including
-    /// `BTreeMap`, `&HashMap`, `Vec<(K, V)>`, `[(K, V); N]`, and
-    /// `&[(K, V)]`. See [`Map`] for the full list of accepted types.
-    ///
-    /// ```
-    /// # use cbor_core::Value;
-    /// let m = Value::map([("x", 1), ("y", 2)]);
-    /// assert_eq!(m.len(), Some(2));
-    /// ```
-    pub fn map(map: impl Into<Map>) -> Self {
-        Self::Map(map.into().0)
-    }
-
-    /// Wrap a value with a CBOR tag.
-    ///
-    /// ```
-    /// use cbor_core::Value;
-    /// let uri = Value::tag(32, "https://example.com");
-    /// assert_eq!(uri.tag_number().unwrap(), 32);
-    /// ```
-    pub fn tag(number: u64, content: impl Into<Value>) -> Self {
-        Self::Tag(number, Box::new(content.into()))
-    }
-
+/// Misc
+impl Value {
     /// Return the [`DataType`] of this value for type-level dispatch.
     #[must_use]
     pub const fn data_type(&self) -> DataType {
@@ -1193,11 +1189,42 @@ impl Value {
         }
     }
 
-    /// Internal shortcut helper
-    pub(crate) const fn is_bytes(&self) -> bool {
+    // Internal shortcut helper
+    const fn is_bytes(&self) -> bool {
         self.data_type().is_bytes()
     }
 
+    /// Take the value out, leaving `null` in its place.
+    ///
+    /// ```
+    /// use cbor_core::Value;
+    ///
+    /// let mut v = Value::from(42);
+    /// let taken = v.take();
+    /// assert_eq!(taken.to_u32().unwrap(), 42);
+    /// assert!(v.data_type().is_null());
+    /// ```
+    pub fn take(&mut self) -> Self {
+        std::mem::take(self)
+    }
+
+    /// Replace the value, returning the old one.
+    ///
+    /// ```
+    /// use cbor_core::Value;
+    ///
+    /// let mut v = Value::from("hello");
+    /// let old = v.replace(Value::from("world"));
+    /// assert_eq!(old.as_str().unwrap(), "hello");
+    /// assert_eq!(v.as_str().unwrap(), "world");
+    /// ```
+    pub fn replace(&mut self, value: Self) -> Self {
+        std::mem::replace(self, value)
+    }
+}
+
+/// Scalar accessors
+impl Value {
     /// Extract a boolean. Returns `Err` for non-boolean values.
     pub const fn to_bool(&self) -> Result<bool> {
         match self {
@@ -1397,7 +1424,10 @@ impl Value {
             }
         }
     }
+}
 
+/// Bytes and text strings
+impl Value {
     /// Borrow the byte string as a slice.
     pub fn as_bytes(&self) -> Result<&[u8]> {
         match self {
@@ -1451,7 +1481,10 @@ impl Value {
             _ => Err(Error::IncompatibleType(self.data_type())),
         }
     }
+}
 
+/// Arrays and maps
+impl Value {
     /// Borrow the array elements as a slice.
     pub fn as_array(&self) -> Result<&[Value]> {
         match self {
@@ -1505,9 +1538,10 @@ impl Value {
             _ => Err(Error::IncompatibleType(self.data_type())),
         }
     }
+}
 
-    // --------------- Index access ---------------
-
+/// Array and map helpers
+impl Value {
     /// Look up an element by index (arrays) or key (maps).
     ///
     /// Accepts anything convertible into [`ValueKey`](crate::ValueKey):
@@ -1724,9 +1758,10 @@ impl Value {
             _ => None,
         }
     }
+}
 
-    // ------------------- Tags ------------------
-
+/// Tags
+impl Value {
     /// Return the tag number.
     pub const fn tag_number(&self) -> Result<u64> {
         match self {

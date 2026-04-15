@@ -3,9 +3,14 @@
 A Rust implementation of [CBOR::Core](https://www.ietf.org/archive/id/draft-rundgren-cbor-core-25.html),
 the deterministic subset of CBOR (RFC 8949).
 
-This crate encodes and decodes CBOR using owned data structures.
-Values can be constructed, inspected, and modified directly using
-CBOR data types while maintaining deterministic encoding.
+The central type is an owned `Value`. It can be constructed,
+inspected, modified in place, encoded to bytes, and decoded back.
+The API follows CBOR's own shape, so tagged values, simple values,
+and arbitrary map keys stay directly reachable without a detour
+through a schema.
+
+To map custom Rust types to CBOR instead, enable the `serde` feature
+for `Serialize`/`Deserialize` support.
 
 The API is not stable yet and may change in future releases.
 
@@ -17,18 +22,16 @@ rejection of non-deterministic encodings.
 
 Supported types: integers and big integers, IEEE 754 floats (half,
 single, double), byte strings, text strings, arrays, maps, tagged
-values, and simple values (null, booleans).
-
-Arrays and maps are heterogeneous. Map keys can be any CBOR type
-including arrays and maps.
+values, and simple values (null, booleans). Arrays and maps are
+heterogeneous.
 
 Accessor methods look through tags, including custom tags wrapping
 big integers (tags 2/3).
 
 Encoding is deterministic: integers and floats use their shortest
-form, and map keys are encoded in sorted canonical order. Decoding
-rejects non-deterministic data. NaN values, including signaling NaNs
-and custom payloads, are preserved through round-trips.
+form, and map keys are sorted in canonical order. The decoder
+rejects input that deviates. NaN payloads, including signaling NaNs,
+survive round-trips bit-for-bit.
 
 ## Diagnostic notation
 

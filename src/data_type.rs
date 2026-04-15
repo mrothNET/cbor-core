@@ -52,13 +52,24 @@ pub enum DataType {
 }
 
 impl DataType {
+    /// Return the variant name as a static string, matching the Rust
+    /// identifier (e.g. `"Int"`, `"DateTime"`, `"Float64"`).
+    ///
+    /// Useful for error messages and diagnostics.
+    ///
+    /// ```
+    /// use cbor_core::Value;
+    ///
+    /// assert_eq!(Value::from(42).data_type().name(), "Int");
+    /// assert_eq!(Value::from("hi").data_type().name(), "Text");
+    /// ```
     pub fn name(&self) -> &'static str {
         match self {
             DataType::Null => "Null",
             DataType::Bool => "Bool",
             DataType::Simple => "Simple",
             DataType::Int => "Int",
-            DataType::BigInt => "Bigint",
+            DataType::BigInt => "BigInt",
             DataType::DateTime => "DateTime",
             DataType::EpochTime => "EpochTime",
             DataType::Float16 => "Float16",

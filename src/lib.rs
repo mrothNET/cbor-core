@@ -5,9 +5,11 @@
 //! [CBOR::Core](https://www.ietf.org/archive/id/draft-rundgren-cbor-core-25.html)
 //! profile (`draft-rundgren-cbor-core-25`).
 //!
-//! This crate works with CBOR as an owned data structure rather than as a
-//! serialization layer. Values can be constructed, inspected, modified, and
-//! round-tripped through their canonical byte encoding.
+//! The central type is an owned [`Value`]. It can be constructed,
+//! inspected, modified in place, encoded to bytes, and decoded back.
+//! The API follows CBOR's own shape, so tagged values, simple values,
+//! and arbitrary map keys stay directly reachable without a detour
+//! through a schema.
 //!
 //! # Types
 //!
@@ -134,13 +136,13 @@
 //!
 //! # Encoding rules
 //!
-//! All encoding is deterministic: integers and floats use their shortest
-//! representation, and map keys are sorted in CBOR canonical order. The
-//! decoder rejects non-canonical input.
+//! Encoding is deterministic: integers and floats use their shortest
+//! form, and map keys are sorted in canonical order. The decoder
+//! rejects input that deviates.
 //!
-//! NaN values, including signaling NaNs and custom payloads, are preserved
-//! through encode/decode round-trips. Conversion between float widths uses
-//! bit-level manipulation to avoid hardware NaN canonicalization.
+//! NaN payloads, including signaling NaNs, survive round-trips
+//! bit-for-bit. Float-width conversions go through bit patterns to
+//! avoid hardware canonicalization.
 //!
 //! # Optional features
 //!
