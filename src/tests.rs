@@ -1,5 +1,6 @@
 mod collections;
 mod debug;
+mod decode_options;
 mod integers;
 mod limits;
 mod parse;

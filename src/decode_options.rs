@@ -1,0 +1,405 @@
+use std::collections::BTreeMap;
+
+use crate::{
+    DataType, Error, Float, IoResult, Result, SimpleValue, Value,
+    codec::{Argument, Head, Major},
+    io::MyReader,
+    limits,
+};
+
+/// Configuration for CBOR decoding.
+///
+/// `DecodeOptions` controls the input format (binary or hex) and the
+/// limits the decoder enforces against hostile or malformed input.
+/// Construct it with [`DecodeOptions::new`] (or `Default`), adjust
+/// settings with the builder methods, and call [`decode`](Self::decode)
+/// or [`read_from`](Self::read_from) to consume input.
+///
+/// The convenience methods on [`Value`] ([`decode`](Value::decode),
+/// [`decode_hex`](Value::decode_hex), [`read_from`](Value::read_from),
+/// [`read_hex_from`](Value::read_hex_from)) all forward to a default
+/// `DecodeOptions`. Use this type directly when you need to relax a
+/// limit for a known input, tighten one for untrusted input, or switch
+/// between binary and hex at runtime.
+///
+/// # Options
+///
+/// | Option | Default | Purpose |
+/// |---|---|---|
+/// | [`hex`](Self::hex) | `false` | Interpret input as hex text, two digits per CBOR byte. |
+/// | [`recursion_limit`](Self::recursion_limit) | 200 | Maximum nesting depth of arrays, maps, and tags. |
+/// | [`length_limit`](Self::length_limit) | 1,000,000,000 | Maximum declared element count of a single array, map, byte string, or text string. |
+/// | [`oom_mitigation`](Self::oom_mitigation) | 100,000,000 | Byte budget for speculative pre-allocation. |
+///
+/// ## `recursion_limit`
+///
+/// Each array, map, or tag consumes one unit of recursion budget for
+/// its contents. Exceeding the limit returns [`Error::NestingTooDeep`].
+/// The limit protects against stack overflow on adversarial input and
+/// should be well below the stack a thread has available.
+///
+/// ## `length_limit`
+///
+/// Applies to the length field in the CBOR head of arrays, maps, byte
+/// strings, and text strings. It caps the declared size before any
+/// bytes are read, so a malicious header claiming a petabyte-long
+/// string is rejected immediately with [`Error::LengthTooLarge`]. The
+/// limit does not restrict total input size; a valid document may
+/// contain many items each up to the limit.
+///
+/// ## `oom_mitigation`
+///
+/// CBOR encodes lengths in the head, so a decoder is tempted to
+/// pre-allocate a `Vec` of the declared capacity. On hostile input
+/// that is a trivial amplification attack: a few bytes on the wire
+/// reserve gigabytes of memory. `oom_mitigation` is a byte budget,
+/// shared across the current decode, that caps the total amount of
+/// speculative capacity the decoder may reserve for array backing
+/// storage. Once the budget is exhausted, further arrays start empty
+/// and grow on demand. Decoding still succeeds if the input is
+/// well-formed; only the up-front reservation is bounded.
+///
+/// The budget is consumed, not refilled: a deeply nested structure
+/// with many small arrays can drain it early and decode the tail with
+/// zero pre-allocation. That is the intended behavior.
+///
+/// # Examples
+///
+/// Decode binary CBOR with default limits:
+///
+/// ```
+/// use cbor_core::DecodeOptions;
+///
+/// let v = DecodeOptions::new().decode([0x18, 42]).unwrap();
+/// assert_eq!(v.to_u32().unwrap(), 42);
+/// ```
+///
+/// Decode hex-encoded CBOR by flipping one flag:
+///
+/// ```
+/// use cbor_core::DecodeOptions;
+///
+/// let v = DecodeOptions::new().hex(true).decode("182a").unwrap();
+/// assert_eq!(v.to_u32().unwrap(), 42);
+/// ```
+///
+/// Tighten limits for input from an untrusted source:
+///
+/// ```
+/// use cbor_core::DecodeOptions;
+///
+/// let mut strict = DecodeOptions::new();
+/// strict
+///     .recursion_limit(16)
+///     .length_limit(4096)
+///     .oom_mitigation(64 * 1024);
+///
+/// assert!(strict.decode([0x18, 42]).is_ok());
+/// ```
+#[derive(Debug, Clone)]
+pub struct DecodeOptions {
+    hex: bool,
+    recursion_limit: u16,
+    length_limit: u64,
+    oom_mitigation: usize,
+}
+
+impl Default for DecodeOptions {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl DecodeOptions {
+    /// Create a new set of options with the crate defaults.
+    ///
+    /// ```
+    /// use cbor_core::DecodeOptions;
+    ///
+    /// let opts = DecodeOptions::new();
+    /// let v = opts.decode([0x18, 42]).unwrap();
+    /// assert_eq!(v.to_u32().unwrap(), 42);
+    /// ```
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            hex: false,
+            recursion_limit: limits::RECURSION_LIMIT,
+            length_limit: limits::LENGTH_LIMIT,
+            oom_mitigation: limits::OOM_MITIGATION,
+        }
+    }
+
+    /// Select hex or binary input. When `true`, each CBOR byte is read
+    /// as two hex digits (uppercase or lowercase).
+    ///
+    /// Default: `false`.
+    ///
+    /// ```
+    /// use cbor_core::DecodeOptions;
+    ///
+    /// let hex = DecodeOptions::new().hex(true).decode("182a").unwrap();
+    /// let bin = DecodeOptions::new().decode([0x18, 0x2a]).unwrap();
+    /// assert_eq!(hex, bin);
+    /// ```
+    pub const fn hex(&mut self, hex: bool) -> &mut Self {
+        self.hex = hex;
+        self
+    }
+
+    /// Set the maximum nesting depth of arrays, maps, and tags.
+    ///
+    /// Default: 200. Input that exceeds the limit returns
+    /// [`Error::NestingTooDeep`].
+    ///
+    /// ```
+    /// use cbor_core::{DecodeOptions, Error};
+    ///
+    /// // Two nested one-element arrays: 0x81 0x81 0x00
+    /// let err = DecodeOptions::new()
+    ///     .recursion_limit(1)
+    ///     .decode([0x81, 0x81, 0x00])
+    ///     .unwrap_err();
+    /// assert_eq!(err, Error::NestingTooDeep);
+    /// ```
+    pub const fn recursion_limit(&mut self, limit: u16) -> &mut Self {
+        self.recursion_limit = limit;
+        self
+    }
+
+    /// Set the maximum declared length for byte strings, text strings,
+    /// arrays, and maps.
+    ///
+    /// Default: 1,000,000,000. Checked against the length field in the
+    /// CBOR head before any bytes are consumed; an oversized declaration
+    /// returns [`Error::LengthTooLarge`].
+    ///
+    /// ```
+    /// use cbor_core::{DecodeOptions, Error};
+    ///
+    /// // A five-byte text string: 0x65 'h' 'e' 'l' 'l' 'o'
+    /// let err = DecodeOptions::new()
+    ///     .length_limit(4)
+    ///     .decode(b"\x65hello")
+    ///     .unwrap_err();
+    /// assert_eq!(err, Error::LengthTooLarge);
+    /// ```
+    pub const fn length_limit(&mut self, limit: u64) -> &mut Self {
+        self.length_limit = limit;
+        self
+    }
+
+    /// Set the byte budget for speculative pre-allocation of array
+    /// backing storage.
+    ///
+    /// Default: 100,000,000. Lower values trade a small amount of
+    /// decoding throughput for stronger resistance to memory-amplification
+    /// attacks. Valid input decodes regardless; only the up-front
+    /// reservation is bounded.
+    ///
+    /// ```
+    /// use cbor_core::DecodeOptions;
+    ///
+    /// // A two-element array: 0x82 0x01 0x02
+    /// let v = DecodeOptions::new()
+    ///     .oom_mitigation(0)
+    ///     .decode([0x82, 0x01, 0x02])
+    ///     .unwrap();
+    /// assert_eq!(v.len(), Some(2));
+    /// ```
+    pub const fn oom_mitigation(&mut self, bytes: usize) -> &mut Self {
+        self.oom_mitigation = bytes;
+        self
+    }
+
+    /// Decode a CBOR data item from an in-memory buffer.
+    ///
+    /// Accepts any `AsRef<[u8]>`: `&[u8]`, `Vec<u8>`, `&str`, `String`,
+    /// and so on. Returns [`Error::UnexpectedEof`] if the buffer runs
+    /// out mid-item; trailing bytes after a complete item are *not*
+    /// reported (the decoder stops once one item has been read).
+    ///
+    /// ```
+    /// use cbor_core::DecodeOptions;
+    ///
+    /// let v = DecodeOptions::new().decode([0x18, 42]).unwrap();
+    /// assert_eq!(v.to_u32().unwrap(), 42);
+    ///
+    /// let v = DecodeOptions::new().hex(true).decode("182a").unwrap();
+    /// assert_eq!(v.to_u32().unwrap(), 42);
+    /// ```
+    pub fn decode(&self, bytes: impl AsRef<[u8]>) -> Result<Value> {
+        let bytes = bytes.as_ref();
+        if self.hex {
+            let mut reader = crate::io::HexSliceReader(bytes);
+            self.do_read(&mut reader, self.recursion_limit, self.oom_mitigation)
+        } else {
+            let mut reader = crate::io::SliceReader(bytes);
+            self.do_read(&mut reader, self.recursion_limit, self.oom_mitigation)
+        }
+    }
+
+    /// Read a single CBOR data item from a stream.
+    ///
+    /// The reader is consumed only up to the end of the item; any
+    /// bytes after remain in the stream. I/O failures are returned as
+    /// [`IoError::Io`](crate::IoError::Io); malformed or oversized
+    /// input as [`IoError::Data`](crate::IoError::Data).
+    ///
+    /// ```
+    /// use cbor_core::DecodeOptions;
+    ///
+    /// let mut bytes: &[u8] = &[0x18, 42];
+    /// let v = DecodeOptions::new().read_from(&mut bytes).unwrap();
+    /// assert_eq!(v.to_u32().unwrap(), 42);
+    ///
+    /// let mut hex: &[u8] = b"182a";
+    /// let v = DecodeOptions::new().hex(true).read_from(&mut hex).unwrap();
+    /// assert_eq!(v.to_u32().unwrap(), 42);
+    /// ```
+    pub fn read_from(&self, reader: impl std::io::Read) -> IoResult<Value> {
+        if self.hex {
+            let mut reader = crate::io::HexReader(reader);
+            self.do_read(&mut reader, self.recursion_limit, self.oom_mitigation)
+        } else {
+            let mut reader = reader;
+            self.do_read(&mut reader, self.recursion_limit, self.oom_mitigation)
+        }
+    }
+
+    fn do_read<R>(
+        &self,
+        reader: &mut R,
+        recursion_limit: u16,
+        oom_mitigation: usize,
+    ) -> std::result::Result<Value, R::Error>
+    where
+        R: MyReader,
+        R::Error: From<Error>,
+    {
+        let head = Head::read_from(reader)?;
+
+        let is_float = head.initial_byte.major() == Major::SimpleOrFloat
+            && matches!(head.argument, Argument::U16(_) | Argument::U32(_) | Argument::U64(_));
+
+        if !is_float && !head.argument.is_deterministic() {
+            return Err(Error::NonDeterministic.into());
+        }
+
+        let this = match head.initial_byte.major() {
+            Major::Unsigned => Value::Unsigned(head.value()),
+            Major::Negative => Value::Negative(head.value()),
+
+            Major::ByteString => {
+                let len = head.value();
+                if len > self.length_limit {
+                    return Err(Error::LengthTooLarge.into());
+                }
+                Value::ByteString(reader.read_vec(len, oom_mitigation)?)
+            }
+
+            Major::TextString => {
+                let len = head.value();
+                if len > self.length_limit {
+                    return Err(Error::LengthTooLarge.into());
+                }
+                let bytes = reader.read_vec(len, oom_mitigation)?;
+                let string = String::from_utf8(bytes).map_err(Error::from)?;
+                Value::TextString(string)
+            }
+
+            Major::Array => {
+                let value = head.value();
+
+                if value > self.length_limit {
+                    return Err(Error::LengthTooLarge.into());
+                }
+
+                let Some(recursion_limit) = recursion_limit.checked_sub(1) else {
+                    return Err(Error::NestingTooDeep.into());
+                };
+
+                let request: usize = value.try_into().or(Err(Error::LengthTooLarge))?;
+                let granted = request.min(oom_mitigation / size_of::<Value>());
+                let oom_mitigation = oom_mitigation - granted * size_of::<Value>();
+
+                let mut vec = Vec::with_capacity(granted);
+
+                for _ in 0..value {
+                    vec.push(self.do_read(reader, recursion_limit, oom_mitigation)?);
+                }
+
+                Value::Array(vec)
+            }
+
+            Major::Map => {
+                let value = head.value();
+
+                if value > self.length_limit {
+                    return Err(Error::LengthTooLarge.into());
+                }
+
+                let Some(recursion_limit) = recursion_limit.checked_sub(1) else {
+                    return Err(Error::NestingTooDeep.into());
+                };
+
+                let mut map = BTreeMap::new();
+                let mut prev = None;
+
+                for _ in 0..value {
+                    let key = self.do_read(reader, recursion_limit, oom_mitigation)?;
+                    let value = self.do_read(reader, recursion_limit, oom_mitigation)?;
+
+                    if let Some((prev_key, prev_value)) = prev.take() {
+                        if prev_key >= key {
+                            return Err(Error::NonDeterministic.into());
+                        }
+                        map.insert(prev_key, prev_value);
+                    }
+
+                    prev = Some((key, value));
+                }
+
+                if let Some((key, value)) = prev.take() {
+                    map.insert(key, value);
+                }
+
+                Value::Map(map)
+            }
+
+            Major::Tag => {
+                let Some(recursion_limit) = recursion_limit.checked_sub(1) else {
+                    return Err(Error::NestingTooDeep.into());
+                };
+
+                let tag_number = head.value();
+                let tag_content = Box::new(self.do_read(reader, recursion_limit, oom_mitigation)?);
+
+                let this = Value::Tag(tag_number, tag_content);
+
+                if this.data_type() == DataType::BigInt {
+                    let bytes = this.as_bytes().unwrap();
+                    let valid = bytes.len() >= 8 && bytes[0] != 0;
+                    if !valid {
+                        return Err(Error::NonDeterministic.into());
+                    }
+                }
+
+                this
+            }
+
+            Major::SimpleOrFloat => match head.argument {
+                Argument::None => Value::SimpleValue(SimpleValue(head.initial_byte.info())),
+                Argument::U8(n) if n >= 32 => Value::SimpleValue(SimpleValue(n)),
+
+                Argument::U16(bits) => Value::Float(Float::from_u16(bits)),
+                Argument::U32(bits) => Value::Float(Float::from_u32(bits)?),
+                Argument::U64(bits) => Value::Float(Float::from_u64(bits)?),
+
+                _ => return Err(Error::Malformed.into()),
+            },
+        };
+
+        Ok(this)
+    }
+}

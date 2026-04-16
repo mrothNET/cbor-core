@@ -18,8 +18,8 @@ use std::{
 
 use crate::{
     Array, DataType, DateTime, EpochTime, Error, Float, IntegerBytes, Map, Result, SimpleValue,
-    codec::{Argument, Head, Major},
-    limits, tag,
+    codec::{Head, Major},
+    tag,
     util::u128_from_slice,
     view::{Payload, ValueView},
 };
@@ -124,6 +124,24 @@ use crate::{
 /// `Debug` output follows CBOR::Core diagnostic notation (Section 2.3.6);
 /// `Display` forwards to `Debug` so both produce the same text.
 /// `format!("{v:?}").parse::<Value>()` always round-trips.
+///
+/// The four decoding methods above forward to a default
+/// [`DecodeOptions`](crate::DecodeOptions). Use that type directly to
+/// switch between binary and hex at runtime, or to adjust the recursion
+/// limit, the declared-length cap, or the OOM-mitigation budget — for
+/// example, to tighten limits on input from an untrusted source:
+///
+/// ```
+/// use cbor_core::DecodeOptions;
+///
+/// let mut strict = DecodeOptions::new();
+/// strict
+///     .recursion_limit(16)
+///     .length_limit(4096)
+///     .oom_mitigation(64 * 1024);
+/// let v = strict.decode([0x18, 42]).unwrap();
+/// assert_eq!(v.to_u32().unwrap(), 42);
+/// ```
 ///
 /// # Accessors
 ///
@@ -267,7 +285,7 @@ use crate::{
 /// to modify them in place. For element access by index, see
 /// [`get`](Self::get), [`get_mut`](Self::get_mut), [`remove`](Self::remove),
 /// and the [`Index`](std::ops::Index)/[`IndexMut`](std::ops::IndexMut)
-/// impls — see the [Indexing](#indexing) section below.
+/// implementations — see the [Indexing](#indexing) section below.
 ///
 /// | Method | Returns |
 /// |---|---|
@@ -294,7 +312,7 @@ use crate::{
 /// order. Use [`as_map`](Self::as_map) for direct access to the
 /// underlying `BTreeMap`, or [`get`](Self::get), [`get_mut`](Self::get_mut),
 /// [`remove`](Self::remove), and the [`Index`](std::ops::Index)/
-/// [`IndexMut`](std::ops::IndexMut) impls for key lookups — see the
+/// [`IndexMut`](std::ops::IndexMut) implementations for key lookups — see the
 /// [Indexing](#indexing) section below.
 ///
 /// | Method | Returns |
@@ -842,13 +860,7 @@ impl Value {
     /// assert_eq!(v.to_u32().unwrap(), 42);
     /// ```
     pub fn decode(bytes: impl AsRef<[u8]>) -> crate::Result<Self> {
-        // let mut bytes = bytes.as_ref();
-        // Self::read_from(&mut bytes).map_err(|error| match error {
-        //     crate::IoError::Io(_io_error) => unreachable!(),
-        //     crate::IoError::Data(error) => error,
-        // })
-        let mut reader = crate::io::SliceReader(bytes.as_ref());
-        Self::do_read(&mut reader, limits::RECURSION_LIMIT, limits::OOM_MITIGATION)
+        crate::DecodeOptions::new().decode(bytes)
     }
 
     /// Decode a CBOR data item from hex-encoded bytes.
@@ -865,8 +877,7 @@ impl Value {
     /// assert_eq!(v.to_u32().unwrap(), 42);
     /// ```
     pub fn decode_hex(hex: impl AsRef<[u8]>) -> Result<Self> {
-        let mut reader = crate::io::HexSliceReader(hex.as_ref());
-        Self::do_read(&mut reader, limits::RECURSION_LIMIT, limits::OOM_MITIGATION)
+        crate::DecodeOptions::new().hex(true).decode(hex)
     }
 
     /// Read a single CBOR data item from a binary stream.
@@ -877,8 +888,8 @@ impl Value {
     /// let v = Value::read_from(&mut bytes).unwrap();
     /// assert_eq!(v.to_u32().unwrap(), 42);
     /// ```
-    pub fn read_from(mut reader: impl std::io::Read) -> crate::IoResult<Self> {
-        Self::do_read(&mut reader, limits::RECURSION_LIMIT, limits::OOM_MITIGATION)
+    pub fn read_from(reader: impl std::io::Read) -> crate::IoResult<Self> {
+        crate::DecodeOptions::new().read_from(reader)
     }
 
     /// Read a single CBOR data item from a hex-encoded stream.
@@ -893,140 +904,7 @@ impl Value {
     /// assert_eq!(v.to_u32().unwrap(), 42);
     /// ```
     pub fn read_hex_from(reader: impl std::io::Read) -> crate::IoResult<Self> {
-        let mut hex_reader = crate::io::HexReader(reader);
-        Self::do_read(&mut hex_reader, limits::RECURSION_LIMIT, limits::OOM_MITIGATION)
-    }
-
-    fn do_read<R>(reader: &mut R, recursion_limit: u16, oom_mitigation: usize) -> std::result::Result<Self, R::Error>
-    where
-        R: crate::io::MyReader,
-        R::Error: From<crate::Error>,
-    {
-        let head = Head::read_from(reader)?;
-
-        let is_float = head.initial_byte.major() == Major::SimpleOrFloat
-            && matches!(head.argument, Argument::U16(_) | Argument::U32(_) | Argument::U64(_));
-
-        if !is_float && !head.argument.is_deterministic() {
-            return Err(Error::NonDeterministic.into());
-        }
-
-        let this = match head.initial_byte.major() {
-            Major::Unsigned => Self::Unsigned(head.value()),
-            Major::Negative => Self::Negative(head.value()),
-
-            Major::ByteString => {
-                let len = head.value();
-                if len > limits::LENGTH_LIMIT {
-                    return Err(Error::LengthTooLarge.into());
-                }
-                Self::ByteString(reader.read_vec(len)?)
-            }
-
-            Major::TextString => {
-                let len = head.value();
-                if len > limits::LENGTH_LIMIT {
-                    return Err(Error::LengthTooLarge.into());
-                }
-                let bytes = reader.read_vec(len)?;
-                let string = String::from_utf8(bytes).map_err(crate::Error::from)?;
-                Self::TextString(string)
-            }
-
-            Major::Array => {
-                let value = head.value();
-
-                if value > limits::LENGTH_LIMIT {
-                    return Err(Error::LengthTooLarge.into());
-                }
-
-                let Some(recursion_limit) = recursion_limit.checked_sub(1) else {
-                    return Err(Error::NestingTooDeep.into());
-                };
-
-                let request: usize = value.try_into().or(Err(Error::LengthTooLarge))?;
-                let granted = request.min(oom_mitigation / size_of::<Self>());
-                let oom_mitigation = oom_mitigation - granted * size_of::<Self>();
-
-                let mut vec = Vec::with_capacity(granted);
-
-                for _ in 0..value {
-                    vec.push(Self::do_read(reader, recursion_limit, oom_mitigation)?);
-                }
-
-                Self::Array(vec)
-            }
-
-            Major::Map => {
-                let value = head.value();
-
-                if value > limits::LENGTH_LIMIT {
-                    return Err(Error::LengthTooLarge.into());
-                }
-
-                let Some(recursion_limit) = recursion_limit.checked_sub(1) else {
-                    return Err(Error::NestingTooDeep.into());
-                };
-
-                let mut map = BTreeMap::new();
-                let mut prev = None;
-
-                for _ in 0..value {
-                    let key = Self::do_read(reader, recursion_limit, oom_mitigation)?;
-                    let value = Self::do_read(reader, recursion_limit, oom_mitigation)?;
-
-                    if let Some((prev_key, prev_value)) = prev.take() {
-                        if prev_key >= key {
-                            return Err(Error::NonDeterministic.into());
-                        }
-                        map.insert(prev_key, prev_value);
-                    }
-
-                    prev = Some((key, value));
-                }
-
-                if let Some((key, value)) = prev.take() {
-                    map.insert(key, value);
-                }
-
-                Self::Map(map)
-            }
-
-            Major::Tag => {
-                let Some(recursion_limit) = recursion_limit.checked_sub(1) else {
-                    return Err(Error::NestingTooDeep.into());
-                };
-
-                let tag_number = head.value();
-                let tag_content = Box::new(Self::do_read(reader, recursion_limit, oom_mitigation)?);
-
-                let this = Self::Tag(tag_number, tag_content);
-
-                if this.data_type() == DataType::BigInt {
-                    // check if conforming bigint
-                    let bytes = this.as_bytes().unwrap();
-                    let valid = bytes.len() >= 8 && bytes[0] != 0;
-                    if !valid {
-                        return Err(Error::NonDeterministic.into());
-                    }
-                }
-
-                this
-            }
-
-            Major::SimpleOrFloat => match head.argument {
-                Argument::None => Self::SimpleValue(SimpleValue(head.initial_byte.info())),
-                Argument::U8(n) if n >= 32 => Self::SimpleValue(SimpleValue(n)),
-
-                Argument::U16(bits) => Self::Float(Float::from_u16(bits)),
-                Argument::U32(bits) => Self::Float(Float::from_u32(bits)?),
-                Argument::U64(bits) => Self::Float(Float::from_u64(bits)?),
-
-                _ => return Err(Error::Malformed.into()),
-            },
-        };
-
-        Ok(this)
+        crate::DecodeOptions::new().hex(true).read_from(reader)
     }
 }
 

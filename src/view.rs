@@ -1,8 +1,4 @@
-use std::{
-    borrow::Borrow,
-    cmp::Ordering,
-    collections::BTreeMap,
-};
+use std::{borrow::Borrow, cmp::Ordering, collections::BTreeMap};
 
 use crate::{Value, codec::Head};
 
@@ -31,10 +27,7 @@ impl Payload<'_> {
             Payload::Bytes(bytes) => bytes.len(),
             Payload::Text(text) => text.len(),
             Payload::Array(arr) => arr.iter().map(Value::encoded_len).sum(),
-            Payload::Map(map) => map
-                .iter()
-                .map(|(k, v)| k.encoded_len() + v.encoded_len())
-                .sum(),
+            Payload::Map(map) => map.iter().map(|(k, v)| k.encoded_len() + v.encoded_len()).sum(),
             Payload::TagContent(value) => value.encoded_len(),
         }
     }
@@ -45,9 +38,7 @@ where
     A: ?Sized + ValueView,
     B: ?Sized + ValueView,
 {
-    a.head()
-        .cmp(&b.head())
-        .then_with(|| a.payload().cmp(&b.payload()))
+    a.head().cmp(&b.head()).then_with(|| a.payload().cmp(&b.payload()))
 }
 
 impl PartialEq for dyn ValueView + '_ {

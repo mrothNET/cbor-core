@@ -4,6 +4,7 @@
 
 ### Added
 
+- `DecodeOptions` type for configuring a decode: binary or hex input, recursion limit, length limit, and OOM-mitigation budget. `Value::decode`, `Value::decode_hex`, `Value::read_from`, and `Value::read_hex_from` forward to a default `DecodeOptions`.
 - `Value::new()` constructor, inferring the variant from the input type. Delegates to `TryFrom`; panics only for types whose `TryFrom` impl can fail (e.g. date/time).
 - `Value::byte_string()` constructor, accepting any `impl Into<Vec<u8>>`.
 - `Value::text_string()` constructor, accepting any `impl Into<String>`.
