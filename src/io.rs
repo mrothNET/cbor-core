@@ -7,7 +7,7 @@ fn decode_byte(pair: &[u8; 2]) -> Result<u8, crate::Error> {
 }
 
 pub(crate) trait MyReader {
-    type Error: From<crate::Error>;
+    type Error: From<crate::Error> + crate::error::WithEof;
 
     fn read_bytes<const N: usize>(&mut self) -> Result<[u8; N], Self::Error>;
     fn read_vec(&mut self, len: u64, oom_mitigation: usize) -> Result<Vec<u8>, Self::Error>;

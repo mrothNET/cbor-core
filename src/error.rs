@@ -147,3 +147,19 @@ impl<T> From<Error> for IoResult<T> {
 
 /// Convenience alias for streaming CBOR operations.
 pub type IoResult<T> = std::result::Result<T, IoError>;
+
+pub(crate) trait WithEof {
+    fn is_eof(&self) -> bool;
+}
+
+impl WithEof for Error {
+    fn is_eof(&self) -> bool {
+        matches!(self, Error::UnexpectedEof)
+    }
+}
+
+impl WithEof for IoError {
+    fn is_eof(&self) -> bool {
+        matches!(self, IoError::Data(Error::UnexpectedEof))
+    }
+}

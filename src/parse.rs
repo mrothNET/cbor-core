@@ -6,8 +6,10 @@
 use std::{collections::BTreeMap, str::FromStr};
 
 use crate::{
-    Error, Float, Result, SimpleValue, Value,
+    Error, Float, SimpleValue, Value,
+    error::WithEof,
     float::Inner,
+    io::{MyReader, SliceReader},
     limits, tag,
     util::{trim_leading_zeros, u8_from_base64_digit, u8_from_hex_digit, u64_from_slice},
 };
@@ -15,34 +17,40 @@ use crate::{
 impl FromStr for Value {
     type Err = Error;
 
-    fn from_str(s: &str) -> Result<Self> {
-        let mut parser = Parser::new(s.as_bytes());
-        parser.skip_ws()?;
+    fn from_str(s: &str) -> Result<Self, Error> {
+        let mut parser = Parser::new(SliceReader(s.as_bytes()));
+        parser.skip_whitespace()?;
         let value = parser.parse_value()?;
-        parser.skip_ws()?;
-        if parser.pos != parser.src.len() {
+        parser.skip_whitespace()?;
+        if !parser.at_end()? {
             return Err(Error::InvalidFormat);
         }
         Ok(value)
     }
 }
 
-struct Parser<'a> {
-    src: &'a [u8],
-    pos: usize,
+// The underlying reader is forward-only, but the parser needs arbitrary
+// lookahead. Bytes pulled for peeking are held in `buf` until consumed,
+// so the stream is never read past the last byte the parser actually
+// inspects on a successful match.
+struct Parser<R: MyReader> {
+    reader: R,
+    buf: [u8; 16],
+    buf_len: usize,
     depth: u16,
 }
 
-impl<'a> Parser<'a> {
-    fn new(src: &'a [u8]) -> Self {
+impl<R: MyReader> Parser<R> {
+    fn new(inner: R) -> Self {
         Self {
-            src,
-            pos: 0,
+            reader: inner,
+            buf: [0; _],
+            buf_len: 0,
             depth: limits::RECURSION_LIMIT,
         }
     }
 
-    fn enter(&mut self) -> Result<()> {
+    fn enter(&mut self) -> Result<(), R::Error> {
         self.depth = self.depth.checked_sub(1).ok_or(Error::NestingTooDeep)?;
         Ok(())
     }
@@ -51,81 +59,115 @@ impl<'a> Parser<'a> {
         self.depth += 1;
     }
 
-    fn peek(&self) -> Option<u8> {
-        self.src.get(self.pos).copied()
-    }
-
-    fn peek_at(&self, offset: usize) -> Option<u8> {
-        self.src.get(self.pos + offset).copied()
-    }
-
-    fn advance(&mut self) -> Result<u8> {
-        let byte = self.peek().ok_or(Error::InvalidFormat)?;
-        self.pos += 1;
-        Ok(byte)
-    }
-
-    fn eat(&mut self, byte: u8) -> bool {
-        let found = self.peek() == Some(byte);
-        if found {
-            self.pos += 1
+    fn ensure(&mut self, n: usize) -> Result<(), R::Error> {
+        while self.buf_len < n {
+            let [b] = self.reader.read_bytes::<1>()?;
+            self.buf[self.buf_len] = b;
+            self.buf_len += 1;
         }
-        found
+        Ok(())
     }
 
-    fn expect(&mut self, byte: u8) -> Result<()> {
-        if self.eat(byte) {
+    fn peek(&mut self) -> Result<Option<u8>, R::Error> {
+        self.peek_at(0)
+    }
+
+    fn peek_at(&mut self, offset: usize) -> Result<Option<u8>, R::Error> {
+        match self.ensure(offset + 1) {
+            Ok(()) => Ok(Some(self.buf[offset])),
+            Err(e) if e.is_eof() => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    fn advance(&mut self) -> Result<u8, R::Error> {
+        self.ensure(1)?;
+        match self.buf_len {
+            1 => {
+                self.buf_len = 0;
+                Ok(self.buf[0])
+            }
+            2 => {
+                let byte = self.buf[0];
+                self.buf[0] = self.buf[1];
+                self.buf_len = 1;
+                Ok(byte)
+            }
+            _ => unimplemented!("partial advance"),
+        }
+    }
+
+    fn skip(&mut self, len: usize) -> Result<(), R::Error> {
+        if self.buf_len == len {
+            self.buf_len = 0;
+        } else if self.buf_len == len + 1 {
+            self.buf[0] = self.buf[len];
+            self.buf_len = 1;
+        } else {
+            unimplemented!("unaligned skip");
+        }
+        Ok(())
+    }
+
+    fn eat(&mut self, byte: u8) -> Result<bool, R::Error> {
+        if self.peek()? == Some(byte) {
+            self.advance()?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    fn expect(&mut self, byte: u8) -> Result<(), R::Error> {
+        if self.eat(byte)? {
             Ok(())
         } else {
-            Err(Error::InvalidFormat)
+            Err(Error::InvalidFormat.into())
         }
     }
 
-    fn starts_with(&self, prefix: &[u8]) -> bool {
-        self.src[self.pos..].starts_with(prefix)
-    }
-
-    fn consume(&mut self, prefix: &[u8]) -> bool {
-        let found = self.starts_with(prefix);
-        if found {
-            self.pos += prefix.len();
-        }
-        found
-    }
-
-    fn skip_ws(&mut self) -> Result<()> {
-        loop {
-            match self.peek() {
-                Some(b' ' | b'\t' | b'\r' | b'\n') => self.pos += 1,
-                Some(b'#') => {
-                    while let Some(b) = self.peek() {
-                        self.pos += 1;
-                        if b == b'\n' {
-                            break;
-                        }
-                    }
-                }
-                Some(b'/') => {
-                    self.pos += 1;
-                    loop {
-                        match self.peek() {
-                            Some(b'/') => {
-                                self.pos += 1;
-                                break;
-                            }
-                            Some(_) => self.pos += 1,
-                            None => return Err(Error::InvalidFormat),
-                        }
-                    }
-                }
-                _ => return Ok(()),
+    // Tentatively match `prefix` byte-by-byte.
+    fn consume(&mut self, prefix: &[u8]) -> Result<bool, R::Error> {
+        for (i, &b) in prefix.iter().enumerate() {
+            if self.peek_at(i)? != Some(b) {
+                return Ok(false);
             }
         }
+        self.skip(prefix.len())?;
+        Ok(true)
     }
 
-    fn parse_value(&mut self) -> Result<Value> {
-        self.skip_ws()?;
-        let byte = self.peek().ok_or(Error::InvalidFormat)?;
+    fn skip_whitespace(&mut self) -> Result<(), R::Error> {
+        loop {
+            while matches!(self.peek()?, Some(b' ' | b'\t' | b'\r' | b'\n')) {
+                self.advance()?;
+            }
+
+            if self.eat(b'#')? {
+                while let Some(b) = self.peek()?
+                    && b != b'\n'
+                {
+                    self.advance()?;
+                }
+                continue;
+            }
+
+            if self.eat(b'/')? {
+                while self.advance()? != b'/' {}
+                continue;
+            }
+
+            return Ok(());
+        }
+    }
+
+    fn at_end(&mut self) -> Result<bool, R::Error> {
+        Ok(self.peek()?.is_none())
+    }
+
+    fn parse_value(&mut self) -> Result<Value, R::Error> {
+        self.skip_whitespace()?;
+        let byte = self.peek()?.ok_or(Error::UnexpectedEof)?;
         match byte {
             b'[' => self.parse_array(),
             b'{' => self.parse_map(),
@@ -133,53 +175,43 @@ impl<'a> Parser<'a> {
             b'\'' => self.parse_single_quoted_bstr(),
             b'<' => self.parse_embedded_bstr(),
             b'-' => {
-                if self.consume(b"-Infinity") {
+                if self.consume(b"-Infinity")? {
                     Ok(Value::float(f64::NEG_INFINITY))
                 } else {
                     self.parse_number_or_tag()
                 }
             }
             b'0'..=b'9' => self.parse_number_or_tag(),
-            b'N' if self.consume(b"NaN") => Ok(Value::Float(Float(Inner::F16(0x7e00)))),
-            b'I' if self.consume(b"Infinity") => Ok(Value::float(f64::INFINITY)),
-            b't' if self.consume(b"true") => Ok(Value::from(true)),
-            b'n' if self.consume(b"null") => Ok(Value::null()),
-            b's' if self.consume(b"simple(") => self.parse_simple_tail(),
-            b'h' if self.peek_at(1) == Some(b'\'') => {
-                self.pos += 2;
-                self.parse_hex_bstr_tail()
-            }
-            b'b' if self.consume(b"b64'") => self.parse_b64_bstr_tail(),
-            b'f' => {
-                if self.consume(b"false") {
-                    Ok(Value::from(false))
-                } else if self.consume(b"float'") {
-                    self.parse_float_hex_tail()
-                } else {
-                    Err(Error::InvalidFormat)
-                }
-            }
-            _ => Err(Error::InvalidFormat),
+            b'N' if self.consume(b"NaN")? => Ok(Value::Float(Float(Inner::F16(0x7e00)))),
+            b'I' if self.consume(b"Infinity")? => Ok(Value::float(f64::INFINITY)),
+            b't' if self.consume(b"true")? => Ok(Value::from(true)),
+            b'f' if self.consume(b"false")? => Ok(Value::from(false)),
+            b'n' if self.consume(b"null")? => Ok(Value::null()),
+            b's' if self.consume(b"simple(")? => self.parse_simple_tail(),
+            b'h' if self.consume(b"h\'")? => self.parse_hex_bstr_tail(),
+            b'b' if self.consume(b"b64'")? => self.parse_b64_bstr_tail(),
+            b'f' if self.consume(b"float'")? => self.parse_float_hex_tail(),
+            _ => Err(Error::InvalidFormat.into()),
         }
     }
 
-    fn parse_array(&mut self) -> Result<Value> {
+    fn parse_array(&mut self) -> Result<Value, R::Error> {
         self.expect(b'[')?;
-        self.skip_ws()?;
+        self.skip_whitespace()?;
         let mut items = Vec::new();
-        if self.eat(b']') {
+        if self.eat(b']')? {
             Ok(Value::Array(items))
         } else {
             self.enter()?;
             let result = loop {
                 items.push(self.parse_value()?);
-                self.skip_ws()?;
-                if self.eat(b',') {
+                self.skip_whitespace()?;
+                if self.eat(b',')? {
                     continue;
-                } else if self.eat(b']') {
+                } else if self.eat(b']')? {
                     break Ok(Value::Array(items));
                 } else {
-                    break Err(Error::InvalidFormat);
+                    break Err(Error::InvalidFormat.into());
                 }
             };
             self.leave();
@@ -187,31 +219,31 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_map(&mut self) -> Result<Value> {
+    fn parse_map(&mut self) -> Result<Value, R::Error> {
         self.expect(b'{')?;
-        self.skip_ws()?;
+        self.skip_whitespace()?;
         let mut map: BTreeMap<Value, Value> = BTreeMap::new();
-        if self.eat(b'}') {
+        if self.eat(b'}')? {
             Ok(Value::Map(map))
         } else {
             self.enter()?;
             let result = loop {
                 let key = self.parse_value()?;
-                self.skip_ws()?;
+                self.skip_whitespace()?;
                 if let Err(error) = self.expect(b':') {
                     break Err(error);
                 }
                 let value = self.parse_value()?;
                 if map.insert(key, value).is_some() {
-                    break Err(Error::NonDeterministic);
+                    break Err(Error::NonDeterministic.into());
                 }
-                self.skip_ws()?;
-                if self.eat(b',') {
+                self.skip_whitespace()?;
+                if self.eat(b',')? {
                     continue;
-                } else if self.eat(b'}') {
+                } else if self.eat(b'}')? {
                     break Ok(Value::Map(map));
                 } else {
-                    break Err(Error::InvalidFormat);
+                    break Err(Error::InvalidFormat.into());
                 }
             };
             self.leave();
@@ -219,20 +251,21 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_number_or_tag(&mut self) -> Result<Value> {
-        let negative = self.eat(b'-');
-        let value = if self.peek() == Some(b'0') {
-            match self.peek_at(1) {
+    fn parse_number_or_tag(&mut self) -> Result<Value, R::Error> {
+        let negative = self.eat(b'-')?;
+
+        let value = if self.peek()? == Some(b'0') {
+            match self.peek_at(1)? {
                 Some(b'b' | b'B') => {
-                    self.pos += 2;
+                    self.skip(2)?;
                     self.parse_integer_base(negative, 2)?
                 }
                 Some(b'o' | b'O') => {
-                    self.pos += 2;
+                    self.skip(2)?;
                     self.parse_integer_base(negative, 8)?
                 }
                 Some(b'x' | b'X') => {
-                    self.pos += 2;
+                    self.skip(2)?;
                     self.parse_integer_base(negative, 16)?
                 }
                 _ => self.parse_decimal(negative)?,
@@ -241,17 +274,17 @@ impl<'a> Parser<'a> {
             self.parse_decimal(negative)?
         };
 
-        self.skip_ws()?;
-        if self.peek() == Some(b'(') {
-            self.pos += 1;
+        self.skip_whitespace()?;
+
+        if self.eat(b'(')? {
             let Value::Unsigned(tag_number) = value else {
-                return Err(Error::InvalidFormat);
+                return Err(Error::InvalidFormat.into());
             };
             self.enter()?;
             let inner = self.parse_value();
             self.leave();
             let inner = inner?;
-            self.skip_ws()?;
+            self.skip_whitespace()?;
             self.expect(b')')?;
             Ok(Value::tag(tag_number, inner))
         } else {
@@ -259,44 +292,47 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_decimal(&mut self, negative: bool) -> Result<Value> {
-        let start = self.pos;
-        while let Some(b) = self.peek()
+    fn parse_decimal(&mut self, negative: bool) -> Result<Value, R::Error> {
+        let mut int_digits: Vec<u8> = Vec::new();
+        while let Some(b) = self.peek()?
             && b.is_ascii_digit()
         {
-            self.pos += 1;
+            int_digits.push(b);
+            self.advance()?;
         }
-        if self.pos == start {
-            return Err(Error::InvalidFormat);
+        if int_digits.is_empty() {
+            return Err(Error::InvalidFormat.into());
         }
-        let int_end = self.pos;
-        if self.peek() == Some(b'.') {
-            self.pos += 1;
-            let frac_start = self.pos;
-            while let Some(b) = self.peek()
+        if self.peek()? == Some(b'.') {
+            let mut text: Vec<u8> = int_digits;
+            text.push(self.advance()?);
+            let frac_start = text.len();
+            while let Some(b) = self.peek()?
                 && b.is_ascii_digit()
             {
-                self.pos += 1;
+                text.push(b);
+                self.advance()?;
             }
-            if self.pos == frac_start {
-                return Err(Error::InvalidFormat);
+            if text.len() == frac_start {
+                return Err(Error::InvalidFormat.into());
             }
-            if matches!(self.peek(), Some(b'e' | b'E')) {
-                self.pos += 1;
-                if matches!(self.peek(), Some(b'+' | b'-')) {
-                    self.pos += 1;
+            if matches!(self.peek()?, Some(b'e' | b'E')) {
+                text.push(self.advance()?);
+                if matches!(self.peek()?, Some(b'+' | b'-')) {
+                    text.push(self.advance()?);
                 }
-                let exp_start = self.pos;
-                while let Some(b) = self.peek()
+                let exp_start = text.len();
+                while let Some(b) = self.peek()?
                     && b.is_ascii_digit()
                 {
-                    self.pos += 1;
+                    text.push(b);
+                    self.advance()?;
                 }
-                if self.pos == exp_start {
-                    return Err(Error::InvalidFormat);
+                if text.len() == exp_start {
+                    return Err(Error::InvalidFormat.into());
                 }
             }
-            let text = std::str::from_utf8(&self.src[start..self.pos]).unwrap();
+            let text = std::str::from_utf8(&text).unwrap();
             let mut parsed: f64 = text.parse().map_err(|_| Error::InvalidFormat)?;
             if negative {
                 parsed = -parsed;
@@ -304,20 +340,19 @@ impl<'a> Parser<'a> {
             return Ok(Value::float(parsed));
         }
 
-        let digits = &self.src[start..int_end];
-        let bytes = digits_to_be_bytes(digits, 10)?;
-        be_bytes_to_value(&bytes, negative)
+        let bytes = digits_to_be_bytes(&int_digits, 10)?;
+        Ok(be_bytes_to_value(&bytes, negative)?)
     }
 
-    fn parse_integer_base(&mut self, negative: bool, base: u32) -> Result<Value> {
+    fn parse_integer_base(&mut self, negative: bool, base: u32) -> Result<Value, R::Error> {
         let mut digits: Vec<u8> = Vec::new();
         let mut last_was_digit = false;
-        while let Some(b) = self.peek() {
+        while let Some(b) = self.peek()? {
             if b == b'_' {
                 if !last_was_digit {
-                    return Err(Error::InvalidFormat);
+                    return Err(Error::InvalidFormat.into());
                 } else {
-                    self.pos += 1;
+                    self.advance()?;
                     last_was_digit = false;
                     continue;
                 }
@@ -333,47 +368,48 @@ impl<'a> Parser<'a> {
                 }
                 digits.push(b);
                 last_was_digit = true;
-                self.pos += 1;
+                self.advance()?;
             }
         }
         if digits.is_empty() || !last_was_digit {
-            Err(Error::InvalidFormat)
+            Err(Error::InvalidFormat.into())
         } else {
             let bytes = digits_to_be_bytes(&digits, base)?;
-            be_bytes_to_value(&bytes, negative)
+            Ok(be_bytes_to_value(&bytes, negative)?)
         }
     }
 
-    fn parse_simple_tail(&mut self) -> Result<Value> {
-        self.skip_ws()?;
-        let start = self.pos;
-        while let Some(b) = self.peek()
+    fn parse_simple_tail(&mut self) -> Result<Value, R::Error> {
+        self.skip_whitespace()?;
+        let mut digits: Vec<u8> = Vec::new();
+        while let Some(b) = self.peek()?
             && b.is_ascii_digit()
         {
-            self.pos += 1;
+            digits.push(b);
+            self.advance()?;
         }
-        if self.pos == start {
-            Err(Error::InvalidFormat)
+        if digits.is_empty() {
+            Err(Error::InvalidFormat.into())
         } else {
-            let text = std::str::from_utf8(&self.src[start..self.pos]).unwrap();
+            let text = std::str::from_utf8(&digits).unwrap();
             let number: u8 = text.parse().map_err(|_| Error::InvalidFormat)?;
-            self.skip_ws()?;
+            self.skip_whitespace()?;
             self.expect(b')')?;
             Ok(Value::from(SimpleValue::try_from(number)?))
         }
     }
 
-    fn parse_float_hex_tail(&mut self) -> Result<Value> {
-        let start = self.pos;
-        while let Some(b) = self.peek()
+    fn parse_float_hex_tail(&mut self) -> Result<Value, R::Error> {
+        let mut hex: Vec<u8> = Vec::new();
+        while let Some(b) = self.peek()?
             && b != b'\''
         {
-            self.pos += 1;
+            hex.push(b);
+            self.advance()?;
         }
-        let hex = &self.src[start..self.pos];
         self.expect(b'\'')?;
         let mut bits: u64 = 0;
-        for &byte in hex {
+        for &byte in &hex {
             let digit = u8_from_hex_digit(byte)? as u64;
             bits = (bits << 4) | digit;
         }
@@ -381,25 +417,24 @@ impl<'a> Parser<'a> {
             4 => Ok(Value::Float(Float::from_u16(bits as u16))),
             8 => Ok(Value::Float(Float::from_u32(bits as u32)?)),
             16 => Ok(Value::Float(Float::from_u64(bits)?)),
-            _ => Err(Error::InvalidFormat),
+            _ => Err(Error::InvalidFormat.into()),
         }
     }
 
-    fn parse_hex_bstr_tail(&mut self) -> Result<Value> {
+    fn parse_hex_bstr_tail(&mut self) -> Result<Value, R::Error> {
         let mut bytes = Vec::new();
         let mut half: Option<u8> = None;
         loop {
-            let byte = self.advance()?;
-            match byte {
+            match self.advance()? {
                 b'\'' => {
                     if half.is_some() {
-                        return Err(Error::InvalidFormat);
+                        return Err(Error::InvalidFormat.into());
                     } else {
                         return Ok(Value::ByteString(bytes));
                     }
                 }
                 b' ' | b'\t' | b'\r' | b'\n' => continue,
-                _ => {
+                byte => {
                     let digit = u8_from_hex_digit(byte)?;
                     match half.take() {
                         None => half = Some(digit),
@@ -410,82 +445,58 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_b64_bstr_tail(&mut self) -> Result<Value> {
+    fn parse_b64_bstr_tail(&mut self) -> Result<Value, R::Error> {
         let mut data: Vec<u8> = Vec::new();
         loop {
-            let byte = self.advance()?;
-            match byte {
+            match self.advance()? {
                 b'\'' => return Ok(Value::ByteString(decode_base64(&data)?)),
                 b' ' | b'\t' | b'\r' | b'\n' => continue,
-                _ => data.push(byte),
+                byte => data.push(byte),
             }
         }
     }
 
-    fn parse_text_string(&mut self) -> Result<Value> {
+    fn parse_text_string(&mut self) -> Result<Value, R::Error> {
         self.expect(b'"')?;
-        let mut out = String::new();
+        let mut buf: Vec<u8> = Vec::new();
         loop {
-            let start = self.pos;
-            while let Some(b) = self.peek()
-                && !matches!(b, b'"' | b'\\' | b'\r')
-            {
-                self.pos += 1;
-            }
-            let slice = std::str::from_utf8(&self.src[start..self.pos]).map_err(|_| Error::InvalidUtf8)?;
-            out.push_str(slice);
-            let byte = self.peek().ok_or(Error::InvalidFormat)?;
-            match byte {
+            match self.advance()? {
                 b'"' => {
-                    self.pos += 1;
-                    return Ok(Value::from(out));
+                    let text = String::try_from(buf).map_err(|_| Error::InvalidUtf8)?;
+                    return Ok(Value::from(text));
                 }
                 b'\r' => {
-                    self.pos += 1;
-                    self.eat(b'\n');
-                    out.push('\n');
+                    self.eat(b'\n')?;
+                    buf.push(b'\n');
                 }
                 b'\\' => {
-                    self.pos += 1;
-                    if !self.read_escape_into_string(&mut out)? {
-                        // line continuation, no output
-                    }
+                    self.read_escape_into_string(&mut buf)?;
                 }
-                _ => unreachable!(),
+                byte => {
+                    buf.push(byte);
+                }
             }
         }
     }
 
-    fn parse_single_quoted_bstr(&mut self) -> Result<Value> {
+    fn parse_single_quoted_bstr(&mut self) -> Result<Value, R::Error> {
         self.expect(b'\'')?;
-        let mut out: Vec<u8> = Vec::new();
+        let mut bytes: Vec<u8> = Vec::new();
         loop {
-            let start = self.pos;
-            while let Some(b) = self.peek()
-                && !matches!(b, b'\'' | b'\\' | b'\r')
-            {
-                self.pos += 1;
-            }
-            out.extend_from_slice(&self.src[start..self.pos]);
-            let byte = self.peek().ok_or(Error::InvalidFormat)?;
-            match byte {
+            match self.advance()? {
                 b'\'' => {
-                    self.pos += 1;
-                    return Ok(Value::ByteString(out));
+                    return Ok(Value::ByteString(bytes));
                 }
                 b'\r' => {
-                    self.pos += 1;
-                    self.eat(b'\n');
-                    out.push(b'\n');
+                    self.eat(b'\n')?;
+                    bytes.push(b'\n');
                 }
                 b'\\' => {
-                    self.pos += 1;
-                    let mut tmp = String::new();
-                    if self.read_escape_into_string(&mut tmp)? {
-                        out.extend_from_slice(tmp.as_bytes());
-                    }
+                    self.read_escape_into_string(&mut bytes)?;
                 }
-                _ => unreachable!(),
+                byte => {
+                    bytes.push(byte);
+                }
             }
         }
     }
@@ -493,7 +504,7 @@ impl<'a> Parser<'a> {
     /// Consume an escape sequence (after the leading backslash) and append
     /// its decoded value to `out`. Returns `false` if the escape was a
     /// line continuation that produces no output.
-    fn read_escape_into_string(&mut self, out: &mut String) -> Result<bool> {
+    fn read_escape_into_string(&mut self, out: &mut Vec<u8>) -> Result<bool, R::Error> {
         let byte = self.advance()?;
         let ch = match byte {
             b'\'' => '\'',
@@ -507,35 +518,39 @@ impl<'a> Parser<'a> {
             b'u' => self.read_u_escape()?,
             b'\n' => return Ok(false),
             b'\r' => {
-                self.eat(b'\n');
+                self.eat(b'\n')?;
                 return Ok(false);
             }
-            _ => return Err(Error::InvalidFormat),
+            _ => return Err(Error::InvalidFormat.into()),
         };
-        out.push(ch);
+        let mut buf = [0; 4];
+        let s = ch.encode_utf8(&mut buf);
+        out.extend_from_slice(s.as_bytes());
+
+        // out.push(ch);
         Ok(true)
     }
 
-    fn read_u_escape(&mut self) -> Result<char> {
+    fn read_u_escape(&mut self) -> Result<char, R::Error> {
         let high = self.read_4_hex()?;
         if (0xD800..=0xDBFF).contains(&high) {
-            if !self.consume(b"\\u") {
-                return Err(Error::InvalidFormat);
+            if !self.consume(b"\\u")? {
+                return Err(Error::InvalidFormat.into());
             }
             let low = self.read_4_hex()?;
             if !(0xDC00..=0xDFFF).contains(&low) {
-                return Err(Error::InvalidFormat);
+                return Err(Error::InvalidFormat.into());
             }
             let code = 0x10000 + ((high - 0xD800) << 10) + (low - 0xDC00);
-            char::from_u32(code).ok_or(Error::InvalidFormat)
+            char::from_u32(code).ok_or_else(|| Error::InvalidFormat.into())
         } else if (0xDC00..=0xDFFF).contains(&high) {
-            Err(Error::InvalidFormat)
+            Err(Error::InvalidFormat.into())
         } else {
-            char::from_u32(high).ok_or(Error::InvalidFormat)
+            char::from_u32(high).ok_or_else(|| Error::InvalidFormat.into())
         }
     }
 
-    fn read_4_hex(&mut self) -> Result<u32> {
+    fn read_4_hex(&mut self) -> Result<u32, R::Error> {
         let mut code: u32 = 0;
         for _ in 0..4 {
             let byte = self.advance()?;
@@ -545,25 +560,25 @@ impl<'a> Parser<'a> {
         Ok(code)
     }
 
-    fn parse_embedded_bstr(&mut self) -> Result<Value> {
+    fn parse_embedded_bstr(&mut self) -> Result<Value, R::Error> {
         self.expect(b'<')?;
         self.expect(b'<')?;
         let mut buf = Vec::new();
-        self.skip_ws()?;
-        if self.consume(b">>") {
+        self.skip_whitespace()?;
+        if self.consume(b">>")? {
             Ok(Value::ByteString(buf))
         } else {
             self.enter()?;
             let result = loop {
                 let value = self.parse_value()?;
                 buf.extend(value.encode());
-                self.skip_ws()?;
-                if self.eat(b',') {
+                self.skip_whitespace()?;
+                if self.eat(b',')? {
                     continue;
-                } else if self.consume(b">>") {
+                } else if self.consume(b">>")? {
                     break Ok(Value::ByteString(buf));
                 } else {
-                    break Err(Error::InvalidFormat);
+                    break Err(Error::InvalidFormat.into());
                 }
             };
             self.leave();
@@ -572,7 +587,7 @@ impl<'a> Parser<'a> {
     }
 }
 
-fn decode_base64(input: &[u8]) -> Result<Vec<u8>> {
+fn decode_base64(input: &[u8]) -> Result<Vec<u8>, Error> {
     let mut data = input;
     while let Some(stripped) = data.strip_suffix(b"=") {
         data = stripped;
@@ -602,7 +617,7 @@ fn decode_base64(input: &[u8]) -> Result<Vec<u8>> {
 
 /// Convert ASCII digits in the given base to a big-endian byte representation
 /// of the magnitude.
-fn digits_to_be_bytes(digits: &[u8], base: u32) -> Result<Vec<u8>> {
+fn digits_to_be_bytes(digits: &[u8], base: u32) -> Result<Vec<u8>, Error> {
     let mut result = vec![0u8];
 
     for &digit in digits {
@@ -635,7 +650,7 @@ fn digits_to_be_bytes(digits: &[u8], base: u32) -> Result<Vec<u8>> {
 }
 
 /// Construct a CBOR integer value from a big-endian magnitude and a sign.
-fn be_bytes_to_value(bytes: &[u8], negative: bool) -> Result<Value> {
+fn be_bytes_to_value(bytes: &[u8], negative: bool) -> Result<Value, Error> {
     let bytes = trim_leading_zeros(bytes);
 
     if bytes.is_empty() {
