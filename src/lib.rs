@@ -1,4 +1,6 @@
 #![forbid(unsafe_code)]
+#![deny(rustdoc::broken_intra_doc_links)]
+#![deny(rustdoc::private_intra_doc_links)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 //! Deterministic CBOR encoder and decoder following the
@@ -165,6 +167,7 @@ mod epoch_time;
 mod error;
 mod ext;
 mod float;
+mod format;
 mod integer;
 mod io;
 mod iso3339;
@@ -186,6 +189,7 @@ pub use decode_options::DecodeOptions;
 pub use epoch_time::EpochTime;
 pub use error::{Error, IoError, IoResult, Result};
 pub use float::Float;
+pub use format::Format;
 pub use map::Map;
 pub use simple_value::SimpleValue;
 pub use value::Value;

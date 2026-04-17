@@ -134,11 +134,11 @@ use crate::{
 /// ```
 /// use cbor_core::DecodeOptions;
 ///
-/// let mut strict = DecodeOptions::new();
-/// strict
+/// let strict = DecodeOptions::new()
 ///     .recursion_limit(16)
 ///     .length_limit(4096)
 ///     .oom_mitigation(64 * 1024);
+///
 /// let v = strict.decode([0x18, 42]).unwrap();
 /// assert_eq!(v.to_u32().unwrap(), 42);
 /// ```
@@ -849,10 +849,13 @@ impl Value {
 impl Value {
     /// Decode a CBOR data item from binary bytes.
     ///
-    /// Accepts any byte source (`&[u8]`, `&str`, `String`, `Vec<u8>`, etc.).
-    /// Returns `Err` if the encoding is not canonical.
+    /// Accepts any byte source (`&[u8]`, `&str`, `String`, `Vec<u8>`,
+    /// etc.). The input must contain **exactly one** CBOR item; any
+    /// trailing bytes cause [`Error::InvalidFormat`](crate::Error::InvalidFormat).
+    /// Use [`DecodeOptions::sequence_decoder`](crate::DecodeOptions::sequence_decoder) for
+    /// CBOR sequences.
     ///
-    /// This is a convenience wrapper around [`read_from`](Self::read_from).
+    /// Returns `Err` if the encoding is not canonical.
     ///
     /// ```
     /// use cbor_core::Value;
@@ -865,11 +868,12 @@ impl Value {
 
     /// Decode a CBOR data item from hex-encoded bytes.
     ///
-    /// Accepts any byte source (`&[u8]`, `&str`, `String`, `Vec<u8>`, etc.).
-    /// Both uppercase and lowercase hex digits are accepted.
-    /// Returns `Err` if the encoding is not canonical.
+    /// Accepts any byte source (`&[u8]`, `&str`, `String`, `Vec<u8>`,
+    /// etc.). Both uppercase and lowercase hex digits are accepted. The
+    /// input must contain **exactly one** CBOR item; any trailing hex
+    /// digits cause [`Error::InvalidFormat`](crate::Error::InvalidFormat).
     ///
-    /// This is a convenience wrapper around [`read_hex_from`](Self::read_hex_from).
+    /// Returns `Err` if the encoding is not canonical.
     ///
     /// ```
     /// use cbor_core::Value;
@@ -877,10 +881,14 @@ impl Value {
     /// assert_eq!(v.to_u32().unwrap(), 42);
     /// ```
     pub fn decode_hex(hex: impl AsRef<[u8]>) -> Result<Self> {
-        crate::DecodeOptions::new().hex(true).decode(hex)
+        crate::DecodeOptions::new().format(crate::Format::Hex).decode(hex)
     }
 
     /// Read a single CBOR data item from a binary stream.
+    ///
+    /// The reader is advanced only to the end of the item; any further
+    /// bytes remain in the stream, so repeated calls pull successive
+    /// items of a CBOR sequence.
     ///
     /// ```
     /// use cbor_core::Value;
@@ -895,7 +903,9 @@ impl Value {
     /// Read a single CBOR data item from a hex-encoded stream.
     ///
     /// Each byte of CBOR is expected as two hex digits (uppercase or
-    /// lowercase).
+    /// lowercase). The reader is advanced only to the end of the item;
+    /// any further hex digits remain in the stream, so repeated calls
+    /// pull successive items of a CBOR sequence.
     ///
     /// ```
     /// use cbor_core::Value;
@@ -904,7 +914,7 @@ impl Value {
     /// assert_eq!(v.to_u32().unwrap(), 42);
     /// ```
     pub fn read_hex_from(reader: impl std::io::Read) -> crate::IoResult<Self> {
-        crate::DecodeOptions::new().hex(true).read_from(reader)
+        crate::DecodeOptions::new().format(crate::Format::Hex).read_from(reader)
     }
 }
 

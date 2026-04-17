@@ -1,7 +1,7 @@
 //! Tests for `DecodeOptions`: configurable limits, hex/binary input,
 //! and forwarding from `Value`'s convenience methods.
 
-use crate::{DecodeOptions, Error, IoError, Value};
+use crate::{DecodeOptions, Error, Format, IoError, Value};
 
 // --------------- Defaults ---------------
 
@@ -30,35 +30,35 @@ fn default_trait_equals_new() {
 
 #[test]
 fn hex_decode_matches_binary() {
-    let hex = DecodeOptions::new().hex(true).decode("182a").unwrap();
+    let hex = DecodeOptions::new().format(Format::Hex).decode("182a").unwrap();
     let bin = DecodeOptions::new().decode([0x18, 0x2a]).unwrap();
     assert_eq!(hex, bin);
 }
 
 #[test]
 fn hex_uppercase_accepted() {
-    let v = DecodeOptions::new().hex(true).decode("182A").unwrap();
+    let v = DecodeOptions::new().format(Format::Hex).decode("182A").unwrap();
     assert_eq!(v.to_u32().unwrap(), 42);
 }
 
 #[test]
 fn hex_invalid_returns_error() {
-    let err = DecodeOptions::new().hex(true).decode("18zz").unwrap_err();
+    let err = DecodeOptions::new().format(Format::Hex).decode("18zz").unwrap_err();
     assert_eq!(err, Error::InvalidHex);
 }
 
 #[test]
 fn hex_off_treats_input_as_binary() {
-    // ASCII "182a" is 0x31 0x38 0x32 0x61. 0x31 is a one-byte CBOR item
-    // (negative(17), i.e. -18), not the integer 42 the hex would produce.
-    let v = DecodeOptions::new().decode("182a").unwrap();
+    // ASCII "1" is 0x31, a one-byte CBOR item (negative(17), i.e. -18),
+    // not the integer the matching hex would produce.
+    let v = DecodeOptions::new().decode("1").unwrap();
     assert_eq!(v.to_i32().unwrap(), -18);
 }
 
 #[test]
 fn value_decode_hex_matches_options() {
     let via_value = Value::decode_hex("182a").unwrap();
-    let via_options = DecodeOptions::new().hex(true).decode("182a").unwrap();
+    let via_options = DecodeOptions::new().format(Format::Hex).decode("182a").unwrap();
     assert_eq!(via_value, via_options);
 }
 
@@ -190,7 +190,7 @@ fn read_from_binary() {
 #[test]
 fn read_from_hex() {
     let hex: &[u8] = b"182a";
-    let v = DecodeOptions::new().hex(true).read_from(hex).unwrap();
+    let v = DecodeOptions::new().format(Format::Hex).read_from(hex).unwrap();
     assert_eq!(v.to_u32().unwrap(), 42);
 }
 
@@ -231,7 +231,7 @@ fn value_read_hex_from_matches_options() {
     let hex1: &[u8] = b"182a";
     let via_value = Value::read_hex_from(hex1).unwrap();
     let hex2: &[u8] = b"182a";
-    let via_options = DecodeOptions::new().hex(true).read_from(hex2).unwrap();
+    let via_options = DecodeOptions::new().format(Format::Hex).read_from(hex2).unwrap();
     assert_eq!(via_value, via_options);
 }
 
@@ -240,7 +240,7 @@ fn value_read_hex_from_matches_options() {
 #[test]
 fn builder_chain_on_fresh_value() {
     let v = DecodeOptions::new()
-        .hex(true)
+        .format(Format::Hex)
         .recursion_limit(8)
         .length_limit(64)
         .oom_mitigation(1024)
@@ -251,8 +251,100 @@ fn builder_chain_on_fresh_value() {
 
 #[test]
 fn builder_reused_across_decodes() {
-    let mut opts = DecodeOptions::new();
-    opts.recursion_limit(4).length_limit(16);
+    let opts = DecodeOptions::new().recursion_limit(4).length_limit(16);
     assert!(opts.decode([0x18, 42]).is_ok());
     assert!(opts.decode([0x81, 0x00]).is_ok());
 }
+
+// --------------- Trailing data rejection in decode() ---------------
+
+#[test]
+fn decode_binary_rejects_trailing_byte() {
+    let err = DecodeOptions::new().decode([0x00, 0x00]).unwrap_err();
+    assert_eq!(err, Error::InvalidFormat);
+}
+
+#[test]
+fn decode_hex_rejects_trailing_digits() {
+    let err = DecodeOptions::new().format(Format::Hex).decode("0000").unwrap_err();
+    assert_eq!(err, Error::InvalidFormat);
+}
+
+#[test]
+fn decode_diagnostic_rejects_trailing_value() {
+    let err = DecodeOptions::new()
+        .format(Format::Diagnostic)
+        .decode("1 2")
+        .unwrap_err();
+    assert_eq!(err, Error::InvalidFormat);
+}
+
+#[test]
+fn decode_diagnostic_accepts_trailing_whitespace_and_comments() {
+    let v = DecodeOptions::new()
+        .format(Format::Diagnostic)
+        .decode("42  # trailing line comment\n  / block / \n")
+        .unwrap();
+    assert_eq!(v.to_u32().unwrap(), 42);
+}
+
+// --------------- Diagnostic format via DecodeOptions ---------------
+
+#[test]
+fn diagnostic_decode_integer() {
+    let v = DecodeOptions::new().format(Format::Diagnostic).decode("42").unwrap();
+    assert_eq!(v.to_u32().unwrap(), 42);
+}
+
+#[test]
+fn diagnostic_decode_nested() {
+    let v = DecodeOptions::new()
+        .format(Format::Diagnostic)
+        .decode(r#"{"a": [1, 2, 3]}"#)
+        .unwrap();
+    assert_eq!(v["a"].len(), Some(3));
+}
+
+#[test]
+fn diagnostic_recursion_limit_applies() {
+    let err = DecodeOptions::new()
+        .format(Format::Diagnostic)
+        .recursion_limit(1)
+        .decode("[[1]]")
+        .unwrap_err();
+    assert_eq!(err, Error::NestingTooDeep);
+}
+
+// --------------- read_from for diagnostic ---------------
+
+#[test]
+fn read_from_diagnostic_consumes_trailing_comma() {
+    let mut input: &[u8] = b"1, 2";
+    let opts = DecodeOptions::new().format(Format::Diagnostic);
+
+    let a = opts.read_from(&mut input).unwrap();
+    let b = opts.read_from(&mut input).unwrap();
+    assert_eq!(a.to_u32().unwrap(), 1);
+    assert_eq!(b.to_u32().unwrap(), 2);
+}
+
+#[test]
+fn read_from_diagnostic_allows_trailing_whitespace_and_comments() {
+    let mut input: &[u8] = b"1 # after one\n, 2 / then two /";
+    let opts = DecodeOptions::new().format(Format::Diagnostic);
+
+    let a = opts.read_from(&mut input).unwrap();
+    let b = opts.read_from(&mut input).unwrap();
+    assert_eq!(a.to_u32().unwrap(), 1);
+    assert_eq!(b.to_u32().unwrap(), 2);
+}
+
+#[test]
+fn read_from_diagnostic_rejects_unexpected_token_between_items() {
+    let mut input: &[u8] = b"1 ; 2";
+    let opts = DecodeOptions::new().format(Format::Diagnostic);
+
+    let err = opts.read_from(&mut input).unwrap_err();
+    assert!(matches!(err, IoError::Data(Error::InvalidFormat)));
+}
+

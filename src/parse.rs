@@ -18,14 +18,8 @@ impl FromStr for Value {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Error> {
-        let mut parser = Parser::new(SliceReader(s.as_bytes()));
-        parser.skip_whitespace()?;
-        let value = parser.parse_value()?;
-        parser.skip_whitespace()?;
-        if !parser.at_end()? {
-            return Err(Error::InvalidFormat);
-        }
-        Ok(value)
+        let mut parser = Parser::new(SliceReader(s.as_bytes()), limits::RECURSION_LIMIT);
+        parser.parse_complete()
     }
 }
 
@@ -33,7 +27,7 @@ impl FromStr for Value {
 // lookahead. Bytes pulled for peeking are held in `buf` until consumed,
 // so the stream is never read past the last byte the parser actually
 // inspects on a successful match.
-struct Parser<R: MyReader> {
+pub(crate) struct Parser<R: MyReader> {
     reader: R,
     buf: [u8; 16],
     buf_len: usize,
@@ -41,12 +35,51 @@ struct Parser<R: MyReader> {
 }
 
 impl<R: MyReader> Parser<R> {
-    fn new(inner: R) -> Self {
+    pub(crate) fn new(inner: R, recursion_limit: u16) -> Self {
         Self {
             reader: inner,
             buf: [0; _],
             buf_len: 0,
-            depth: limits::RECURSION_LIMIT,
+            depth: recursion_limit,
+        }
+    }
+
+    /// Parse a single value and require that the input is then fully
+    /// consumed (trailing whitespace and comments are accepted, nothing
+    /// else). Used by in-memory decode paths.
+    pub(crate) fn parse_complete(&mut self) -> Result<Value, R::Error> {
+        self.skip_whitespace()?;
+        let value = self.parse_value()?;
+        self.skip_whitespace()?;
+        if !self.at_end()? {
+            Err(Error::InvalidFormat.into())
+        } else {
+            Ok(value)
+        }
+    }
+
+    /// Parse a single value from a stream. After the value, trailing
+    /// whitespace and comments are consumed up to either EOF or a
+    /// top-level separator comma (the comma is consumed). Anything
+    /// else is rejected. Used by [`DecodeOptions::read_from`] so the
+    /// caller can pull successive elements of a CBOR sequence by
+    /// calling `read_from` repeatedly.
+    pub(crate) fn parse_stream_item(&mut self) -> Result<Value, R::Error> {
+        self.skip_whitespace()?;
+        let value = self.parse_value()?;
+        self.consume_trailing_separator()?;
+        Ok(value)
+    }
+
+    /// After a value has been parsed, consume whitespace and comments
+    /// up to either EOF or a top-level comma (which is also consumed).
+    /// Anything else is a syntax error.
+    fn consume_trailing_separator(&mut self) -> Result<(), R::Error> {
+        self.skip_whitespace()?;
+        if self.at_end()? || self.eat(b',')? {
+            Ok(())
+        } else {
+            Err(Error::InvalidFormat.into())
         }
     }
 
@@ -82,36 +115,22 @@ impl<R: MyReader> Parser<R> {
 
     fn advance(&mut self) -> Result<u8, R::Error> {
         self.ensure(1)?;
-        match self.buf_len {
-            1 => {
-                self.buf_len = 0;
-                Ok(self.buf[0])
-            }
-            2 => {
-                let byte = self.buf[0];
-                self.buf[0] = self.buf[1];
-                self.buf_len = 1;
-                Ok(byte)
-            }
-            _ => unimplemented!("partial advance"),
-        }
+        let byte = self.buf[0];
+        self.buf.copy_within(1..self.buf_len, 0);
+        self.buf_len -= 1;
+        Ok(byte)
     }
 
     fn skip(&mut self, len: usize) -> Result<(), R::Error> {
-        if self.buf_len == len {
-            self.buf_len = 0;
-        } else if self.buf_len == len + 1 {
-            self.buf[0] = self.buf[len];
-            self.buf_len = 1;
-        } else {
-            unimplemented!("unaligned skip");
-        }
+        debug_assert!(len <= self.buf_len);
+        self.buf.copy_within(len..self.buf_len, 0);
+        self.buf_len -= len;
         Ok(())
     }
 
     fn eat(&mut self, byte: u8) -> Result<bool, R::Error> {
         if self.peek()? == Some(byte) {
-            self.advance()?;
+            self.skip(1)?;
             Ok(true)
         } else {
             Ok(false)
@@ -140,24 +159,20 @@ impl<R: MyReader> Parser<R> {
     fn skip_whitespace(&mut self) -> Result<(), R::Error> {
         loop {
             while matches!(self.peek()?, Some(b' ' | b'\t' | b'\r' | b'\n')) {
-                self.advance()?;
+                self.skip(1)?;
             }
 
             if self.eat(b'#')? {
                 while let Some(b) = self.peek()?
                     && b != b'\n'
                 {
-                    self.advance()?;
+                    self.skip(1)?;
                 }
-                continue;
-            }
-
-            if self.eat(b'/')? {
+            } else if self.eat(b'/')? {
                 while self.advance()? != b'/' {}
-                continue;
+            } else {
+                return Ok(());
             }
-
-            return Ok(());
         }
     }
 
@@ -298,7 +313,7 @@ impl<R: MyReader> Parser<R> {
             && b.is_ascii_digit()
         {
             int_digits.push(b);
-            self.advance()?;
+            self.skip(1)?;
         }
         if int_digits.is_empty() {
             return Err(Error::InvalidFormat.into());
@@ -311,7 +326,7 @@ impl<R: MyReader> Parser<R> {
                 && b.is_ascii_digit()
             {
                 text.push(b);
-                self.advance()?;
+                self.skip(1)?;
             }
             if text.len() == frac_start {
                 return Err(Error::InvalidFormat.into());
@@ -326,7 +341,7 @@ impl<R: MyReader> Parser<R> {
                     && b.is_ascii_digit()
                 {
                     text.push(b);
-                    self.advance()?;
+                    self.skip(1)?;
                 }
                 if text.len() == exp_start {
                     return Err(Error::InvalidFormat.into());
@@ -352,7 +367,7 @@ impl<R: MyReader> Parser<R> {
                 if !last_was_digit {
                     return Err(Error::InvalidFormat.into());
                 } else {
-                    self.advance()?;
+                    self.skip(1)?;
                     last_was_digit = false;
                     continue;
                 }
@@ -368,7 +383,7 @@ impl<R: MyReader> Parser<R> {
                 }
                 digits.push(b);
                 last_was_digit = true;
-                self.advance()?;
+                self.skip(1)?;
             }
         }
         if digits.is_empty() || !last_was_digit {
@@ -386,7 +401,7 @@ impl<R: MyReader> Parser<R> {
             && b.is_ascii_digit()
         {
             digits.push(b);
-            self.advance()?;
+            self.skip(1)?;
         }
         if digits.is_empty() {
             Err(Error::InvalidFormat.into())
@@ -405,7 +420,7 @@ impl<R: MyReader> Parser<R> {
             && b != b'\''
         {
             hex.push(b);
-            self.advance()?;
+            self.skip(1)?;
         }
         self.expect(b'\'')?;
         let mut bits: u64 = 0;

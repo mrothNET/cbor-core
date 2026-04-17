@@ -1,32 +1,34 @@
 use std::collections::BTreeMap;
 
 use crate::{
-    DataType, Error, Float, IoResult, Result, SimpleValue, Value,
+    DataType, Error, Float, Format, IoResult, Result, SimpleValue, Value,
     codec::{Argument, Head, Major},
-    io::MyReader,
+    io::{HexReader, HexSliceReader, MyReader, SliceReader},
     limits,
+    parse::Parser,
 };
 
 /// Configuration for CBOR decoding.
 ///
-/// `DecodeOptions` controls the input format (binary or hex) and the
+/// `DecodeOptions` controls the input format ([`Binary`](Format::Binary),
+/// [`Hex`](Format::Hex), or [`Diagnostic`](Format::Diagnostic)) and the
 /// limits the decoder enforces against hostile or malformed input.
 /// Construct it with [`DecodeOptions::new`] (or `Default`), adjust
 /// settings with the builder methods, and call [`decode`](Self::decode)
-/// or [`read_from`](Self::read_from) to consume input.
+/// or [`read_from`](Self::read_from) for a single item.
 ///
 /// The convenience methods on [`Value`] ([`decode`](Value::decode),
 /// [`decode_hex`](Value::decode_hex), [`read_from`](Value::read_from),
 /// [`read_hex_from`](Value::read_hex_from)) all forward to a default
-/// `DecodeOptions`. Use this type directly when you need to relax a
-/// limit for a known input, tighten one for untrusted input, or switch
-/// between binary and hex at runtime.
+/// `DecodeOptions`. Use this type directly when you need to decode
+/// diagnostic notation, iterate a sequence, relax a limit for a known
+/// input, or tighten one for untrusted input.
 ///
 /// # Options
 ///
 /// | Option | Default | Purpose |
 /// |---|---|---|
-/// | [`hex`](Self::hex) | `false` | Interpret input as hex text, two digits per CBOR byte. |
+/// | [`format`](Self::format) | [`Binary`](Format::Binary) | Input syntax: binary, hex text, or diagnostic notation. |
 /// | [`recursion_limit`](Self::recursion_limit) | 200 | Maximum nesting depth of arrays, maps, and tags. |
 /// | [`length_limit`](Self::length_limit) | 1,000,000,000 | Maximum declared element count of a single array, map, byte string, or text string. |
 /// | [`oom_mitigation`](Self::oom_mitigation) | 100,000,000 | Byte budget for speculative pre-allocation. |
@@ -74,12 +76,15 @@ use crate::{
 /// assert_eq!(v.to_u32().unwrap(), 42);
 /// ```
 ///
-/// Decode hex-encoded CBOR by flipping one flag:
+/// Switch the input format to hex text or diagnostic notation:
 ///
 /// ```
-/// use cbor_core::DecodeOptions;
+/// use cbor_core::{DecodeOptions, Format};
 ///
-/// let v = DecodeOptions::new().hex(true).decode("182a").unwrap();
+/// let v = DecodeOptions::new().format(Format::Hex).decode("182a").unwrap();
+/// assert_eq!(v.to_u32().unwrap(), 42);
+///
+/// let v = DecodeOptions::new().format(Format::Diagnostic).decode("42").unwrap();
 /// assert_eq!(v.to_u32().unwrap(), 42);
 /// ```
 ///
@@ -88,8 +93,7 @@ use crate::{
 /// ```
 /// use cbor_core::DecodeOptions;
 ///
-/// let mut strict = DecodeOptions::new();
-/// strict
+/// let strict = DecodeOptions::new()
 ///     .recursion_limit(16)
 ///     .length_limit(4096)
 ///     .oom_mitigation(64 * 1024);
@@ -98,7 +102,7 @@ use crate::{
 /// ```
 #[derive(Debug, Clone)]
 pub struct DecodeOptions {
-    hex: bool,
+    format: Format,
     recursion_limit: u16,
     length_limit: u64,
     oom_mitigation: usize,
@@ -123,27 +127,30 @@ impl DecodeOptions {
     #[must_use]
     pub const fn new() -> Self {
         Self {
-            hex: false,
+            format: Format::Binary,
             recursion_limit: limits::RECURSION_LIMIT,
             length_limit: limits::LENGTH_LIMIT,
             oom_mitigation: limits::OOM_MITIGATION,
         }
     }
 
-    /// Select hex or binary input. When `true`, each CBOR byte is read
-    /// as two hex digits (uppercase or lowercase).
+    /// Select the input format: [`Binary`](Format::Binary),
+    /// [`Hex`](Format::Hex), or [`Diagnostic`](Format::Diagnostic).
     ///
-    /// Default: `false`.
+    /// Default: [`Format::Binary`].
     ///
     /// ```
-    /// use cbor_core::DecodeOptions;
+    /// use cbor_core::{DecodeOptions, Format};
     ///
-    /// let hex = DecodeOptions::new().hex(true).decode("182a").unwrap();
+    /// let hex = DecodeOptions::new().format(Format::Hex).decode("182a").unwrap();
     /// let bin = DecodeOptions::new().decode([0x18, 0x2a]).unwrap();
     /// assert_eq!(hex, bin);
+    ///
+    /// let v = DecodeOptions::new().format(Format::Diagnostic).decode("42").unwrap();
+    /// assert_eq!(v.to_u32().unwrap(), 42);
     /// ```
-    pub const fn hex(&mut self, hex: bool) -> &mut Self {
-        self.hex = hex;
+    pub const fn format(mut self, format: Format) -> Self {
+        self.format = format;
         self
     }
 
@@ -162,7 +169,7 @@ impl DecodeOptions {
     ///     .unwrap_err();
     /// assert_eq!(err, Error::NestingTooDeep);
     /// ```
-    pub const fn recursion_limit(&mut self, limit: u16) -> &mut Self {
+    pub const fn recursion_limit(mut self, limit: u16) -> Self {
         self.recursion_limit = limit;
         self
     }
@@ -184,7 +191,7 @@ impl DecodeOptions {
     ///     .unwrap_err();
     /// assert_eq!(err, Error::LengthTooLarge);
     /// ```
-    pub const fn length_limit(&mut self, limit: u64) -> &mut Self {
+    pub const fn length_limit(mut self, limit: u64) -> Self {
         self.length_limit = limit;
         self
     }
@@ -207,63 +214,116 @@ impl DecodeOptions {
     ///     .unwrap();
     /// assert_eq!(v.len(), Some(2));
     /// ```
-    pub const fn oom_mitigation(&mut self, bytes: usize) -> &mut Self {
+    pub const fn oom_mitigation(mut self, bytes: usize) -> Self {
         self.oom_mitigation = bytes;
         self
     }
 
-    /// Decode a CBOR data item from an in-memory buffer.
+    /// Decode exactly one CBOR data item from an in-memory buffer.
     ///
     /// Accepts any `AsRef<[u8]>`: `&[u8]`, `Vec<u8>`, `&str`, `String`,
-    /// and so on. Returns [`Error::UnexpectedEof`] if the buffer runs
-    /// out mid-item; trailing bytes after a complete item are *not*
-    /// reported (the decoder stops once one item has been read).
+    /// and so on. The input must contain **exactly one** value: any
+    /// bytes remaining after a successful decode cause
+    /// [`Error::InvalidFormat`]. In [`Format::Diagnostic`] mode
+    /// trailing whitespace and comments are accepted, but nothing
+    /// else.
+    ///
+    /// An empty buffer (and, for diagnostic notation, one containing
+    /// only whitespace and comments) returns [`Error::UnexpectedEof`].
+    /// A partial value returns [`Error::UnexpectedEof`] too.
     ///
     /// ```
-    /// use cbor_core::DecodeOptions;
+    /// use cbor_core::{DecodeOptions, Format};
     ///
     /// let v = DecodeOptions::new().decode([0x18, 42]).unwrap();
     /// assert_eq!(v.to_u32().unwrap(), 42);
     ///
-    /// let v = DecodeOptions::new().hex(true).decode("182a").unwrap();
+    /// let v = DecodeOptions::new().format(Format::Hex).decode("182a").unwrap();
+    /// assert_eq!(v.to_u32().unwrap(), 42);
+    ///
+    /// let v = DecodeOptions::new()
+    ///     .format(Format::Diagnostic)
+    ///     .decode("42  / trailing comment is fine /")
+    ///     .unwrap();
     /// assert_eq!(v.to_u32().unwrap(), 42);
     /// ```
     pub fn decode(&self, bytes: impl AsRef<[u8]>) -> Result<Value> {
         let bytes = bytes.as_ref();
-        if self.hex {
-            let mut reader = crate::io::HexSliceReader(bytes);
-            self.do_read(&mut reader, self.recursion_limit, self.oom_mitigation)
-        } else {
-            let mut reader = crate::io::SliceReader(bytes);
-            self.do_read(&mut reader, self.recursion_limit, self.oom_mitigation)
+        match self.format {
+            Format::Binary => {
+                let mut reader = SliceReader(bytes);
+                let value = self.do_read(&mut reader, self.recursion_limit, self.oom_mitigation)?;
+                if !reader.0.is_empty() {
+                    return Err(Error::InvalidFormat);
+                }
+                Ok(value)
+            }
+            Format::Hex => {
+                let mut reader = HexSliceReader(bytes);
+                let value = self.do_read(&mut reader, self.recursion_limit, self.oom_mitigation)?;
+                if !reader.0.is_empty() {
+                    return Err(Error::InvalidFormat);
+                }
+                Ok(value)
+            }
+            Format::Diagnostic => {
+                let mut parser = Parser::new(SliceReader(bytes), self.recursion_limit);
+                parser.parse_complete()
+            }
         }
     }
 
     /// Read a single CBOR data item from a stream.
     ///
-    /// The reader is consumed only up to the end of the item; any
-    /// bytes after remain in the stream. I/O failures are returned as
-    /// [`IoError::Io`](crate::IoError::Io); malformed or oversized
-    /// input as [`IoError::Data`](crate::IoError::Data).
+    /// Designed to be called repeatedly to pull successive elements of
+    /// a CBOR sequence:
+    ///
+    /// * In [`Format::Binary`] and [`Format::Hex`] the reader is
+    ///   consumed only up to the end of the item; any bytes after
+    ///   remain in the stream.
+    /// * In [`Format::Diagnostic`] trailing whitespace and comments
+    ///   are consumed up to either end of stream or a top-level
+    ///   separator comma (the comma is also consumed). Anything else
+    ///   after the value fails with [`Error::InvalidFormat`].
+    ///
+    /// I/O failures are returned as [`IoError::Io`](crate::IoError::Io);
+    /// malformed or oversized input as [`IoError::Data`](crate::IoError::Data).
     ///
     /// ```
-    /// use cbor_core::DecodeOptions;
+    /// use cbor_core::{DecodeOptions, Format};
     ///
     /// let mut bytes: &[u8] = &[0x18, 42];
     /// let v = DecodeOptions::new().read_from(&mut bytes).unwrap();
     /// assert_eq!(v.to_u32().unwrap(), 42);
     ///
     /// let mut hex: &[u8] = b"182a";
-    /// let v = DecodeOptions::new().hex(true).read_from(&mut hex).unwrap();
+    /// let v = DecodeOptions::new().format(Format::Hex).read_from(&mut hex).unwrap();
     /// assert_eq!(v.to_u32().unwrap(), 42);
+    ///
+    /// // Diagnostic: repeated read_from pulls successive sequence items.
+    /// let mut diag: &[u8] = b"1, 2, 3";
+    /// let opts = DecodeOptions::new().format(Format::Diagnostic);
+    /// let a = opts.read_from(&mut diag).unwrap();
+    /// let b = opts.read_from(&mut diag).unwrap();
+    /// let c = opts.read_from(&mut diag).unwrap();
+    /// assert_eq!(a.to_u32().unwrap(), 1);
+    /// assert_eq!(b.to_u32().unwrap(), 2);
+    /// assert_eq!(c.to_u32().unwrap(), 3);
     /// ```
     pub fn read_from(&self, reader: impl std::io::Read) -> IoResult<Value> {
-        if self.hex {
-            let mut reader = crate::io::HexReader(reader);
-            self.do_read(&mut reader, self.recursion_limit, self.oom_mitigation)
-        } else {
-            let mut reader = reader;
-            self.do_read(&mut reader, self.recursion_limit, self.oom_mitigation)
+        match self.format {
+            Format::Binary => {
+                let mut reader = reader;
+                self.do_read(&mut reader, self.recursion_limit, self.oom_mitigation)
+            }
+            Format::Hex => {
+                let mut reader = HexReader(reader);
+                self.do_read(&mut reader, self.recursion_limit, self.oom_mitigation)
+            }
+            Format::Diagnostic => {
+                let mut parser = Parser::new(reader, self.recursion_limit);
+                parser.parse_stream_item()
+            }
         }
     }
 
