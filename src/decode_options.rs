@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::{
-    DataType, Error, Float, Format, IoResult, Result, SimpleValue, Value,
+    DataType, Error, Float, Format, IoResult, Result, SequenceDecoder, SequenceReader, SimpleValue, Value,
     codec::{Argument, Head, Major},
     io::{HexReader, HexSliceReader, MyReader, SliceReader},
     limits,
@@ -15,7 +15,9 @@ use crate::{
 /// limits the decoder enforces against hostile or malformed input.
 /// Construct it with [`DecodeOptions::new`] (or `Default`), adjust
 /// settings with the builder methods, and call [`decode`](Self::decode)
-/// or [`read_from`](Self::read_from) for a single item.
+/// or [`read_from`](Self::read_from) for a single item, or
+/// [`sequence_decoder`](Self::sequence_decoder) / [`sequence_reader`](Self::sequence_reader)
+/// for a CBOR sequence.
 ///
 /// The convenience methods on [`Value`] ([`decode`](Value::decode),
 /// [`decode_hex`](Value::decode_hex), [`read_from`](Value::read_from),
@@ -226,7 +228,8 @@ impl DecodeOptions {
     /// bytes remaining after a successful decode cause
     /// [`Error::InvalidFormat`]. In [`Format::Diagnostic`] mode
     /// trailing whitespace and comments are accepted, but nothing
-    /// else.
+    /// else. Use [`sequence_decoder`](Self::sequence_decoder) when the input is a CBOR
+    /// sequence.
     ///
     /// An empty buffer (and, for diagnostic notation, one containing
     /// only whitespace and comments) returns [`Error::UnexpectedEof`].
@@ -325,6 +328,69 @@ impl DecodeOptions {
                 parser.parse_stream_item()
             }
         }
+    }
+
+    /// Create an iterator over a CBOR sequence stored in memory.
+    ///
+    /// The returned [`SequenceDecoder`] yields each successive item of the
+    /// sequence as `Result<Value>`. The iterator captures a snapshot
+    /// of these options; subsequent changes to `self` do not affect
+    /// it.
+    ///
+    /// ```
+    /// use cbor_core::{DecodeOptions, Format};
+    ///
+    /// let opts = DecodeOptions::new().format(Format::Diagnostic);
+    ///
+    /// let items: Vec<_> = opts
+    ///     .sequence_decoder(b"1, 2, 3,")
+    ///     .collect::<Result<_, _>>()
+    ///     .unwrap();
+    /// assert_eq!(items.len(), 3);
+    /// ```
+    pub fn sequence_decoder<'a>(&self, input: &'a [u8]) -> SequenceDecoder<'a> {
+        SequenceDecoder::with_options(self.clone(), input)
+    }
+
+    /// Create an iterator over a CBOR sequence read from a stream.
+    ///
+    /// The returned [`SequenceReader`] yields each successive item as
+    /// `IoResult<Value>`. `None` indicates a clean end between items;
+    /// a truncated item produces `Some(Err(_))`.
+    ///
+    /// ```
+    /// use cbor_core::DecodeOptions;
+    ///
+    /// // Binary CBOR sequence: three one-byte items 0x01 0x02 0x03.
+    /// let bytes: &[u8] = &[0x01, 0x02, 0x03];
+    /// let items: Vec<_> = DecodeOptions::new()
+    ///     .sequence_reader(bytes)
+    ///     .collect::<Result<_, _>>()
+    ///     .unwrap();
+    /// assert_eq!(items.len(), 3);
+    /// ```
+    pub fn sequence_reader<R: std::io::Read>(&self, reader: R) -> SequenceReader<R> {
+        SequenceReader::with_options(self.clone(), reader)
+    }
+
+    /// Decode exactly one CBOR data item from an arbitrary reader.
+    /// Used by the sequence iterators to share the core decoding logic.
+    pub(crate) fn decode_one<R>(&self, reader: &mut R) -> std::result::Result<Value, R::Error>
+    where
+        R: MyReader,
+        R::Error: From<Error>,
+    {
+        self.do_read(reader, self.recursion_limit, self.oom_mitigation)
+    }
+
+    /// Expose the parser's recursion limit for sequence iterators.
+    pub(crate) fn recursion_limit_value(&self) -> u16 {
+        self.recursion_limit
+    }
+
+    /// Expose the selected format for sequence iterators.
+    pub(crate) fn format_value(&self) -> Format {
+        self.format
     }
 
     fn do_read<R>(

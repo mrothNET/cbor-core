@@ -92,6 +92,55 @@ impl<R: io::Read> MyReader for R {
     }
 }
 
+/// Wraps an `io::Read` with one-byte lookahead.
+///
+/// Used by the streaming sequence iterators to distinguish "clean end
+/// of stream before the next item" from "unexpected end of input mid-item"
+/// without consuming bytes from a value the iterator has not yet started.
+pub(crate) struct PeekReader<R> {
+    inner: R,
+    peeked: Option<u8>,
+}
+
+impl<R: io::Read> PeekReader<R> {
+    pub(crate) fn new(inner: R) -> Self {
+        Self { inner, peeked: None }
+    }
+
+    /// Return true if no more bytes are available in the underlying reader.
+    ///
+    /// On false, one byte has been buffered internally and will be returned
+    /// by the next call to [`MyReader::read_bytes`] or [`MyReader::read_vec`].
+    pub(crate) fn at_eof(&mut self) -> Result<bool, crate::IoError> {
+        if self.peeked.is_some() {
+            return Ok(false);
+        }
+        let mut buf = [0u8; 1];
+        match self.inner.read(&mut buf) {
+            Ok(0) => Ok(true),
+            Ok(_) => {
+                self.peeked = Some(buf[0]);
+                Ok(false)
+            }
+            Err(error) => Err(crate::IoError::from(error)),
+        }
+    }
+}
+
+impl<R: io::Read> io::Read for PeekReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+        if let Some(b) = self.peeked.take() {
+            buf[0] = b;
+            let extra = self.inner.read(&mut buf[1..]).unwrap_or(0);
+            return Ok(1 + extra);
+        }
+        self.inner.read(buf)
+    }
+}
+
 pub(crate) struct HexReader<R>(pub(crate) R);
 
 impl<R: io::Read> MyReader for HexReader<R> {

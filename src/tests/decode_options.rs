@@ -348,3 +348,116 @@ fn read_from_diagnostic_rejects_unexpected_token_between_items() {
     assert!(matches!(err, IoError::Data(Error::InvalidFormat)));
 }
 
+// --------------- Sequence iterator: Decoder (in-memory) ---------------
+
+#[test]
+fn decoder_binary_yields_all_items() {
+    // 0x01 0x02 0x03 — three successive CBOR items.
+    let items: Vec<_> = DecodeOptions::new()
+        .sequence_decoder(&[0x01, 0x02, 0x03])
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(items.len(), 3);
+    assert_eq!(items[0].to_u32().unwrap(), 1);
+    assert_eq!(items[2].to_u32().unwrap(), 3);
+}
+
+#[test]
+fn decoder_hex_yields_all_items() {
+    let items: Vec<_> = DecodeOptions::new()
+        .format(Format::Hex)
+        .sequence_decoder(b"010203")
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(items.len(), 3);
+}
+
+#[test]
+fn decoder_diagnostic_yields_all_items() {
+    let opts = DecodeOptions::new().format(Format::Diagnostic);
+    let items: Vec<_> = opts.sequence_decoder(b"1, 2, 3").collect::<Result<_, _>>().unwrap();
+    assert_eq!(items.len(), 3);
+}
+
+#[test]
+fn decoder_diagnostic_accepts_trailing_comma() {
+    let opts = DecodeOptions::new().format(Format::Diagnostic);
+    let items: Vec<_> = opts.sequence_decoder(b"1, 2, 3,").collect::<Result<_, _>>().unwrap();
+    assert_eq!(items.len(), 3);
+}
+
+#[test]
+fn decoder_empty_input_is_empty_iterator() {
+    let mut d = DecodeOptions::new().sequence_decoder(&[]);
+    assert!(d.next().is_none());
+}
+
+#[test]
+fn decoder_diagnostic_empty_input_is_empty_iterator() {
+    let opts = DecodeOptions::new().format(Format::Diagnostic);
+    let mut d = opts.sequence_decoder(b"");
+    assert!(d.next().is_none());
+}
+
+#[test]
+fn decoder_diagnostic_whitespace_only_is_empty_iterator() {
+    let opts = DecodeOptions::new().format(Format::Diagnostic);
+    let mut d = opts.sequence_decoder(b"   # nothing here\n  / blank /   ");
+    assert!(d.next().is_none());
+}
+
+#[test]
+fn decoder_binary_reports_truncated_tail() {
+    // Valid 0x01, then a truncated 0x18 (expects one more byte).
+    let mut d = DecodeOptions::new().sequence_decoder(&[0x01, 0x18]);
+    assert_eq!(d.next().unwrap().unwrap().to_u32().unwrap(), 1);
+    let err = d.next().unwrap().unwrap_err();
+    assert_eq!(err, Error::UnexpectedEof);
+}
+
+// --------------- Sequence iterator: SequenceReader ---------------
+
+#[test]
+fn sequence_reader_binary_yields_all_items() {
+    let bytes: &[u8] = &[0x01, 0x02, 0x03];
+    let items: Vec<_> = DecodeOptions::new()
+        .sequence_reader(bytes)
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(items.len(), 3);
+}
+
+#[test]
+fn sequence_reader_hex_yields_all_items() {
+    let hex: &[u8] = b"010203";
+    let items: Vec<_> = DecodeOptions::new()
+        .format(Format::Hex)
+        .sequence_reader(hex)
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(items.len(), 3);
+}
+
+#[test]
+fn sequence_reader_diagnostic_yields_all_items() {
+    let opts = DecodeOptions::new().format(Format::Diagnostic);
+    let diag: &[u8] = b"1, 2, 3,";
+    let items: Vec<_> = opts.sequence_reader(diag).collect::<Result<_, _>>().unwrap();
+    assert_eq!(items.len(), 3);
+}
+
+#[test]
+fn sequence_reader_empty_binary_is_empty() {
+    let bytes: &[u8] = &[];
+    let mut s = DecodeOptions::new().sequence_reader(bytes);
+    assert!(s.next().is_none());
+}
+
+#[test]
+fn sequence_reader_binary_reports_truncation() {
+    let bytes: &[u8] = &[0x01, 0x18];
+    let mut s = DecodeOptions::new().sequence_reader(bytes);
+    assert!(s.next().unwrap().is_ok());
+    let err = s.next().unwrap().unwrap_err();
+    assert!(matches!(err, IoError::Data(Error::UnexpectedEof)));
+}

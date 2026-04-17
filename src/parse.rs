@@ -71,6 +71,21 @@ impl<R: MyReader> Parser<R> {
         Ok(value)
     }
 
+    /// Pull the next value of a sequence. Returns `Ok(None)` at a clean
+    /// end of input (including a trailing comma). After returning a
+    /// value, any trailing top-level comma is consumed, ready for the
+    /// next call.
+    pub(crate) fn parse_seq_item(&mut self) -> Result<Option<Value>, R::Error> {
+        self.skip_whitespace()?;
+        if self.at_end()? {
+            Ok(None)
+        } else {
+            let value = self.parse_value()?;
+            self.consume_trailing_separator()?;
+            Ok(Some(value))
+        }
+    }
+
     /// After a value has been parsed, consume whitespace and comments
     /// up to either EOF or a top-level comma (which is also consumed).
     /// Anything else is a syntax error.
