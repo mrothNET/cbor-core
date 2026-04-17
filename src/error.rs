@@ -138,6 +138,24 @@ pub enum IoError {
     Data(Error),
 }
 
+impl fmt::Display for IoError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Io(e) => write!(f, "I/O error: {e}"),
+            Self::Data(e) => fmt::Display::fmt(e, f),
+        }
+    }
+}
+
+impl std::error::Error for IoError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Io(e) => Some(e),
+            Self::Data(e) => Some(e),
+        }
+    }
+}
+
 impl From<io::Error> for IoError {
     fn from(error: io::Error) -> Self {
         match error.kind() {
