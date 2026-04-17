@@ -1036,7 +1036,7 @@ impl ValueView for Value {
             Value::SimpleValue(sv) => Head::from_u64(Major::SimpleOrFloat, sv.0.into()),
             Value::Unsigned(n) => Head::from_u64(Major::Unsigned, *n),
             Value::Negative(n) => Head::from_u64(Major::Negative, *n),
-            Value::Float(float) => float.cbor_head(),
+            Value::Float(float) => float.head(),
             Value::ByteString(bytes) => Head::from_usize(Major::ByteString, bytes.len()),
             Value::TextString(text) => Head::from_usize(Major::TextString, text.len()),
             Value::Array(vec) => Head::from_usize(Major::Array, vec.len()),

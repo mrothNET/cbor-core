@@ -4,6 +4,8 @@
 
 ### Added
 
+- `Float::with_payload()` constructs a non-finite float from a 53-bit payload, following draft-rundgren-cbor-core-25 §2.3.4.2 and stored in shortest CBOR form.
+- `Float::to_payload()` returns the 53-bit non-finite payload as `Result<u64>` (inverse of `Float::with_payload`); `Err(Error::InvalidValue)` for finite values.
 - `DecodeOptions` type for configuring a decode: input format, recursion limit, length limit, and OOM-mitigation budget. `Value::decode`, `Value::decode_hex`, `Value::read_from`, and `Value::read_hex_from` forward to a default `DecodeOptions`.
 - `Format` enum (`Binary`, `Hex`, `Diagnostic`) selecting the syntax, set via `DecodeOptions::format()`.
 - Diagnostic notation is now a first-class input: `DecodeOptions::decode` / `read_from` accept it when `Format::Diagnostic` is selected, reusing the same parser as `Value::from_str`.

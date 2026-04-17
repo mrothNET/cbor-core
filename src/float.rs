@@ -1,10 +1,24 @@
+//! Floating-point handling for CBOR::Core.
+//!
+//! CBOR distinguishes three floating-point widths (f16/f32/f64) and CBOR::Core
+//! requires each value to be encoded in its _shortest_ exact form. This module
+//! provides [`Float`], a small value type that stores the raw bits at the
+//! chosen width, along with the IEEE 754 conversion helpers needed to pick
+//! that shortest form while preserving NaN payloads and the sign of zero.
+
 use crate::{
     DataType, Error, Result,
     codec::{Argument, Head, Major},
+    view::ValueView,
 };
 
-// IEEE 754 half-precision conversion functions
+// IEEE 754 half-precision conversion functions.
+//
+// These are implemented by direct bit manipulation rather than the `as`
+// operator so that NaN payloads survive intact and the functions remain
+// usable in `const` contexts.
 
+// Widen f16 bits to an f64 value with identical NaN payload and sign of zero.
 const fn f16_to_f64(bits: u16) -> f64 {
     let bits = bits as u64;
     let sign = (bits >> 15) & 1;
@@ -30,6 +44,7 @@ const fn f16_to_f64(bits: u16) -> f64 {
     f64::from_bits(bits64)
 }
 
+// Widen f16 bits to an f32 value with identical NaN payload and sign of zero.
 const fn f16_to_f32(bits: u16) -> f32 {
     let bits = bits as u32;
     let sign = (bits >> 15) & 1;
@@ -55,7 +70,11 @@ const fn f16_to_f32(bits: u16) -> f32 {
     f32::from_bits(bits32)
 }
 
-/// Convert f64 to f16 with round-to-nearest-even.
+// Narrow an f64 value to f16 bits using round-to-nearest-even.
+//
+// Handles subnormals, overflow to infinity, and the normal-to-subnormal
+// boundary explicitly. NaN payloads are truncated to the top 10 significand
+// bits (and forced non-zero) so the result remains a NaN.
 const fn f64_to_f16(value: f64) -> u16 {
     let bits = value.to_bits();
     let sign_bit = ((bits >> 48) & 0x8000) as u16; // 1 Bit
@@ -116,14 +135,23 @@ const fn f64_to_f16(value: f64) -> u16 {
     }
 }
 
-/// Reinterpret f32 NaN bits into f64 NaN bits without hardware conversion.
+// Reinterpret f32 NaN bits as f64 NaN bits without hardware conversion.
+//
+// Hardware `f32 as f64` casts are allowed to canonicalize NaN payloads on
+// some platforms. This helper side-steps that by assembling the f64 bit
+// pattern directly: the sign moves to the top and the 23-bit f32 significand
+// is placed in the top 23 bits of the f64 significand.
 const fn f32_nan_to_f64(bits: u32) -> f64 {
     let sign_bit = ((bits & 0x8000_0000) as u64) << 32;
     let payload = ((bits & 0x007f_ffff) as u64) << 29;
     f64::from_bits(sign_bit | 0x7ff0_0000_0000_0000 | payload)
 }
 
-/// f16, f32 or f64 as bits
+/// Raw bits of a float at its chosen storage width (f16, f32, or f64).
+///
+/// `Inner` is kept private so that `Float` can treat "shortest form" as an
+/// invariant: every constructor reduces to the narrowest variant that
+/// preserves the full value (payload included).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum Inner {
     F16(u16),
@@ -132,6 +160,12 @@ pub(crate) enum Inner {
 }
 
 impl Inner {
+    // Select the shortest IEEE 754 form that preserves `x` bit-exactly.
+    //
+    // For finite values, round-trip checks decide whether f16 or f32 is
+    // lossless. For non-finite values (Infinity / NaN) the significand is
+    // inspected directly: f16 is used when the bottom 42 significand bits
+    // are zero, f32 when the bottom 29 are zero, otherwise f64.
     const fn new(x: f64) -> Self {
         if x.is_finite() {
             let bits16 = f64_to_f16(x);
@@ -162,14 +196,142 @@ impl Inner {
 
 /// A floating-point value stored in its shortest CBOR encoding form.
 ///
-/// Internally stores the raw bits as either f16, f32, or f64,
-/// preserving NaN payloads and the exact CBOR encoding.
+/// Internally the raw bits are stored as either f16, f32, or f64 — whichever
+/// is the shortest form that preserves the value exactly (including NaN
+/// payloads and the sign of zero). CBOR::Core's deterministic encoding rules
+/// require this "shortest form" selection, so a `Float` mirrors the bytes
+/// that will be written on the wire.
+///
 /// Two `Float` values are equal iff they encode to the same CBOR bytes.
+/// This differs from IEEE 754 equality in two ways:
+///
+/// * `Float(+0.0) != Float(-0.0)` because they encode to different CBOR bytes.
+/// * Two NaNs compare equal if and only if they have identical payloads and
+///   sign, again because that is what determines the encoding.
+///
+/// # Construction
+///
+/// * [`Float::new`] for floats and integers.
+/// * [`Float::with_payload`] for non-finite values out of payload.
+///
+/// # Examples
+///
+/// ```
+/// use cbor_core::Float;
+///
+/// // Shortest-form storage: 1.0 fits in f16.
+/// assert_eq!(Float::new(1.0_f64).data_type(), cbor_core::DataType::Float16);
+///
+/// // Non-finite round-trip via payload.
+/// let nan = Float::with_payload(1);
+/// assert!(nan.to_f64().is_nan());
+/// assert_eq!(nan.to_payload(), Ok(1));
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Float(pub(crate) Inner);
 
+impl ValueView for Float {
+    fn head(&self) -> Head {
+        match self.0 {
+            Inner::F16(bits) => Head::new(Major::SimpleOrFloat, Argument::U16(bits)),
+            Inner::F32(bits) => Head::new(Major::SimpleOrFloat, Argument::U32(bits)),
+            Inner::F64(bits) => Head::new(Major::SimpleOrFloat, Argument::U64(bits)),
+        }
+    }
+
+    fn payload(&self) -> crate::view::Payload<'_> {
+        crate::view::Payload::None
+    }
+}
+
 impl Float {
+    /// Create a floating-point value in shortest CBOR form.
+    ///
+    /// This is a convenience wrapper equivalent to `Float::from(value)`.
+    /// The constructor automatically chooses the narrowest CBOR::Core
+    /// deterministic encoding width that represents `value` exactly.
+    ///
+    /// Accepted input types: `f32`, `f64`, `u8`, `u16`, `u32`, `i8`, `i16`, `i32`,
+    /// `bool` (`false` becomes `0.0`, `true` becomes `1.0`).
+    ///
+    /// 64-bit integers are intentionally rejected because they are not
+    /// losslessly representable as `f64` in general.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cbor_core::{DataType, Float};
+    ///
+    /// assert_eq!(Float::new(0.0_f64).data_type(), DataType::Float16);
+    /// assert_eq!(Float::new(true).to_f64(), 1.0);
+    /// ```
+    pub fn new(value: impl Into<Self>) -> Self {
+        value.into()
+    }
+
+    /// Create a non-finite floating-point value from a payload.
+    ///
+    /// The payload is a 53-bit integer, laid out as described in section
+    /// 2.3.4.2 of `draft-rundgren-cbor-core-25`. Bit 52 becomes the sign bit
+    /// of the resulting float, while bits 51-0 form the significand in
+    /// _reversed_ order.
+    ///
+    /// Bit reversal keeps a given bit position invariant
+    /// across the f16, f32, and f64 encodings: bit 0 of the payload is
+    /// always the most-significant significand bit. The result is stored in
+    /// the shortest CBOR form that preserves the payload.
+    ///
+    /// | Payload               | CBOR encoding         | Diagnostic notation       |
+    /// |----------------------:|-----------------------|---------------------------|
+    /// | `0`                   | [0xf9, 0x7c 0x00]     | `Infinity`                |
+    /// | `0x01`                | [0xf9, 0x7e 0x00]     | `NaN`                     |
+    /// | `0x10_0000_0000_0000` | [0xf9, 0xfc 0x00]     | `-Infinity`               |
+    ///
+    /// The maximum allowed payload is `0x1f_ffff_ffff_ffff` (53 bits).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `payload` exceeds the 53-bit maximum.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cbor_core::Float;
+    ///
+    /// assert!(Float::with_payload(0).to_f64().is_infinite());
+    /// assert!(Float::with_payload(1).to_f64().is_nan());
+    /// assert_eq!(Float::with_payload(2).to_payload(), Ok(2));
+    /// ```
+    pub fn with_payload(payload: u64) -> Self {
+        let sign_bit = payload & 0x10_0000_0000_0000; // payload width 53 bits, sign_bit = MSB
+        let lower52 = payload ^ sign_bit; // lower 52 bits
+
+        if lower52 <= 0x3ff {
+            let sig = ((lower52 as u16) << 6).reverse_bits();
+            let sign_bit = (sign_bit >> 37) as u16;
+            Self(Inner::F16(sign_bit | 0x7c00 | sig))
+        } else if lower52 <= 0x7f_ffff {
+            let sig = ((lower52 as u32) << 9).reverse_bits();
+            let sign_bit = (sign_bit >> 21) as u32;
+            Self(Inner::F32(sign_bit | 0x7f80_0000 | sig))
+        } else if lower52 <= 0x0f_ffff_ffff_ffff {
+            let sig = (lower52 << 12).reverse_bits();
+            let sign_bit = sign_bit << 11;
+            Self(Inner::F64(sign_bit | 0x7ff0_0000_0000_0000 | sig))
+        } else {
+            panic!("payload exceeds maximum allowed value")
+        }
+    }
+
     /// Return the [`DataType`] indicating the storage width (f16, f32, or f64).
+    ///
+    /// ```
+    /// use cbor_core::{Float, DataType};
+    ///
+    /// assert_eq!(Float::new(1.5).data_type(), DataType::Float16);
+    /// assert_eq!(Float::new(1.00048828125).data_type(), DataType::Float32);
+    /// assert_eq!(Float::new(1.1).data_type(), DataType::Float64);
+    /// ```
     #[must_use]
     pub const fn data_type(&self) -> DataType {
         match self.0 {
@@ -179,19 +341,11 @@ impl Float {
         }
     }
 
-    pub(crate) fn cbor_head(&self) -> Head {
-        match self.0 {
-            Inner::F16(bits) => Head::new(Major::SimpleOrFloat, Argument::U16(bits)),
-            Inner::F32(bits) => Head::new(Major::SimpleOrFloat, Argument::U32(bits)),
-            Inner::F64(bits) => Head::new(Major::SimpleOrFloat, Argument::U64(bits)),
-        }
-    }
-
-    pub(crate) const fn from_u16(bits: u16) -> Self {
+    pub(crate) const fn from_bits_u16(bits: u16) -> Self {
         Self(Inner::F16(bits))
     }
 
-    pub(crate) const fn from_u32(bits: u32) -> Result<Self> {
+    pub(crate) const fn from_bits_u32(bits: u32) -> Result<Self> {
         let float = Self(Inner::F32(bits));
         if matches!(Inner::new(float.to_f64()), Inner::F32(_)) {
             Ok(float)
@@ -200,7 +354,7 @@ impl Float {
         }
     }
 
-    pub(crate) const fn from_u64(bits: u64) -> Result<Self> {
+    pub(crate) const fn from_bits_u64(bits: u64) -> Result<Self> {
         let float = Self(Inner::F64(bits));
         if matches!(Inner::new(float.to_f64()), Inner::F64(_)) {
             Ok(float)
@@ -209,7 +363,10 @@ impl Float {
         }
     }
 
-    /// Convert to f64 (NaN payloads are preserved).
+    /// Widen to `f64`, preserving the exact bit pattern.
+    ///
+    /// Finite values widen losslessly. For NaN values the payload bits are
+    /// copied verbatim (without hardware canonicalization).
     #[must_use]
     pub const fn to_f64(self) -> f64 {
         match self.0 {
@@ -222,14 +379,73 @@ impl Float {
         }
     }
 
-    /// Convert to `f32`.
+    /// Narrow to `f32` when the value fits exactly.
     ///
-    /// Returns `Err(Precision)` for f64-width values.
+    /// Returns `Err(Error::Precision)` when the underlying storage is f64,
+    /// since f64 values cannot in general be narrowed without loss. f16 and
+    /// f32 values convert losslessly; NaN payloads are preserved.
     pub const fn to_f32(self) -> Result<f32> {
         match self.0 {
             Inner::F16(bits) => Ok(f16_to_f32(bits)),
             Inner::F32(bits) => Ok(f32::from_bits(bits)),
             Inner::F64(_) => Err(Error::Precision),
+        }
+    }
+
+    /// Retrieve the 53-bit payload of a non-finite value.
+    ///
+    /// Returns [`Err(Error::InvalidValue)`](Error::InvalidValue) for finite
+    /// floats. For `Infinity`, `NaN`, `-Infinity`, and NaN-with-payload values,
+    /// the payload is reconstructed from the underlying f16/f32/f64 bits by
+    /// the inverse of [`Float::with_payload`].
+    ///
+    /// ```
+    /// use cbor_core::{Float, Error};
+    ///
+    /// for payload in [0, 1, 2, 0x400, 0x1fffffffffffff] {
+    ///     assert_eq!(Float::with_payload(payload).to_payload(), Ok(payload));
+    /// }
+    ///
+    /// assert_eq!(Float::new(1.0).to_payload(), Err(Error::InvalidValue));
+    /// ```
+    pub const fn to_payload(self) -> Result<u64> {
+        if self.is_finite() {
+            Err(Error::InvalidValue)
+        } else {
+            let sign_bit;
+            let sig;
+
+            match self.0 {
+                Inner::F16(bits) => {
+                    sign_bit = ((bits & 0x8000) as u64) << 37;
+                    sig = (bits.reverse_bits() >> 6) as u64;
+                }
+                Inner::F32(bits) => {
+                    sign_bit = ((bits & 0x8000_0000) as u64) << 21;
+                    sig = (bits.reverse_bits() >> 9) as u64;
+                }
+                Inner::F64(bits) => {
+                    sign_bit = (bits & 0x8000_0000_0000_0000) >> 11;
+                    sig = bits.reverse_bits() >> 12;
+                }
+            }
+
+            Ok(sign_bit | sig)
+        }
+    }
+
+    /// Return `true` if this is a finite floating-point value.
+    ///
+    /// A value is non-finite when its exponent field is all ones (that is,
+    /// `Infinity`, `-Infinity`, or any NaN).
+    ///
+    /// Non-finite values have a payload.
+    #[must_use]
+    pub const fn is_finite(self) -> bool {
+        match self.0 {
+            Inner::F16(bits) => bits & 0x7c00 != 0x7c00,
+            Inner::F32(bits) => bits & 0x7f80_0000 != 0x7f80_0000,
+            Inner::F64(bits) => bits & 0x7ff0_0000_0000_0000 != 0x7ff0_0000_0000_0000,
         }
     }
 }

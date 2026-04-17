@@ -11,7 +11,7 @@
 // The exact digits are significant for encoding correctness.
 #![allow(clippy::excessive_precision)]
 
-use crate::{Error, Value};
+use crate::{Error, Float, Value};
 
 /// Verify all four directions for a value whose `Value` equality is stable.
 fn check(value: &Value, expected_hex: &str, expected_diag: &str) {
@@ -610,6 +610,119 @@ fn misc_nan_with_payload_and_sign() {
         "fbfff0001230000000",
         "float'fff0001230000000'",
     );
+}
+
+// =====================================================================
+// Section 2.3.4.2. Sample Payload Encodings (Table 5)
+//
+// Each entry verifies five directions for a NaN payload:
+//  1. `payload → bytes`     (shortest CBOR encoding matches the expected hex)
+//  2. `bytes → Value`       (decoding yields the same Float bits)
+//  3. `Value → text`        (`Debug` output matches the diagnostic notation)
+//  4. `text → bytes`        (parsing the diagnostic text re-encodes to the same hex)
+//  5. `Float → payload`     (`to_payload` round-trips to the original payload)
+// =====================================================================
+
+fn check_payload(payload: u64, expected_hex: &str, expected_diag: &str) {
+    let float = Float::with_payload(payload);
+    let value = Value::Float(float);
+
+    // 1. encode
+    assert_eq!(value.encode_hex(), expected_hex, "encoding mismatch");
+
+    // 2. decode
+    let decoded = Value::decode_hex(expected_hex).expect("decode failed");
+    assert_eq!(decoded, value, "decoding mismatch");
+
+    // 3. Debug → diagnostic notation
+    assert_eq!(format!("{value:?}"), expected_diag, "debug format mismatch");
+
+    // 4. parse diagnostic notation → encode
+    let parsed: Value = expected_diag.parse().expect("parse failed");
+    assert_eq!(parsed.encode_hex(), expected_hex, "parse+encode mismatch");
+
+    // 5. round-trip payload
+    assert_eq!(float.to_payload(), Ok(payload), "payload roundtrip mismatch");
+}
+
+#[test]
+fn payload_0_infinity() {
+    check_payload(0x0, "f97c00", "Infinity");
+}
+
+#[test]
+fn payload_1_nan() {
+    check_payload(0x1, "f97e00", "NaN");
+}
+
+#[test]
+fn payload_2_f16() {
+    check_payload(0x2, "f97d00", "float'7d00'");
+}
+
+#[test]
+fn payload_3ff_f16_max() {
+    check_payload(0x3ff, "f97fff", "float'7fff'");
+}
+
+#[test]
+fn payload_400_f32_boundary() {
+    check_payload(0x400, "fa7f801000", "float'7f801000'");
+}
+
+#[test]
+fn payload_7fffff_f32_max() {
+    check_payload(0x7fffff, "fa7fffffff", "float'7fffffff'");
+}
+
+#[test]
+fn payload_800000_f64_boundary() {
+    check_payload(0x800000, "fb7ff0000010000000", "float'7ff0000010000000'");
+}
+
+#[test]
+fn payload_fffffffffffff_f64_max_positive() {
+    check_payload(0xfffffffffffff, "fb7fffffffffffffff", "float'7fffffffffffffff'");
+}
+
+#[test]
+fn payload_10000000000000_neg_infinity() {
+    check_payload(0x10000000000000, "f9fc00", "-Infinity");
+}
+
+#[test]
+fn payload_10000000000001_f16_neg() {
+    check_payload(0x10000000000001, "f9fe00", "float'fe00'");
+}
+
+#[test]
+fn payload_100000000003ff_f16_neg_max() {
+    check_payload(0x100000000003ff, "f9ffff", "float'ffff'");
+}
+
+#[test]
+fn payload_10000000000400_f32_neg_boundary() {
+    check_payload(0x10000000000400, "faff801000", "float'ff801000'");
+}
+
+#[test]
+fn payload_100000007fffff_f32_neg_max() {
+    check_payload(0x100000007fffff, "faffffffff", "float'ffffffff'");
+}
+
+#[test]
+fn payload_10000000800000_f64_neg_boundary() {
+    check_payload(0x10000000800000, "fbfff0000010000000", "float'fff0000010000000'");
+}
+
+#[test]
+fn payload_18000000000000_f64_neg_low_bit() {
+    check_payload(0x18000000000000, "fbfff0000000000001", "float'fff0000000000001'");
+}
+
+#[test]
+fn payload_1fffffffffffff_f64_max() {
+    check_payload(0x1fffffffffffff, "fbffffffffffffffff", "float'ffffffffffffffff'");
 }
 
 // =====================================================================

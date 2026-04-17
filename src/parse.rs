@@ -444,9 +444,9 @@ impl<R: MyReader> Parser<R> {
             bits = (bits << 4) | digit;
         }
         match hex.len() {
-            4 => Ok(Value::Float(Float::from_u16(bits as u16))),
-            8 => Ok(Value::Float(Float::from_u32(bits as u32)?)),
-            16 => Ok(Value::Float(Float::from_u64(bits)?)),
+            4 => Ok(Value::Float(Float::from_bits_u16(bits as u16))),
+            8 => Ok(Value::Float(Float::from_bits_u32(bits as u32)?)),
+            16 => Ok(Value::Float(Float::from_bits_u64(bits)?)),
             _ => Err(Error::InvalidFormat.into()),
         }
     }

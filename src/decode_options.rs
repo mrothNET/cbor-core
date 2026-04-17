@@ -518,9 +518,9 @@ impl DecodeOptions {
                 Argument::None => Value::SimpleValue(SimpleValue(head.initial_byte.info())),
                 Argument::U8(n) if n >= 32 => Value::SimpleValue(SimpleValue(n)),
 
-                Argument::U16(bits) => Value::Float(Float::from_u16(bits)),
-                Argument::U32(bits) => Value::Float(Float::from_u32(bits)?),
-                Argument::U64(bits) => Value::Float(Float::from_u64(bits)?),
+                Argument::U16(bits) => Value::Float(Float::from_bits_u16(bits)),
+                Argument::U32(bits) => Value::Float(Float::from_bits_u32(bits)?),
+                Argument::U64(bits) => Value::Float(Float::from_bits_u64(bits)?),
 
                 _ => return Err(Error::Malformed.into()),
             },
