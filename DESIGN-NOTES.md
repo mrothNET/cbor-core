@@ -132,3 +132,19 @@ platform is targeted.
 The naming follows standard Rust conventions (`to_` for checked
 conversion, `as_` for borrowing, `into_` for consuming) rather than
 the `as_`-for-everything pattern used by other similar crates.
+
+## Separate slice and reader decoder
+
+Decoding from a slice and decoding from an `io::Read` are distinct
+entry points (`decode` vs `read_from`) returning distinct error
+types (`Error` vs `IoError`). A single `io::Read`-based API would
+cover both cases — a slice can be passed as `&mut &[u8]` — but
+slice callers would always receive an `IoError` whose `Io` variant
+is structurally unreachable.
+
+`Error` is `Copy + Eq + Ord + Hash`; `IoError` wraps `io::Error`
+and is none of those. Splitting the API preserves the precise
+error type for in-memory input and keeps `?` working in functions
+that return `cbor_core::Result`. The implementation shares its
+core through the internal reader trait, so the duplication is
+confined to thin dispatchers in the public surface.

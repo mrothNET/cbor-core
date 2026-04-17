@@ -6,13 +6,24 @@ use crate::DataType;
 ///
 /// Errors fall into three categories:
 ///
-/// **Decoding errors** are returned by [`Value::decode`](crate::Value::decode),
+/// **Decoding errors** are returned when input cannot be parsed as a valid CBOR
+/// value, whether the input is binary, hex, or diagnostic notation. Produced by
+/// [`Value::decode`](crate::Value::decode),
+/// [`Value::decode_hex`](crate::Value::decode_hex),
 /// [`Value::read_from`](crate::Value::read_from),
-/// and [`Value::read_hex_from`](crate::Value::read_hex_from) when the input is not valid deterministic
-/// CBOR: [`Malformed`](Self::Malformed), [`NonDeterministic`](Self::NonDeterministic),
+/// [`Value::read_hex_from`](crate::Value::read_hex_from),
+/// `Value::from_str` (via [`FromStr`](std::str::FromStr)),
+/// and the iterators returned by [`DecodeOptions`](crate::DecodeOptions):
+/// [`Malformed`](Self::Malformed), [`NonDeterministic`](Self::NonDeterministic),
 /// [`UnexpectedEof`](Self::UnexpectedEof), [`LengthTooLarge`](Self::LengthTooLarge),
 /// [`NestingTooDeep`](Self::NestingTooDeep),
-/// [`InvalidUtf8`](Self::InvalidUtf8), [`InvalidHex`](Self::InvalidHex), [`InvalidBase64`](Self::InvalidBase64).
+/// [`InvalidUtf8`](Self::InvalidUtf8), [`InvalidHex`](Self::InvalidHex),
+/// [`InvalidBase64`](Self::InvalidBase64), [`InvalidFormat`](Self::InvalidFormat).
+///
+/// [`Malformed`](Self::Malformed) and [`NonDeterministic`](Self::NonDeterministic)
+/// apply to binary and hex input; [`InvalidFormat`](Self::InvalidFormat) is the
+/// catch-all for diagnostic-notation syntax errors and also signals trailing
+/// data after a complete single-item decode.
 ///
 /// **Accessor errors** are returned by the `to_*`, `as_*`, and `into_*`
 /// methods on [`Value`](crate::Value) when the value does not match the requested type:
@@ -22,7 +33,8 @@ use crate::DataType;
 ///
 /// **Validation errors** are returned during construction of typed helpers
 /// like [`DateTime`](crate::DateTime) and [`EpochTime`](crate::EpochTime):
-/// [`InvalidFormat`](Self::InvalidFormat), [`InvalidValue`](Self::InvalidValue).
+/// [`InvalidFormat`](Self::InvalidFormat) (reused from the decoding category)
+/// and [`InvalidValue`](Self::InvalidValue).
 ///
 /// `Error` is `Copy`, `Eq`, `Ord`, and `Hash`, so it can be matched,
 /// compared, and used as a map key without allocation. I/O errors are
@@ -67,7 +79,9 @@ pub enum Error {
 
     // --- Validation errors ---
     //
-    /// A text field had invalid syntax for its expected format.
+    /// Textual input did not match the expected syntax. Used for
+    /// diagnostic-notation parse errors, trailing data after a
+    /// single-item decode, and invalid date/time strings.
     InvalidFormat,
     /// A value violates semantic constraints.
     InvalidValue,

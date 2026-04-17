@@ -4,7 +4,10 @@
 
 ### Added
 
-- `DecodeOptions` type for configuring a decode: binary or hex input, recursion limit, length limit, and OOM-mitigation budget. `Value::decode`, `Value::decode_hex`, `Value::read_from`, and `Value::read_hex_from` forward to a default `DecodeOptions`.
+- `DecodeOptions` type for configuring a decode: input format, recursion limit, length limit, and OOM-mitigation budget. `Value::decode`, `Value::decode_hex`, `Value::read_from`, and `Value::read_hex_from` forward to a default `DecodeOptions`.
+- `Format` enum (`Binary`, `Hex`, `Diagnostic`) selecting the syntax, set via `DecodeOptions::format()`.
+- Diagnostic notation is now a first-class input: `DecodeOptions::decode` / `read_from` accept it when `Format::Diagnostic` is selected, reusing the same parser as `Value::from_str`.
+- `SequenceDecoder<'a>` and `SequenceReader<R>` iterator types for decoding CBOR sequences (RFC 8742), created via `DecodeOptions::decoder` and `DecodeOptions::sequence_reader`. Items are back-to-back in binary/hex and comma-separated in diagnostic notation; a trailing comma is accepted.
 - `Value::new()` constructor, inferring the variant from the input type. Delegates to `TryFrom`; panics only for types whose `TryFrom` impl can fail (e.g. date/time).
 - `Value::byte_string()` constructor, accepting any `impl Into<Vec<u8>>`.
 - `Value::text_string()` constructor, accepting any `impl Into<String>`.
@@ -15,6 +18,8 @@
 
 - `DataType::name()` now returns `"BigInt"` instead of `"Bigint"`.
 - Diagnostic-notation parsing now enforces the nesting depth limit. New `Error::NestingTooDeep` variant, returned by the parser and the decoder (which previously used `LengthTooLarge`).
+- `DecodeOptions::decode` (and thus `Value::decode` / `Value::decode_hex` / `FromStr`) now rejects trailing data with `Error::InvalidFormat`. In `Format::Diagnostic` trailing whitespace and comments are still accepted; nothing else is. Use `DecodeOptions::decoder` to read multi-item CBOR sequences from a slice.
+- `DecodeOptions::read_from` in `Format::Diagnostic` consumes whitespace, comments, and an optional top-level separator comma after the value, so repeated calls pull successive items from a sequence. Binary and hex streams are unchanged: only the item's own bytes are consumed.
 
 
 ## 0.6.0 — 2026-04-14
