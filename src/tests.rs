@@ -10,3 +10,6 @@ mod value;
 
 #[cfg(all(feature = "num-bigint", feature = "crypto-bigint", feature = "rug"))]
 mod bigint_interop;
+
+#[cfg(all(feature = "chrono", feature = "time", feature = "jiff"))]
+mod time_interop;
