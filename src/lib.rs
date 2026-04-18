@@ -146,6 +146,7 @@
 //! | `serde` | `Serialize`/`Deserialize` for `Value`, [`serde::to_value`], [`serde::from_value`] |
 //! | `chrono` | Conversions between `chrono::DateTime` and `DateTime`/`EpochTime`/`Value` |
 //! | `time` | Conversions between `time::UtcDateTime`/`OffsetDateTime` and `DateTime`/`EpochTime`/`Value` |
+//! | `jiff` | Conversions between `jiff::Timestamp`/`Zoned` and `DateTime`/`EpochTime`/`Value` |
 //! | `half` | `From`/`TryFrom` between `Float`/`Value` and `half::f16` |
 //! | `num-bigint` | `From`/`TryFrom` between `Value` and `num_bigint::BigInt`/`BigUint` |
 //! | `crypto-bigint` | `From`/`TryFrom` between `Value` and `crypto_bigint::Uint`/`Int`/`NonZero` |

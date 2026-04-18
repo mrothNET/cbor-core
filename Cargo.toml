@@ -22,6 +22,8 @@ rug = ["dep:rug"]
 chrono = ["dep:chrono"]
 ## Add interoperability with time crate
 time = ["dep:time"]
+## Add interoperability with jiff crate
+jiff = ["dep:jiff"]
 ## Add interoperability with half crate
 half = ["dep:half"]
 ## Add interoperability with serde crate
@@ -50,6 +52,12 @@ optional = true
 [dependencies.time]
 version = "0.3"
 features = ["formatting", "parsing"]
+optional = true
+
+[dependencies.jiff]
+version = "0.2.23"
+default-features = false
+features = ["std"]
 optional = true
 
 [dependencies.half]

@@ -11,6 +11,7 @@
 - `Format` enum (`Binary`, `Hex`, `Diagnostic`) selecting the syntax, set via `DecodeOptions::format()`.
 - Diagnostic notation is now a first-class input: `DecodeOptions::decode` / `read_from` accept it when `Format::Diagnostic` is selected, reusing the same parser as `Value::from_str`.
 - `SequenceDecoder<'a>` and `SequenceReader<R>` iterator types for decoding CBOR sequences (RFC 8742), created via `DecodeOptions::decoder` and `DecodeOptions::sequence_reader`. Items are back-to-back in binary/hex and comma-separated in diagnostic notation; a trailing comma is accepted.
+- Optional `jiff` feature: conversions between `jiff::Timestamp`/`jiff::Zoned` and `DateTime`/`EpochTime`/`Value`.
 - `Value::new()` constructor, inferring the variant from the input type. Delegates to `TryFrom`; panics only for types whose `TryFrom` impl can fail (e.g. date/time).
 - `Value::byte_string()` constructor, accepting any `impl Into<Vec<u8>>`.
 - `Value::text_string()` constructor, accepting any `impl Into<String>`.

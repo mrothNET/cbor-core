@@ -13,6 +13,9 @@ mod chrono;
 #[cfg(feature = "time")]
 mod time;
 
+#[cfg(feature = "jiff")]
+mod jiff;
+
 #[cfg(feature = "half")]
 mod half;
 
