@@ -28,6 +28,9 @@ heterogeneous.
 Accessor methods look through tags, including custom tags wrapping
 big integers (tags 2/3).
 
+Multi-item streams (RFC 8742) decode through `SequenceDecoder` for
+byte slices and `SequenceReader` for `io::Read` sources.
+
 Encoding is deterministic: integers and floats use their shortest
 form, and map keys are sorted in canonical order. The decoder
 rejects input that deviates. NaN payloads, including signaling NaNs,
@@ -80,6 +83,8 @@ The decoder rejects malicious input:
   capped at 1 billion.
 - Pre-allocated capacity is bounded to 100 MB per decode call.
 - Declared lengths that exceed the available data produce an error.
+
+These are the defaults; `DecodeOptions` overrides them per-decode.
 
 ## Optional features
 

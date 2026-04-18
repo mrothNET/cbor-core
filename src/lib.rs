@@ -15,27 +15,20 @@
 //!
 //! # Types
 //!
-//! [`Value`] is the central type and a good starting point. It holds any
-//! CBOR data item and provides constructors, accessors, encoding, and
-//! decoding.
+//! [`Value`] is the owned representation of any CBOR data item. It handles
+//! construction, inspection, encoding, and decoding, and is what most code
+//! works with directly.
 //!
-//! | Type | Role |
-//! |------|------|
-//! | [`Value`] | Any CBOR data item. Start here. |
-//! | [`SimpleValue`] | CBOR simple value (`null`, `true`, `false`, 0-255). |
-//! | [`DataType`] | Classification of a value for type-level dispatch. |
-//! | [`Error`] | All errors produced by this crate. |
-//!
-//! The following types are helpers that appear in `From`/`Into` bounds
-//! and are rarely used directly:
-//!
-//! | Type | Role |
-//! |------|------|
-//! | [`Array`] | Wrapper around `Vec<Value>` accepted by array constructors. |
-//! | [`Map`] | Wrapper around `BTreeMap<Value, Value>` accepted by map constructors. |
-//! | [`Float`] | IEEE 754 float stored in shortest CBOR form (f16, f32, or f64). |
-//! | [`DateTime`] | Validated ISO 8601 UTC string for tag 0 construction. |
-//! | [`EpochTime`] | Validated numeric epoch time for tag 1 construction. |
+//! * [`Array`], [`Map`], [`Float`], [`DateTime`], [`EpochTime`], and
+//!   [`SimpleValue`] appear in `From`/`Into` bounds for `Value` and are
+//!   rarely constructed by hand.
+//! * [`DataType`] reports a value's kind for type-based dispatch.
+//!   [`ValueKey`] is the key type for maps.
+//! * [`DecodeOptions`] configures the decoder and [`Format`] selects
+//!   binary, hex, or diagnostic input. [`SequenceDecoder`] and
+//!   [`SequenceReader`] iterate over CBOR sequences.
+//! * [`Error`] and [`Result`] cover in-memory decoding; [`IoError`] and
+//!   [`IoResult`] cover `io::Read` sources.
 //!
 //! # Quick start
 //!

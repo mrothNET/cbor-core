@@ -2,9 +2,9 @@
 //!
 //! CBOR distinguishes three floating-point widths (f16/f32/f64) and CBOR::Core
 //! requires each value to be encoded in its _shortest_ exact form. This module
-//! provides [`Float`], a small value type that stores the raw bits at the
-//! chosen width, along with the IEEE 754 conversion helpers needed to pick
-//! that shortest form while preserving NaN payloads and the sign of zero.
+//! provides [`Float`], a value type that stores the raw bits at the chosen
+//! width, along with the IEEE 754 conversion helpers needed to pick that
+//! shortest form while preserving NaN payloads and the sign of zero.
 
 use crate::{
     DataType, Error, Result,
@@ -196,23 +196,23 @@ impl Inner {
 
 /// A floating-point value stored in its shortest CBOR encoding form.
 ///
-/// Internally the raw bits are stored as either f16, f32, or f64 — whichever
-/// is the shortest form that preserves the value exactly (including NaN
-/// payloads and the sign of zero). CBOR::Core's deterministic encoding rules
-/// require this "shortest form" selection, so a `Float` mirrors the bytes
-/// that will be written on the wire.
+/// Internally the raw bits are stored as f16, f32, or f64: whichever is the
+/// shortest form that preserves the value exactly (including NaN payloads
+/// and the sign of zero). CBOR::Core's deterministic encoding rules require
+/// this "shortest form" selection, so a `Float` mirrors the bytes that will
+/// be written on the wire.
 ///
 /// Two `Float` values are equal iff they encode to the same CBOR bytes.
 /// This differs from IEEE 754 equality in two ways:
 ///
 /// * `Float(+0.0) != Float(-0.0)` because they encode to different CBOR bytes.
 /// * Two NaNs compare equal if and only if they have identical payloads and
-///   sign, again because that is what determines the encoding.
+///   sign, since that determines the encoding.
 ///
 /// # Construction
 ///
 /// * [`Float::new`] for floats and integers.
-/// * [`Float::with_payload`] for non-finite values out of payload.
+/// * [`Float::with_payload`] for non-finite values with a given payload.
 ///
 /// # Examples
 ///
@@ -247,9 +247,9 @@ impl ValueView for Float {
 impl Float {
     /// Create a floating-point value in shortest CBOR form.
     ///
-    /// This is a convenience wrapper equivalent to `Float::from(value)`.
-    /// The constructor automatically chooses the narrowest CBOR::Core
-    /// deterministic encoding width that represents `value` exactly.
+    /// Equivalent to `Float::from(value)`. The constructor chooses the
+    /// narrowest CBOR::Core deterministic encoding width that represents
+    /// `value` exactly.
     ///
     /// Accepted input types: `f32`, `f64`, `u8`, `u16`, `u32`, `i8`, `i16`, `i32`,
     /// `bool` (`false` becomes `0.0`, `true` becomes `1.0`).
@@ -395,9 +395,8 @@ impl Float {
     /// Retrieve the 53-bit payload of a non-finite value.
     ///
     /// Returns [`Err(Error::InvalidValue)`](Error::InvalidValue) for finite
-    /// floats. For `Infinity`, `NaN`, `-Infinity`, and NaN-with-payload values,
-    /// the payload is reconstructed from the underlying f16/f32/f64 bits by
-    /// the inverse of [`Float::with_payload`].
+    /// floats. For non-finite values, the payload is reconstructed from the
+    /// underlying f16/f32/f64 bits by the inverse of [`Float::with_payload`].
     ///
     /// ```
     /// use cbor_core::{Float, Error};

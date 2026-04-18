@@ -1,22 +1,36 @@
-/// Classification of a [`Value`](crate::Value) for lightweight type checks.
+/// Kind of a [`Value`](crate::Value).
 ///
-/// Obtained via [`Value::data_type`](crate::Value::data_type). The
-/// convenience predicates (`is_integer`, `is_float`, etc.) cover common
-/// groupings.
+/// Returned by [`Value::data_type`](crate::Value::data_type). The `is_*`
+/// predicates cover common groupings.
 ///
-/// `DataType` describes the *structural* type of a value based on its
-/// CBOR major type and, for tagged values, the tag number and the
-/// major type of the content. It does **not** validate the content
-/// itself.
+/// `DataType` reflects a value's CBOR major type and, for tagged values,
+/// the tag number together with the content's major type. It does **not**
+/// validate the content itself.
 ///
-/// For example, [`DateTime`](Self::DateTime) means "tag 0
-/// wrapping a text string that structurally resembles a date", not
-/// "a fully validated RFC 3339 timestamp". Likewise,
-/// [`EpochTime`](Self::EpochTime) means "tag 1 wrapping an integer
-/// or float", regardless of whether the numeric value falls within
-/// the allowed range. Full validation happens in the corresponding
-/// accessor methods (e.g.
-/// [`Value::to_system_time`](crate::Value::to_system_time)).
+/// For example, [`DateTime`](Self::DateTime) means "tag 0 wrapping a text
+/// string", not "a valid RFC 3339 timestamp". Likewise,
+/// [`EpochTime`](Self::EpochTime) means "tag 1 wrapping an integer or
+/// float", regardless of whether the numeric value falls within the
+/// allowed range. Full validation happens in the accessor methods, e.g.
+/// [`Value::to_system_time`](crate::Value::to_system_time).
+///
+/// # Predicates group by semantic role, not encoding
+///
+/// The `is_*` predicates classify by the semantic role a tag gives a
+/// value, not by how it's encoded on the wire:
+///
+/// - [`is_integer`](Self::is_integer) is `true` for
+///   [`BigInt`](Self::BigInt), because tags 2/3 exist to represent
+///   integers. The content is structurally a byte string.
+/// - [`is_text`](Self::is_text) is `false` for
+///   [`DateTime`](Self::DateTime), even though tag 0 wraps a text string.
+///   A date is not plain text. Use [`is_date_time`](Self::is_date_time),
+///   or [`Value::as_str`](crate::Value::as_str), which unwraps the tag.
+/// - [`is_bytes`](Self::is_bytes) is `false` for
+///   [`BigInt`](Self::BigInt). A big integer is a number, not raw bytes.
+/// - [`is_numeric`](Self::is_numeric) is `false` for
+///   [`EpochTime`](Self::EpochTime). An epoch time is a date, not a
+///   number. Use [`is_epoch_time`](Self::is_epoch_time).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum DataType {
     /// CBOR null (simple value 22).
@@ -170,6 +184,10 @@ impl DataType {
     /// True if this is an integer (including big integers) or a
     /// floating-point value (any width).
     ///
+    /// [`EpochTime`](Self::EpochTime) returns `false` even though it
+    /// wraps a number. An epoch time is a date, not a number. Use
+    /// [`is_epoch_time`](Self::is_epoch_time) for that case.
+    ///
     /// ```
     /// use cbor_core::Value;
     ///
@@ -177,6 +195,8 @@ impl DataType {
     /// assert!(Value::from(3.14).data_type().is_numeric());
     /// assert!(Value::from(u128::MAX).data_type().is_numeric());
     /// assert!(!Value::from("42").data_type().is_numeric());
+    /// // epoch time (tag 1) wraps a number but is not numeric
+    /// assert!(!Value::tag(1, 1000).data_type().is_numeric());
     /// ```
     #[must_use]
     pub const fn is_numeric(&self) -> bool {
@@ -186,26 +206,40 @@ impl DataType {
         )
     }
 
-    /// True if this is a byte string.
+    /// True if this is a plain byte string.
+    ///
+    /// [`BigInt`](Self::BigInt) returns `false` even though tags 2/3
+    /// wrap a byte string. A big integer is a number, not raw bytes.
+    /// Use [`is_integer`](Self::is_integer) for that case.
     ///
     /// ```
     /// use cbor_core::Value;
     ///
     /// assert!(Value::from(vec![1u8, 2, 3]).data_type().is_bytes());
     /// assert!(!Value::from("hello").data_type().is_bytes());
+    /// // big integers are structurally byte strings but not "bytes"
+    /// assert!(!Value::from(u128::MAX).data_type().is_bytes());
     /// ```
     #[must_use]
     pub const fn is_bytes(&self) -> bool {
         matches!(*self, Self::Bytes)
     }
 
-    /// True if this is a text string.
+    /// True if this is a plain text string.
+    ///
+    /// [`DateTime`](Self::DateTime) returns `false` even though tag 0
+    /// wraps a text string. A date is not plain text. Use
+    /// [`is_date_time`](Self::is_date_time), or
+    /// [`Value::as_str`](crate::Value::as_str) to get the underlying
+    /// string regardless (it unwraps the tag).
     ///
     /// ```
     /// use cbor_core::Value;
     ///
     /// assert!(Value::from("hello").data_type().is_text());
     /// assert!(!Value::from(vec![1u8, 2, 3]).data_type().is_text());
+    /// // date/time (tag 0) wraps text but is not "text"
+    /// assert!(!Value::date_time("2024-01-01T00:00:00Z").data_type().is_text());
     /// ```
     #[must_use]
     pub const fn is_text(&self) -> bool {

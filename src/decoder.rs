@@ -22,9 +22,9 @@ use crate::{
 ///
 /// Sequence semantics depend on the format:
 ///
-/// * [`Format::Binary`] and [`Format::Hex`]: items are concatenated
-///   back-to-back with no separator. `next` returns `None` as soon as
-///   the buffer is fully consumed.
+/// * [`Format::Binary`] and [`Format::Hex`]: items are concatenated with
+///   no separator. `next` returns `None` as soon as the buffer is fully
+///   consumed.
 /// * [`Format::Diagnostic`]: items are separated by a top-level comma
 ///   and optional whitespace or comments. A trailing comma is
 ///   accepted.
@@ -126,13 +126,13 @@ impl<'a> Iterator for SequenceDecoder<'a> {
 /// decoding limits. Yields `IoResult<Value>` for each item. `next`
 /// returns `None` when the stream ends at an item boundary; a
 /// truncated item returns `Some(Err(IoError::Data(Error::UnexpectedEof)))`.
-/// For in-memory input, use [`SequenceDecoder`] instead — it's lighter and
-/// returns plain `Result<Value>` without the I/O error arm.
+/// For in-memory input, use [`SequenceDecoder`] instead: it returns plain
+/// `Result<Value>` without the I/O error arm.
 ///
 /// Sequence semantics depend on the format:
 ///
-/// * [`Format::Binary`] and [`Format::Hex`]: items are concatenated
-///   back-to-back with no separator.
+/// * [`Format::Binary`] and [`Format::Hex`]: items are concatenated with
+///   no separator.
 /// * [`Format::Diagnostic`]: items are separated by a top-level comma
 ///   and optional whitespace or comments. A trailing comma is
 ///   accepted.
