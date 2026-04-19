@@ -4,7 +4,7 @@
 
 ### Added
 
-- `Display` and `std::error::Error` impls for `IoError`.
+- `Display` and `std::error::Error` implementations for `IoError`.
 - `Float::with_payload()` constructs a non-finite float from a 53-bit payload, following draft-rundgren-cbor-core-25 §2.3.4.2 and stored in shortest CBOR form.
 - `Float::to_payload()` returns the 53-bit non-finite payload as `Result<u64>` (inverse of `Float::with_payload`); `Err(Error::InvalidValue)` for finite values.
 - `DecodeOptions` type for configuring a decode: input format, recursion limit, length limit, and OOM-mitigation budget. `Value::decode`, `Value::decode_hex`, `Value::read_from`, and `Value::read_hex_from` forward to a default `DecodeOptions`.
@@ -15,6 +15,9 @@
 - `Value::new()` constructor, inferring the variant from the input type. Delegates to `TryFrom`; panics only for types whose `TryFrom` impl can fail (e.g. date/time).
 - `Value::byte_string()` constructor, accepting any `impl Into<Vec<u8>>`.
 - `Value::text_string()` constructor, accepting any `impl Into<String>`.
+- `Value::simple_value()` constructor for simple values from a raw `u8`. Usable in `const` context; panics for the reserved range 24-31.
+- `const` constructors for scalar `Value` variants: `Value::from_bool`, `Value::from_u64`, `Value::from_i64`, `Value::from_f32`, `Value::from_f64`, and `Value::from_payload` (non-finite float from a 53-bit payload). These are the `const` counterparts of the `From<T>` implementations; narrower integer widths and `u128`/`i128` are intentionally omitted (lossless widening covers the former, the big-integer path allocates for the latter).
+- `Float::from_f32()` and `Float::from_f64()`: `const` counterparts of `Float::from`/`Float::new`, storing the value in shortest CBOR form.
 - `Display` impl for `Value`, forwarding to `Debug` (CBOR::Core diagnostic notation).
 - `ValueKey` accepts array- and map-valued keys zero-copy: `&[Value]`, `&Vec<Value>`, `&[Value; N]`, `&Array`, `&Map`, and `&BTreeMap` now bypass the full-`Value` allocation that was previously required to use a composite key.
 

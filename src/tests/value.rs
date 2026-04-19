@@ -30,7 +30,7 @@ fn simple_value() {
 #[test]
 #[should_panic(expected = "Invalid simple value")]
 fn simple_value_invalid() {
-    Value::simple_value(24);
+    let _ = Value::simple_value(24);
 }
 
 // ===== Unsigned integers =====
@@ -1030,13 +1030,13 @@ fn epoch_time_from_max() {
 #[test]
 #[should_panic(expected = "Invalid epoch time")]
 fn epoch_time_over_max() {
-    Value::epoch_time(253402300800_u64);
+    let _ = Value::epoch_time(253402300800_u64);
 }
 
 #[test]
 #[should_panic(expected = "Invalid epoch time")]
 fn epoch_time_negative() {
-    Value::epoch_time(-1);
+    let _ = Value::epoch_time(-1);
 }
 
 #[test]
@@ -1049,13 +1049,13 @@ fn epoch_time_from_float() {
 #[test]
 #[should_panic(expected = "Invalid epoch time")]
 fn epoch_time_from_nan() {
-    Value::epoch_time(f64::NAN);
+    let _ = Value::epoch_time(f64::NAN);
 }
 
 #[test]
 #[should_panic(expected = "Invalid epoch time")]
 fn epoch_time_from_infinity() {
-    Value::epoch_time(f64::INFINITY);
+    let _ = Value::epoch_time(f64::INFINITY);
 }
 
 #[test]
@@ -1188,7 +1188,7 @@ fn date_time_whole_second_no_fraction() {
 #[test]
 #[should_panic(expected = "Invalid date/time")]
 fn date_time_invalid_format() {
-    Value::date_time("not a date");
+    let _ = Value::date_time("not a date");
 }
 
 #[test]
@@ -1199,7 +1199,7 @@ fn date_time_year_zero() {
 #[test]
 #[should_panic(expected = "Invalid date/time")]
 fn date_time_year_beyond_9999() {
-    Value::date_time("10000-01-01T00:00:00Z");
+    let _ = Value::date_time("10000-01-01T00:00:00Z");
 }
 
 #[test]
@@ -1215,19 +1215,19 @@ fn date_time_leap_second() {
 #[test]
 #[should_panic(expected = "Invalid date/time")]
 fn date_time_invalid_leap_second_date() {
-    Value::date_time("2001-01-01T23:59:60Z");
+    let _ = Value::date_time("2001-01-01T23:59:60Z");
 }
 
 #[test]
 #[should_panic(expected = "Invalid date/time")]
 fn date_time_invalid_leap_second_hour() {
-    Value::date_time("2015-06-30T12:59:60Z");
+    let _ = Value::date_time("2015-06-30T12:59:60Z");
 }
 
 #[test]
 #[should_panic(expected = "Invalid date/time")]
 fn date_time_invalid_leap_second_minute() {
-    Value::date_time("2015-06-30T23:58:60Z");
+    let _ = Value::date_time("2015-06-30T23:58:60Z");
 }
 
 #[test]

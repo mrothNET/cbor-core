@@ -265,6 +265,7 @@ impl Float {
     /// assert_eq!(Float::new(0.0_f64).data_type(), DataType::Float16);
     /// assert_eq!(Float::new(true).to_f64(), 1.0);
     /// ```
+    #[must_use]
     pub fn new(value: impl Into<Self>) -> Self {
         value.into()
     }
@@ -302,7 +303,8 @@ impl Float {
     /// assert!(Float::with_payload(1).to_f64().is_nan());
     /// assert_eq!(Float::with_payload(2).to_payload(), Ok(2));
     /// ```
-    pub fn with_payload(payload: u64) -> Self {
+    #[must_use]
+    pub const fn with_payload(payload: u64) -> Self {
         let sign_bit = payload & 0x10_0000_0000_0000; // payload width 53 bits, sign_bit = MSB
         let lower52 = payload ^ sign_bit; // lower 52 bits
 
@@ -320,6 +322,47 @@ impl Float {
             Self(Inner::F64(sign_bit | 0x7ff0_0000_0000_0000 | sig))
         } else {
             panic!("payload exceeds maximum allowed value")
+        }
+    }
+
+    /// Create a `Float` from an `f64`, usable in `const` context.
+    ///
+    /// `const` counterpart of `Float::from(value)` / [`Float::new`]. The
+    /// value is reduced to the shortest CBOR form (f16, f32, or f64) that
+    /// preserves it bit-exactly, including NaN payloads and the sign of
+    /// zero.
+    ///
+    /// ```
+    /// use cbor_core::Float;
+    ///
+    /// const F: Float = Float::from_f64(1.0);
+    /// assert_eq!(F.to_f64(), 1.0);
+    /// ```
+    #[must_use]
+    pub const fn from_f64(value: f64) -> Self {
+        Self(Inner::new(value))
+    }
+
+    /// Create a `Float` from an `f32`, usable in `const` context.
+    ///
+    /// `const` counterpart of `Float::from(value)` / [`Float::new`] for
+    /// f32 inputs. NaN payloads are widened without hardware
+    /// canonicalization; the result is then stored in the shortest CBOR
+    /// form that preserves the value.
+    ///
+    /// ```
+    /// use cbor_core::Float;
+    ///
+    /// const F: Float = Float::from_f32(1.0);
+    /// assert_eq!(F.to_f32(), Ok(1.0));
+    /// ```
+    #[must_use]
+    pub const fn from_f32(value: f32) -> Self {
+        if value.is_nan() {
+            // NaN-safe: bit manipulation to avoid hardware canonicalization
+            Self(Inner::new(f32_nan_to_f64(value.to_bits())))
+        } else {
+            Self(Inner::new(value as f64))
         }
     }
 
@@ -341,6 +384,7 @@ impl Float {
         }
     }
 
+    #[must_use]
     pub(crate) const fn from_bits_u16(bits: u16) -> Self {
         Self(Inner::F16(bits))
     }
@@ -453,18 +497,13 @@ impl Float {
 
 impl From<f64> for Float {
     fn from(value: f64) -> Self {
-        Self(Inner::new(value))
+        Self::from_f64(value)
     }
 }
 
 impl From<f32> for Float {
     fn from(value: f32) -> Self {
-        if value.is_nan() {
-            // NaN-safe: bit manipulation to avoid hardware canonicalization
-            Self(Inner::new(f32_nan_to_f64(value.to_bits())))
-        } else {
-            Self(Inner::new(value as f64))
-        }
+        Self::from_f32(value)
     }
 }
 

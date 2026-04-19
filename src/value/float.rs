@@ -8,13 +8,13 @@ impl From<Float> for Value {
 
 impl From<f32> for Value {
     fn from(value: f32) -> Self {
-        Self::Float(value.into())
+        Self::from_f32(value)
     }
 }
 
 impl From<f64> for Value {
     fn from(value: f64) -> Self {
-        Self::Float(value.into())
+        Self::from_f64(value)
     }
 }
 

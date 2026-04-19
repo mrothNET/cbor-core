@@ -100,6 +100,31 @@ use crate::{
 /// | [`Value::epoch_time(v)`](Value::epoch_time) | Epoch time (tag 1) |
 /// | [`Value::tag(n, v)`](Value::tag) | Tagged value |
 ///
+/// # `const` constructors
+///
+/// Scalar variants can also be built in `const` context. These are the
+/// `const` counterparts of the `From<T>` implementations. Use them for
+/// `const` items; in non-`const` code the shorter `Value::from(v)` or
+/// `Value::new(v)` spellings are preferred.
+///
+/// | Constructor | Builds |
+/// |---|---|
+/// | [`Value::null()`](Value::null) | Null simple value |
+/// | [`Value::simple_value(v)`](Value::simple_value) | Simple value from `u8` |
+/// | [`Value::from_bool(v)`](Value::from_bool) | Boolean |
+/// | [`Value::from_u64(v)`](Value::from_u64) | Unsigned integer |
+/// | [`Value::from_i64(v)`](Value::from_i64) | Signed integer |
+/// | [`Value::from_f32(v)`](Value::from_f32) | Float from `f32` |
+/// | [`Value::from_f64(v)`](Value::from_f64) | Float from `f64` |
+/// | [`Value::from_payload(v)`](Value::from_payload) | Non-finite float from payload |
+///
+/// Narrower integer widths (`u8`..`u32`, `i8`..`i32`) are not provided
+/// separately: `as u64` / `as i64` is lossless and yields the same
+/// `Value`. `u128` and `i128` have no `const` constructor because
+/// out-of-range values require the big-integer path, which allocates a
+/// tagged byte string. Byte strings, text strings, arrays, maps, and
+/// tags are heap-backed and likewise cannot be built in `const` context.
+///
 /// # Encoding and decoding
 ///
 /// ```
@@ -635,24 +660,147 @@ impl Value {
         Self::SimpleValue(SimpleValue::NULL)
     }
 
-    /// Create a CBOR simple value.
+    /// Create a CBOR simple value. Usable in `const` context.
     ///
     /// # Panics
     ///
     /// Panics if the value is in the reserved range 24-31.
-    /// Use [`SimpleValue::try_from`] for a fallible alternative.
+    /// Use [`SimpleValue::from_u8`] for a fallible alternative.
     ///
     /// ```
     /// use cbor_core::Value;
     ///
-    /// let v = Value::simple_value(42);
-    /// assert_eq!(v.to_simple_value(), Ok(42));
+    /// const V: Value = Value::simple_value(42);
+    /// assert_eq!(V.to_simple_value(), Ok(42));
     /// ```
-    pub fn simple_value(value: impl TryInto<SimpleValue>) -> Self {
-        match value.try_into() {
+    #[must_use]
+    pub const fn simple_value(value: u8) -> Self {
+        match SimpleValue::from_u8(value) {
             Ok(sv) => Self::SimpleValue(sv),
             Err(_) => panic!("Invalid simple value"),
         }
+    }
+
+    /// Create a boolean `Value`, usable in `const` context.
+    ///
+    /// `const` counterpart of `Value::from(value)` for booleans. In CBOR,
+    /// `false` is simple value 20 and `true` is simple value 21.
+    ///
+    /// ```
+    /// use cbor_core::Value;
+    ///
+    /// const T: Value = Value::from_bool(true);
+    /// assert_eq!(T.to_bool(), Ok(true));
+    /// ```
+    #[must_use]
+    pub const fn from_bool(value: bool) -> Self {
+        Self::SimpleValue(SimpleValue::from_bool(value))
+    }
+
+    /// Create an unsigned integer `Value`, usable in `const` context.
+    ///
+    /// `const` counterpart of `Value::from(value)` for unsigned integers.
+    /// Smaller widths (`u8`, `u16`, `u32`) are intentionally not provided
+    /// as separate constructors: the `as u64` widening is lossless and
+    /// the resulting `Value` is identical regardless of the source width.
+    ///
+    /// `u128` has no `const` constructor because values above `u64::MAX`
+    /// require the big-integer path, which allocates a tagged byte string.
+    ///
+    /// ```
+    /// use cbor_core::Value;
+    ///
+    /// const V: Value = Value::from_u64(42);
+    /// assert_eq!(V.to_u64(), Ok(42));
+    /// ```
+    #[must_use]
+    pub const fn from_u64(value: u64) -> Value {
+        Self::Unsigned(value)
+    }
+
+    /// Create a signed integer `Value`, usable in `const` context.
+    ///
+    /// `const` counterpart of `Value::from(value)` for signed integers.
+    /// Smaller widths (`i8`, `i16`, `i32`) are intentionally not provided
+    /// as separate constructors: the `as i64` widening is lossless and
+    /// the resulting `Value` is identical regardless of the source width.
+    ///
+    /// `i128` has no `const` constructor for the same reason as
+    /// [`from_u64`](Self::from_u64): out-of-`i64`-range values need the
+    /// big-integer path, which allocates.
+    ///
+    /// ```
+    /// use cbor_core::Value;
+    ///
+    /// const V: Value = Value::from_i64(-42);
+    /// assert_eq!(V.to_i64(), Ok(-42));
+    /// ```
+    #[must_use]
+    pub const fn from_i64(value: i64) -> Value {
+        if value >= 0 {
+            Self::Unsigned(value as u64)
+        } else {
+            Self::Negative((!value) as u64)
+        }
+    }
+
+    /// Create a float `Value` from `f32`, usable in `const` context.
+    ///
+    /// `const` counterpart of `Value::from(value)` for `f32`. NaN
+    /// payloads are preserved. The result is stored in the shortest
+    /// CBOR form (f16, f32, or f64) that represents the value exactly.
+    ///
+    /// Prefer this over `Value::from_f64(x as f64)` when `x` is already
+    /// an `f32`: the `as f64` cast is lossless, but routing through
+    /// `from_f32` is clearer about intent and preserves NaN payloads
+    /// without relying on hardware canonicalization.
+    ///
+    /// ```
+    /// use cbor_core::Value;
+    ///
+    /// const V: Value = Value::from_f32(1.0);
+    /// assert_eq!(V.to_f32(), Ok(1.0));
+    /// ```
+    #[must_use]
+    pub const fn from_f32(value: f32) -> Value {
+        Self::Float(Float::from_f32(value))
+    }
+
+    /// Create a float `Value` from `f64`, usable in `const` context.
+    ///
+    /// `const` counterpart of `Value::from(value)` for `f64`. The result
+    /// is stored in the shortest CBOR form (f16, f32, or f64) that
+    /// represents the value exactly, NaN payloads included.
+    ///
+    /// ```
+    /// use cbor_core::Value;
+    ///
+    /// const V: Value = Value::from_f64(1.5);
+    /// assert_eq!(V.to_f64(), Ok(1.5));
+    /// ```
+    #[must_use]
+    pub const fn from_f64(value: f64) -> Value {
+        Self::Float(Float::from_f64(value))
+    }
+
+    /// Create a non-finite float `Value` from a 53-bit payload, usable
+    /// in `const` context.
+    ///
+    /// Payloads encode the kind of non-finite float (Infinity, NaN) and
+    /// its signalling bits in a width-invariant layout. The typical use
+    /// is defining `const` sentinel values that signal application-level
+    /// conditions through NaN payloads. See [`Float::with_payload`] for
+    /// the payload layout and panic conditions.
+    ///
+    /// ```
+    /// use cbor_core::Value;
+    ///
+    /// const INF: Value = Value::from_payload(0);
+    /// assert!(INF.to_f64().unwrap().is_infinite());
+    /// ```
+    #[must_use]
+    pub const fn from_payload(payload: u64) -> Value {
+        Self::Float(Float::with_payload(payload))
     }
 
     /// Create a CBOR value, inferring the variant from the input type.
@@ -678,6 +826,7 @@ impl Value {
     /// # Panics
     ///
     /// Panics if the input cannot be converted into a CBOR value.
+    #[must_use]
     pub fn new(value: impl TryInto<Value>) -> Self {
         match value.try_into() {
             Ok(value) => value,
@@ -699,6 +848,7 @@ impl Value {
     /// let v = Value::byte_string("ABC");
     /// assert_eq!(v.as_bytes(), Ok([65, 66, 67].as_slice()));
     /// ```
+    #[must_use]
     pub fn byte_string(value: impl Into<Vec<u8>>) -> Self {
         Self::ByteString(value.into())
     }
@@ -717,6 +867,7 @@ impl Value {
     /// let v = Value::text_string('A'); // char
     /// assert_eq!(v.as_str(), Ok("A")); // &str
     /// ```
+    #[must_use]
     pub fn text_string(value: impl Into<String>) -> Self {
         Self::TextString(value.into())
     }
@@ -746,6 +897,7 @@ impl Value {
     /// assert!(v.data_type().is_date_time());
     /// assert_eq!(v.as_str(), Ok("1970-01-01T00:00:00Z"));
     /// ```
+    #[must_use]
     pub fn date_time(value: impl TryInto<DateTime>) -> Self {
         match value.try_into() {
             Ok(dt) => dt.into(),
@@ -770,6 +922,7 @@ impl Value {
     /// let v = Value::epoch_time(1_000_000);
     /// assert_eq!(v.to_system_time(), Ok(UNIX_EPOCH + Duration::from_secs(1_000_000)));
     /// ```
+    #[must_use]
     pub fn epoch_time(value: impl TryInto<EpochTime>) -> Self {
         match value.try_into() {
             Ok(et) => et.into(),
@@ -796,6 +949,7 @@ impl Value {
     ///
     /// The value is stored in the shortest IEEE 754 form (f16, f32,
     /// or f64) that preserves it exactly.
+    #[must_use]
     pub fn float(value: impl Into<Float>) -> Self {
         Self::Float(value.into())
     }
@@ -812,6 +966,7 @@ impl Value {
     /// let a = Value::array([1, 2, 3]);
     /// assert_eq!(a.len(), Some(3));
     /// ```
+    #[must_use]
     pub fn array(array: impl Into<Array>) -> Self {
         Self::Array(array.into().0)
     }
@@ -829,6 +984,7 @@ impl Value {
     /// let m = Value::map([("x", 1), ("y", 2)]);
     /// assert_eq!(m.len(), Some(2));
     /// ```
+    #[must_use]
     pub fn map(map: impl Into<Map>) -> Self {
         Self::Map(map.into().0)
     }
@@ -840,6 +996,7 @@ impl Value {
     /// let uri = Value::tag(32, "https://example.com");
     /// assert_eq!(uri.tag_number().unwrap(), 32);
     /// ```
+    #[must_use]
     pub fn tag(number: u64, content: impl Into<Value>) -> Self {
         Self::Tag(number, Box::new(content.into()))
     }
