@@ -24,6 +24,7 @@
 - Diagnostic-notation parsing now enforces the nesting depth limit. New `Error::NestingTooDeep` variant, returned by the parser and the decoder (which previously used `LengthTooLarge`).
 - `DecodeOptions::decode` (and thus `Value::decode` / `Value::decode_hex` / `FromStr`) now rejects trailing data with `Error::InvalidFormat`. In `Format::Diagnostic` trailing whitespace and comments are still accepted; nothing else is. Use `DecodeOptions::decoder` to read multi-item CBOR sequences from a slice.
 - `DecodeOptions::read_from` in `Format::Diagnostic` consumes whitespace, comments, and an optional top-level separator comma after the value, so repeated calls pull successive items from a sequence. Binary and hex streams are unchanged: only the item's own bytes are consumed.
+- `Value::write_to()` and `Value::write_hex_to()` now return `std::io::Result<()>` instead of `IoResult<()>`. Encoding a `Value` cannot fail with a CBOR data error, so the custom error type served no purpose on the write side.
 
 
 ## 0.6.0 — 2026-04-14

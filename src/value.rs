@@ -964,7 +964,7 @@ impl Value {
     /// Value::from(42).write_to(&mut buf).unwrap();
     /// assert_eq!(buf, [0x18, 42]);
     /// ```
-    pub fn write_to(&self, mut writer: impl std::io::Write) -> crate::IoResult<()> {
+    pub fn write_to(&self, mut writer: impl std::io::Write) -> std::io::Result<()> {
         self.do_write(&mut writer)
     }
 
@@ -979,7 +979,7 @@ impl Value {
     /// Value::from(42).write_hex_to(&mut buf).unwrap();
     /// assert_eq!(buf, b"182a");
     /// ```
-    pub fn write_hex_to(&self, writer: impl std::io::Write) -> crate::IoResult<()> {
+    pub fn write_hex_to(&self, writer: impl std::io::Write) -> std::io::Result<()> {
         struct HexWriter<W>(W);
 
         impl<W: std::io::Write> std::io::Write for HexWriter<W> {
@@ -997,7 +997,7 @@ impl Value {
         self.do_write(&mut HexWriter(writer))
     }
 
-    fn do_write(&self, writer: &mut impl std::io::Write) -> crate::IoResult<()> {
+    fn do_write(&self, writer: &mut impl std::io::Write) -> std::io::Result<()> {
         self.head().write_to(writer)?;
 
         match self {
