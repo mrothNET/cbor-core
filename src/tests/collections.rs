@@ -4,7 +4,7 @@ use crate::{DataType, Error, Value, array, map};
 
 #[test]
 fn empty_array() {
-    let v = Value::array(Vec::<Value>::new());
+    let v = array![];
     assert!(v.data_type().is_array());
     assert_eq!(v.as_array().unwrap().len(), 0);
 }

@@ -9,8 +9,11 @@
 /// ```
 #[macro_export]
 macro_rules! array {
-    ($($x:expr),* $(,)?) => {
-        $crate::Value::array([$($crate::Value::from($x)),*])
+    () => {
+        $crate::Value::Array(::std::vec::Vec::new())
+    };
+    ($($x:expr),+ $(,)?) => {
+        $crate::Value::array([$($crate::Value::from($x)),+])
     };
 }
 
