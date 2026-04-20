@@ -50,10 +50,7 @@ fn main() {
         _ => unreachable!(),
     };
 
-    let values: Result<Vec<Value>, Error> = DecodeOptions::new()
-        .format(fmt)
-        .sequence_decoder(&input)
-        .collect();
+    let values: Result<Vec<Value>, Error> = DecodeOptions::new().format(fmt).sequence_decoder(&input).collect();
 
     let values = match values {
         Ok(values) => values,
