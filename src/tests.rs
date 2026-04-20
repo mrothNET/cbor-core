@@ -5,6 +5,7 @@ mod integers;
 mod limits;
 mod parse;
 mod rundgren;
+mod sequence;
 mod simple_value;
 mod value;
 

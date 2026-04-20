@@ -73,8 +73,8 @@ impl<'a> SequenceDecoder<'a> {
     /// assert_eq!(d.next().unwrap().unwrap().to_u32().unwrap(), 2);
     /// assert!(d.next().is_none());
     /// ```
-    pub fn new(input: &'a [u8]) -> Self {
-        Self::with_options(DecodeOptions::new(), input)
+    pub fn new<B: AsRef<[u8]> + ?Sized>(input: &'a B) -> Self {
+        Self::with_options(DecodeOptions::new(), input.as_ref())
     }
 
     pub(crate) fn with_options(opts: DecodeOptions, input: &'a [u8]) -> Self {

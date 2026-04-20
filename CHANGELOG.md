@@ -4,28 +4,35 @@
 
 ### Added
 
-- `Display` and `std::error::Error` implementations for `IoError`.
-- `Float::with_payload()` constructs a non-finite float from a 53-bit payload, following draft-rundgren-cbor-core-25 §2.3.4.2 and stored in shortest CBOR form.
-- `Float::to_payload()` returns the 53-bit non-finite payload as `Result<u64>` (inverse of `Float::with_payload`); `Err(Error::InvalidValue)` for finite values.
-- `DecodeOptions` type for configuring a decode: input format, recursion limit, length limit, and OOM-mitigation budget. `Value::decode`, `Value::decode_hex`, `Value::read_from`, and `Value::read_hex_from` forward to a default `DecodeOptions`.
-- `Format` enum (`Binary`, `Hex`, `Diagnostic`) selecting the syntax, set via `DecodeOptions::format()`.
-- Diagnostic notation is now a first-class input: `DecodeOptions::decode` / `read_from` accept it when `Format::Diagnostic` is selected, reusing the same parser as `Value::from_str`.
-- `SequenceDecoder<'a>` and `SequenceReader<R>` iterator types for decoding CBOR sequences (RFC 8742), created via `DecodeOptions::decoder` and `DecodeOptions::sequence_reader`. Items are back-to-back in binary/hex and comma-separated in diagnostic notation; a trailing comma is accepted.
-- Optional `jiff` feature: conversions between `jiff::Timestamp`/`jiff::Zoned` and `DateTime`/`EpochTime`/`Value`.
-- `Value::new()` constructor, inferring the variant from the input type. Delegates to `TryFrom`; panics only for types whose `TryFrom` impl can fail (e.g. date/time).
+- `DecodeOptions` type for configuring a decode: input format, recursion limit, length limit, and OOM-mitigation budget.
+- `Format` enum (`Binary`, `Hex`, `Diagnostic`) selecting the syntax.
+- Diagnostic notation is now a first-class input: `DecodeOptions::decode` / `read_from` accept it when `Format::Diagnostic` is selected.
+- `SequenceDecoder<'a>` and `SequenceReader<R>` iterator types for decoding CBOR sequences, created via `DecodeOptions::sequence_decoder` and `DecodeOptions::sequence_reader`. Items are back-to-back in binary/hex and comma-separated in diagnostic notation; a trailing comma is accepted. `SequenceDecoder::new` and `DecodeOptions::sequence_decoder` accept any `&impl AsRef<[u8]>`, so `&[u8]`, `&Vec<u8>`, `&[u8; N]`, `&str`, and `&String` all work without a manual `.as_bytes()`.
+- `SequenceWriter<W>` for streaming encoding of CBOR sequences. The format is selected with the `Format` enum: in diagnostic notation the writer inserts `, ` between items; in binary and hex items are concatenated with no separator. Methods: `new`, `write_item`, `write_items`, `write_pairs`, `get_ref`, `get_mut`, `into_inner`. `write_pairs` takes `(&Value, &Value)` and emits them as two consecutive items, matching `&BTreeMap::iter()` so a map held in a `Value` streams directly into a sequence.
+- `Array::from_sequence` builds an array from any `IntoIterator<Item = Value>`.
+- `Array::try_from_sequence` builds an array from any `IntoIterator<Item = Result<Value, E>>`, short-circuiting on the first error. Consumes `SequenceDecoder` (`E = Error`) and `SequenceReader` (`E = IoError`) directly.
+- `Map::from_pairs` builds a map from a lazy iterator of key/value pairs. Auto-sorts; duplicate keys silently overwrite (last write wins).
+- `Map::try_from_pairs` is the strict variant that returns `Err(Error::NonDeterministic)` on the first duplicate key.
+- `Map::from_sequence` builds a map from a CBOR sequence of alternating key/value items. Rejects odd counts with `Error::UnexpectedEof`; rejects duplicate or out-of-order keys with `Error::NonDeterministic`, matching the binary decoder.
+- `Map::try_from_sequence` is the fallible-input variant. Takes any `IntoIterator<Item = Result<Value, E>>` where `E: From<Error>`, so a single call consumes a `SequenceDecoder` or `SequenceReader` and surfaces both iterator errors and determinism violations through one return type.
+- `Value::new()` constructor, inferring the variant from the input type. Delegates to `TryFrom`; panics for types whose `TryFrom` impl can fail (e.g. date/time).
 - `Value::byte_string()` constructor, accepting any `impl Into<Vec<u8>>`.
 - `Value::text_string()` constructor, accepting any `impl Into<String>`.
 - `Value::simple_value()` constructor for simple values from a raw `u8`. Usable in `const` context; panics for the reserved range 24-31.
-- `const` constructors for scalar `Value` variants: `Value::from_bool`, `Value::from_u64`, `Value::from_i64`, `Value::from_f32`, `Value::from_f64`, and `Value::from_payload` (non-finite float from a 53-bit payload). These are the `const` counterparts of the `From<T>` implementations; narrower integer widths and `u128`/`i128` are intentionally omitted (lossless widening covers the former, the big-integer path allocates for the latter).
-- `Float::from_f32()` and `Float::from_f64()`: `const` counterparts of `Float::from`/`Float::new`, storing the value in shortest CBOR form.
+- `const` constructors for scalar `Value` variants: `Value::from_bool`, `Value::from_u64`, `Value::from_i64`, `Value::from_f32`, `Value::from_f64`, and `Value::from_payload` (non-finite float from a 53-bit payload). `u128`/`i128` are intentionally omitted (the big-integer path allocates).
+- `Float::with_payload()` constructs a non-finite float from a 53-bit payload (§2.3.4.2), stored in shortest CBOR form.
+- `Float::to_payload()` returns the 53-bit non-finite payload as `Result<u64>` (inverse of `Float::with_payload`); `Err(Error::InvalidValue)` for finite values.
+- `Float::from_f32()` and `Float::from_f64()`: `const` counterparts of `Float::from`/`Float::new`.
 - `Display` impl for `Value`, forwarding to `Debug` (CBOR::Core diagnostic notation).
+- `Display` and `std::error::Error` implementations for `IoError`.
 - `ValueKey` accepts array- and map-valued keys zero-copy: `&[Value]`, `&Vec<Value>`, `&[Value; N]`, `&Array`, `&Map`, and `&BTreeMap` now bypass the full-`Value` allocation that was previously required to use a composite key.
+- Optional `jiff` feature: conversions between `jiff::Timestamp`/`jiff::Zoned` and `DateTime`/`EpochTime`/`Value`.
 
 ### Changed
 
 - `DataType::name()` now returns `"BigInt"` instead of `"Bigint"`.
 - Diagnostic-notation parsing now enforces the nesting depth limit. New `Error::NestingTooDeep` variant, returned by the parser and the decoder (which previously used `LengthTooLarge`).
-- `DecodeOptions::decode` (and thus `Value::decode` / `Value::decode_hex` / `FromStr`) now rejects trailing data with `Error::InvalidFormat`. In `Format::Diagnostic` trailing whitespace and comments are still accepted; nothing else is. Use `DecodeOptions::decoder` to read multi-item CBOR sequences from a slice.
+- `DecodeOptions::decode` (and thus `Value::decode` / `Value::decode_hex` / `FromStr`) now rejects trailing data with `Error::InvalidFormat`. In `Format::Diagnostic` trailing whitespace and comments are still accepted; nothing else is. Use `DecodeOptions::sequence_decoder` to read multi-item CBOR sequences from a slice.
 - `DecodeOptions::read_from` in `Format::Diagnostic` consumes whitespace, comments, and an optional top-level separator comma after the value, so repeated calls pull successive items from a sequence. Binary and hex streams are unchanged: only the item's own bytes are consumed.
 - `Value::write_to()` and `Value::write_hex_to()` now return `std::io::Result<()>` instead of `IoResult<()>`. Encoding a `Value` cannot fail with a CBOR data error, so the custom error type served no purpose on the write side.
 

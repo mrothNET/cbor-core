@@ -61,6 +61,49 @@ impl Array {
     pub fn into_inner(self) -> Vec<Value> {
         self.0
     }
+
+    /// Build an array from an iterator of values.
+    ///
+    /// This is the write-side counterpart of iterating a CBOR sequence
+    /// into an array. For the fallible input produced by
+    /// [`SequenceDecoder`](crate::SequenceDecoder) and
+    /// [`SequenceReader`](crate::SequenceReader), use
+    /// [`try_from_sequence`](Self::try_from_sequence) instead.
+    ///
+    /// ```
+    /// # use cbor_core::{Array, Value};
+    /// let a = Array::from_sequence([Value::from(1), Value::from(2), Value::from(3)]);
+    /// assert_eq!(a.get_ref().len(), 3);
+    /// ```
+    pub fn from_sequence<I>(items: I) -> Self
+    where
+        I: IntoIterator<Item = Value>,
+    {
+        Self(items.into_iter().collect())
+    }
+
+    /// Build an array from a fallible iterator of values, stopping at
+    /// the first error.
+    ///
+    /// Accepts any `IntoIterator<Item = Result<Value, E>>`, which
+    /// includes both [`SequenceDecoder`](crate::SequenceDecoder)
+    /// (`E = Error`) and [`SequenceReader`](crate::SequenceReader)
+    /// (`E = IoError`).
+    ///
+    /// ```
+    /// # use cbor_core::{Array, DecodeOptions, Error};
+    /// // Three concatenated CBOR items: 0x01, 0x02, 0x03.
+    /// let a: Array = Array::try_from_sequence(
+    ///     DecodeOptions::new().sequence_decoder(&[0x01, 0x02, 0x03]),
+    /// ).unwrap();
+    /// assert_eq!(a.get_ref().len(), 3);
+    /// ```
+    pub fn try_from_sequence<I, E>(items: I) -> Result<Self, E>
+    where
+        I: IntoIterator<Item = Result<Value, E>>,
+    {
+        items.into_iter().collect::<Result<Vec<_>, _>>().map(Self)
+    }
 }
 
 impl<T: Into<Value> + Copy> From<&[T]> for Array {

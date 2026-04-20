@@ -348,8 +348,8 @@ impl DecodeOptions {
     ///     .unwrap();
     /// assert_eq!(items.len(), 3);
     /// ```
-    pub fn sequence_decoder<'a>(&self, input: &'a [u8]) -> SequenceDecoder<'a> {
-        SequenceDecoder::with_options(self.clone(), input)
+    pub fn sequence_decoder<'a, B: AsRef<[u8]> + ?Sized>(&self, input: &'a B) -> SequenceDecoder<'a> {
+        SequenceDecoder::with_options(self.clone(), input.as_ref())
     }
 
     /// Create an iterator over a CBOR sequence read from a stream.

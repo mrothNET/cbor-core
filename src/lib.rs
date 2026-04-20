@@ -26,7 +26,8 @@
 //!   [`ValueKey`] is the key type for maps.
 //! * [`DecodeOptions`] configures the decoder and [`Format`] selects
 //!   binary, hex, or diagnostic input. [`SequenceDecoder`] and
-//!   [`SequenceReader`] iterate over CBOR sequences.
+//!   [`SequenceReader`] iterate over CBOR sequences; [`SequenceWriter`]
+//!   is their write-side counterpart.
 //! * [`Error`] and [`Result`] cover in-memory decoding; [`IoError`] and
 //!   [`IoResult`] cover `io::Read` sources.
 //!
@@ -139,6 +140,70 @@
 //! bit-for-bit. Float-width conversions go through bit patterns to
 //! avoid hardware canonicalization.
 //!
+//! # Sequences
+//!
+//! A CBOR sequence (RFC 8742) is zero or more items concatenated
+//! without framing. The library reads and writes sequences in all
+//! three formats selected by [`Format`].
+//!
+//! On the read side, [`DecodeOptions::sequence_decoder`] wraps a byte
+//! slice and yields a [`SequenceDecoder`] with
+//! `Item = Result<Value, Error>`.
+//! [`DecodeOptions::sequence_reader`] wraps any `io::Read` and yields
+//! a [`SequenceReader`] with `Item = Result<Value, IoError>`.
+//!
+//! In binary and hex, items sit back-to-back. In diagnostic notation,
+//! items are comma-separated, with an optional trailing comma.
+//!
+//! On the write side, [`SequenceWriter::new`] takes an `io::Write`
+//! and a [`Format`], to select binary, hex, or  diagnostic output.
+//! Three methods feed items in:
+//!
+//! | Method | Input |
+//! |---|---|
+//! | [`write_item`](SequenceWriter::write_item) | `&Value` |
+//! | [`write_items`](SequenceWriter::write_items) | `IntoIterator<Item = &Value>` |
+//! | [`write_pairs`](SequenceWriter::write_pairs) | `IntoIterator<Item = (&Value, &Value)>` |
+//!
+//! `write_pairs` emits each key and value as two consecutive items,
+//! matching the shape of `&BTreeMap::iter()`, so a map held in a
+//! `Value` streams straight into a sequence.
+//!
+//! [`Array`] and [`Map`] bridge between a sequence and an owned
+//! collection:
+//!
+//! | Constructor | Input | Behavior |
+//! |---|---|---|
+//! | [`Array::from_sequence`] | `IntoIterator<Item = Value>` | collects into an array |
+//! | [`Array::try_from_sequence`] | `IntoIterator<Item = Result<Value, E>>` | short-circuits on the first error |
+//! | [`Map::from_pairs`] | iterator of `(Value, Value)` | last write wins on duplicate keys |
+//! | [`Map::try_from_pairs`] | iterator of `(Value, Value)` | rejects duplicates with `Error::NonDeterministic` |
+//! | [`Map::from_sequence`] | `IntoIterator<Item = Value>` | alternating key/value; strict canonical order |
+//! | [`Map::try_from_sequence`] | `IntoIterator<Item = Result<Value, E>>` | fallible-input form of `from_sequence` |
+//!
+//! The `try_*` forms take fallible iterators directly, so a
+//! [`SequenceDecoder`] or [`SequenceReader`] can feed an [`Array`] or
+//! [`Map`] without an intermediate `Vec`.
+//! [`Map::try_from_sequence`] uses the bound `E: From<Error>`, which
+//! covers both iterators because [`IoError`] already has
+//! `From<Error>`.
+//!
+//! ```
+//! use cbor_core::{Array, DecodeOptions, Format, SequenceWriter, Value};
+//!
+//! let items = [Value::from(1), Value::from("hi"), Value::from(true)];
+//!
+//! let mut buf = Vec::new();
+//! SequenceWriter::new(&mut buf, Format::Binary)
+//!     .write_items(items.iter())
+//!     .unwrap();
+//!
+//! let array = Array::try_from_sequence(
+//!     DecodeOptions::new().sequence_decoder(&buf),
+//! ).unwrap();
+//! assert_eq!(array.get_ref().as_slice(), &items);
+//! ```
+//!
 //! # Optional features
 //!
 //! | Feature | Adds |
@@ -158,6 +223,7 @@ mod data_type;
 mod date_time;
 mod decode_options;
 mod decoder;
+mod encoder;
 mod epoch_time;
 mod error;
 mod ext;
@@ -182,6 +248,7 @@ pub use data_type::DataType;
 pub use date_time::DateTime;
 pub use decode_options::DecodeOptions;
 pub use decoder::{SequenceDecoder, SequenceReader};
+pub use encoder::SequenceWriter;
 pub use epoch_time::EpochTime;
 pub use error::{Error, IoError, IoResult, Result};
 pub use float::Float;

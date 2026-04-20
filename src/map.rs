@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 
-use crate::Value;
+use crate::{Error, Value};
 
 /// Conversion helper for [`Value::map`].
 ///
@@ -75,6 +75,141 @@ impl Map {
     #[must_use]
     pub fn into_inner(self) -> BTreeMap<Value, Value> {
         self.0
+    }
+
+    /// Build a map from a lazy iterator of key/value pairs.
+    ///
+    /// Duplicate keys silently overwrite (last write wins). Input order
+    /// does not matter; the returned map is sorted in CBOR canonical
+    /// order. For the strict variant that rejects duplicate keys, see
+    /// [`try_from_pairs`](Self::try_from_pairs).
+    ///
+    /// ```
+    /// # use cbor_core::Map;
+    /// let pairs = [("a", 1), ("b", 2), ("a", 3)];
+    /// let m = Map::from_pairs(pairs);
+    /// assert_eq!(m.get_ref().len(), 2);
+    /// ```
+    pub fn from_pairs<K, V, I>(pairs: I) -> Self
+    where
+        K: Into<Value>,
+        V: Into<Value>,
+        I: IntoIterator<Item = (K, V)>,
+    {
+        Self(pairs.into_iter().map(|(k, v)| (k.into(), v.into())).collect())
+    }
+
+    /// Build a map from a lazy iterator of key/value pairs, rejecting
+    /// duplicate keys.
+    ///
+    /// Returns [`Error::NonDeterministic`] on the first duplicate.
+    /// Input order does not matter; the returned map is sorted in CBOR
+    /// canonical order. For the lenient variant, see
+    /// [`from_pairs`](Self::from_pairs).
+    ///
+    /// ```
+    /// # use cbor_core::{Map, Error};
+    /// let ok = Map::try_from_pairs([("a", 1), ("b", 2)]).unwrap();
+    /// assert_eq!(ok.get_ref().len(), 2);
+    ///
+    /// let err = Map::try_from_pairs([("a", 1), ("a", 2)]).unwrap_err();
+    /// assert_eq!(err, Error::NonDeterministic);
+    /// ```
+    pub fn try_from_pairs<K, V, I>(pairs: I) -> Result<Self, Error>
+    where
+        K: Into<Value>,
+        V: Into<Value>,
+        I: IntoIterator<Item = (K, V)>,
+    {
+        let mut map = BTreeMap::new();
+        for (k, v) in pairs {
+            if map.insert(k.into(), v.into()).is_some() {
+                return Err(Error::NonDeterministic);
+            }
+        }
+        Ok(Self(map))
+    }
+
+    /// Build a map from a CBOR sequence of alternating key/value items.
+    ///
+    /// Applies the same determinism checks as the binary decoder:
+    ///
+    /// * An odd number of items returns [`Error::UnexpectedEof`]
+    ///   (a key with no following value).
+    /// * A duplicate key returns [`Error::NonDeterministic`].
+    /// * A key that is not strictly greater than the previous key
+    ///   returns [`Error::NonDeterministic`].
+    ///
+    /// For the fallible input produced by
+    /// [`SequenceDecoder`](crate::SequenceDecoder) and
+    /// [`SequenceReader`](crate::SequenceReader), use
+    /// [`try_from_sequence`](Self::try_from_sequence).
+    ///
+    /// ```
+    /// # use cbor_core::{Map, Value};
+    /// let items = [Value::from("a"), Value::from(1), Value::from("b"), Value::from(2)];
+    /// let m = Map::from_sequence(items).unwrap();
+    /// assert_eq!(m.get_ref().len(), 2);
+    /// ```
+    pub fn from_sequence<I>(items: I) -> Result<Self, Error>
+    where
+        I: IntoIterator<Item = Value>,
+    {
+        let mut iter = items.into_iter();
+        let mut map: BTreeMap<Value, Value> = BTreeMap::new();
+        while let Some(key) = iter.next() {
+            let value = iter.next().ok_or(Error::UnexpectedEof)?;
+            if let Some((last_key, _)) = map.last_key_value()
+                && *last_key >= key
+            {
+                return Err(Error::NonDeterministic);
+            }
+            map.insert(key, value);
+        }
+        Ok(Self(map))
+    }
+
+    /// Build a map from a fallible sequence of alternating key/value
+    /// items, stopping at the first error.
+    ///
+    /// Accepts any `IntoIterator<Item = Result<Value, E>>` whose error
+    /// type can carry a CBOR [`Error`] (via `E: From<Error>`). This
+    /// covers both [`SequenceDecoder`](crate::SequenceDecoder)
+    /// (`E = Error`) and [`SequenceReader`](crate::SequenceReader)
+    /// (`E = IoError`).
+    ///
+    /// Determinism checks are the same as
+    /// [`from_sequence`](Self::from_sequence) and are surfaced through
+    /// `E`'s `From<Error>` implementation.
+    ///
+    /// ```
+    /// # use cbor_core::{DecodeOptions, Format, Map};
+    /// // Diagnostic-notation sequence: "a": 1, "b": 2
+    /// let m = Map::try_from_sequence(
+    ///     DecodeOptions::new()
+    ///         .format(Format::Diagnostic)
+    ///         .sequence_decoder(br#""a", 1, "b", 2"#),
+    /// ).unwrap();
+    /// assert_eq!(m.get_ref().len(), 2);
+    /// ```
+    pub fn try_from_sequence<I, E>(items: I) -> Result<Self, E>
+    where
+        I: IntoIterator<Item = Result<Value, E>>,
+        E: From<Error>,
+    {
+        let mut iter = items.into_iter();
+        let mut map: BTreeMap<Value, Value> = BTreeMap::new();
+        while let Some(key) = iter.next() {
+            let key = key?;
+            let value = iter.next().ok_or(Error::UnexpectedEof)??;
+            if let Some((last_key, _)) = map.last_key_value()
+                && *last_key >= key
+            {
+                return Err(Error::NonDeterministic.into());
+            }
+            map.insert(key, value);
+        }
+        Ok(Self(map))
     }
 }
 
