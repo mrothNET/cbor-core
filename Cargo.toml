@@ -9,7 +9,7 @@ documentation = "https://docs.rs/cbor-core"
 repository = "https://github.com/mrothNET/cbor-core"
 keywords = ["cbor", "encoding", "decoding", "serialization", "deterministic"]
 categories = ["encoding", "data-structures"]
-exclude = [".*", "Cargo.lock", "Dockerfile.ci", "ci-local.sh"]
+exclude = [".*", "Dockerfile.ci", "*.sh"]
 
 [features]
 ## Add interoperability with num-bigint crate
