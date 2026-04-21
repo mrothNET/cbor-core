@@ -6,6 +6,7 @@
 
 - `EncodeFormat` enum for selecting CBOR output format on `SequenceWriter`. Variants: `Binary`, `Hex`, `Diagnostic`, and `DiagnosticPretty`.
 - `From<Format> for EncodeFormat`, so any existing `SequenceWriter::new(w, Format::X)` call site continues to compile unchanged.
+- `From<Value> for ValueKey`, so an owned `Value` (for example a `const` key) can be passed directly to `Value::get`/`Index`/etc. without taking a reference.
 
 ### Changed
 
