@@ -27,7 +27,7 @@
 //! * [`DecodeOptions`] configures the decoder and [`Format`] selects
 //!   binary, hex, or diagnostic input. [`SequenceDecoder`] and
 //!   [`SequenceReader`] iterate over CBOR sequences; [`SequenceWriter`]
-//!   is their write-side counterpart.
+//!   is their encode-side counterpart, configured with [`EncodeFormat`].
 //! * [`Error`] and [`Result`] cover in-memory decoding; [`IoError`] and
 //!   [`IoResult`] cover `io::Read` sources.
 //!
@@ -143,8 +143,10 @@
 //! # Sequences
 //!
 //! A CBOR sequence (RFC 8742) is zero or more items concatenated
-//! without framing. The library reads and writes sequences in all
-//! three formats selected by [`Format`].
+//! without framing. The read side is configured with [`Format`]; the
+//! encode side uses [`EncodeFormat`], which adds output-only variants
+//! ([`DiagnosticPretty`](EncodeFormat::DiagnosticPretty)) and accepts
+//! any `Format` through `impl Into<EncodeFormat>`.
 //!
 //! On the read side, [`DecodeOptions::sequence_decoder`] wraps a byte
 //! slice and yields a [`SequenceDecoder`] with
@@ -155,9 +157,10 @@
 //! In binary and hex, items sit back-to-back. In diagnostic notation,
 //! items are comma-separated, with an optional trailing comma.
 //!
-//! On the write side, [`SequenceWriter::new`] takes an `io::Write`
-//! and a [`Format`], to select binary, hex, or  diagnostic output.
-//! Three methods feed items in:
+//! On the encode side, [`SequenceWriter::new`] takes an `io::Write`
+//! and an `impl Into<EncodeFormat>`, so a [`Format`] or an
+//! [`EncodeFormat`] can be passed directly. Three methods feed items
+//! in:
 //!
 //! | Method | Input |
 //! |---|---|
@@ -252,7 +255,7 @@ pub use encoder::SequenceWriter;
 pub use epoch_time::EpochTime;
 pub use error::{Error, IoError, IoResult, Result};
 pub use float::Float;
-pub use format::Format;
+pub use format::{EncodeFormat, Format};
 pub use map::Map;
 pub use simple_value::SimpleValue;
 pub use value::Value;
