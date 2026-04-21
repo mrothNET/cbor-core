@@ -3,3 +3,4 @@ rfc
 target
 .cache
 Cargo.lock
+.DS_store
