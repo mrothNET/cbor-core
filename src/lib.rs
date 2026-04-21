@@ -59,7 +59,7 @@
 //!
 //! # Diagnostic notation
 //!
-//! `Value` implements [`FromStr`](std::str::FromStr), so any CBOR value can
+//! [`Value`] implements [`FromStr`](std::str::FromStr), so any CBOR value can
 //! be written as text and parsed with `str::parse`. This is often the
 //! shortest way to build a literal value in a test, a fixture, or an
 //! example, and it avoids manual `Value::from` chains for nested data.
@@ -90,7 +90,7 @@
 //! // << ... >> wraps a CBOR sequence into a byte string
 //! assert_eq!(
 //!     "<< 1, 2, 3 >>".parse::<Value>().unwrap(),
-//!     Value::ByteString(vec![0x01, 0x02, 0x03]),
+//!     Value::from(vec![0x01, 0x02, 0x03]),
 //! );
 //! ```
 //!
@@ -126,7 +126,7 @@
 //! block `/ ... /` comments.
 //!
 //! The parser accepts non-canonical input (for example unsorted maps and
-//! non-shortest numbers), normalizes it, and produces a canonical `Value`.
+//! non-shortest numbers), normalizes it, and produces a canonical [`Value`].
 //! Round-tripping `format!("{v:?}").parse::<Value>()` always yields the
 //! original value.
 //!
@@ -142,11 +142,11 @@
 //!
 //! # Sequences
 //!
-//! A CBOR sequence (RFC 8742) is zero or more items concatenated
+//! A CBOR sequence is zero or more items concatenated
 //! without framing. The read side is configured with [`Format`]; the
 //! encode side uses [`EncodeFormat`], which adds output-only variants
 //! ([`DiagnosticPretty`](EncodeFormat::DiagnosticPretty)) and accepts
-//! any `Format` through `impl Into<EncodeFormat>`.
+//! any [`Format`] through `impl Into<EncodeFormat>`.
 //!
 //! On the read side, [`DecodeOptions::sequence_decoder`] wraps a byte
 //! slice and yields a [`SequenceDecoder`] with
@@ -159,30 +159,33 @@
 //!
 //! On the encode side, [`SequenceWriter::new`] takes an `io::Write`
 //! and an `impl Into<EncodeFormat>`, so a [`Format`] or an
-//! [`EncodeFormat`] can be passed directly. Three methods feed items
-//! in:
+//! [`EncodeFormat`] can be passed directly. Items are fed in through:
 //!
-//! | Method | Input |
-//! |---|---|
-//! | [`write_item`](SequenceWriter::write_item) | `&Value` |
-//! | [`write_items`](SequenceWriter::write_items) | `IntoIterator<Item = &Value>` |
-//! | [`write_pairs`](SequenceWriter::write_pairs) | `IntoIterator<Item = (&Value, &Value)>` |
-//!
-//! `write_pairs` emits each key and value as two consecutive items,
-//! matching the shape of `&BTreeMap::iter()`, so a map held in a
-//! `Value` streams straight into a sequence.
+//! * [`write_item`](SequenceWriter::write_item) for a single `&Value`.
+//! * [`write_items`](SequenceWriter::write_items) for any
+//!   `IntoIterator<Item = &Value>`.
+//! * [`write_pairs`](SequenceWriter::write_pairs) for an
+//!   `IntoIterator<Item = (&Value, &Value)>`, which emits each key
+//!   and value as two consecutive items. This matches the shape of
+//!   `&BTreeMap::iter()`, so a map held in a `Value` streams straight
+//!   into a sequence.
 //!
 //! [`Array`] and [`Map`] bridge between a sequence and an owned
 //! collection:
 //!
-//! | Constructor | Input | Behavior |
-//! |---|---|---|
-//! | [`Array::from_sequence`] | `IntoIterator<Item = Value>` | collects into an array |
-//! | [`Array::try_from_sequence`] | `IntoIterator<Item = Result<Value, E>>` | short-circuits on the first error |
-//! | [`Map::from_pairs`] | iterator of `(Value, Value)` | last write wins on duplicate keys |
-//! | [`Map::try_from_pairs`] | iterator of `(Value, Value)` | rejects duplicates with `Error::NonDeterministic` |
-//! | [`Map::from_sequence`] | `IntoIterator<Item = Value>` | alternating key/value; strict canonical order |
-//! | [`Map::try_from_sequence`] | `IntoIterator<Item = Result<Value, E>>` | fallible-input form of `from_sequence` |
+//! * [`Array::from_sequence`] collects an `IntoIterator<Item = Value>`
+//!   into an array.
+//! * [`Array::try_from_sequence`] takes a fallible iterator
+//!   (`Item = Result<Value, E>`) and short-circuits on the first
+//!   error.
+//! * [`Map::from_pairs`] consumes `(Value, Value)` pairs with
+//!   last-write-wins on duplicate keys.
+//! * [`Map::try_from_pairs`] rejects duplicates with
+//!   [`Error::NonDeterministic`].
+//! * [`Map::from_sequence`] takes an `IntoIterator<Item = Value>` of
+//!   alternating key and value items in strict canonical order.
+//! * [`Map::try_from_sequence`] is the fallible-input form of
+//!   [`from_sequence`](Map::from_sequence).
 //!
 //! The `try_*` forms take fallible iterators directly, so a
 //! [`SequenceDecoder`] or [`SequenceReader`] can feed an [`Array`] or

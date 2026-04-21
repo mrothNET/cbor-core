@@ -203,7 +203,7 @@ fn from_integers() {
 }
 
 #[test]
-fn from_simple_value_struct() {
+fn from_simple_value() {
     assert_eq!(Value::from(SimpleValue::NULL), Value::null());
     assert_eq!(Value::from(SimpleValue::TRUE), Value::from(true));
 }

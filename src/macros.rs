@@ -4,6 +4,10 @@
 ///
 /// ```
 /// # use cbor_core::{array, Value};
+///
+/// let empty = array![];
+/// assert_eq!(empty.len(), Some(0));
+///
 /// let v = array![1, "hello", true];
 /// assert!(v.data_type().is_array());
 /// ```
@@ -23,6 +27,10 @@ macro_rules! array {
 ///
 /// ```
 /// # use cbor_core::{map, Value};
+///
+/// let empty = map!{};
+/// assert_eq!(empty.len(), Some(0));
+///
 /// let m = map! { "x" => 1, "y" => 2 };
 /// assert!(m.data_type().is_map());
 /// ```
