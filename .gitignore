@@ -1,5 +1,6 @@
 .vscode
+.cache
+.DS_Store
 rfc
 target
-.cache
 Cargo.lock
