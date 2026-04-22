@@ -8,7 +8,7 @@ use std::{
     io::{Read, Write},
 };
 
-use cbor_core::{DecodeOptions, Error, Format, SequenceWriter, Value};
+use cbor_core::{DecodeOptions, EncodeFormat, Error, Format, SequenceWriter, Value};
 
 const USAGE: &str = "\
 Usage: cbor2diag {-x | -b} [HEX]
@@ -78,7 +78,7 @@ fn read_stdin_bytes() -> Vec<u8> {
 }
 
 fn write_diagnostic(output: impl Write, values: &[Value]) -> std::io::Result<()> {
-    let mut writer = SequenceWriter::new(output, Format::Diagnostic);
+    let mut writer = SequenceWriter::new(output, EncodeFormat::DiagnosticPretty);
     writer.write_items(values)?;
     writeln!(writer.get_mut())
 }

@@ -69,6 +69,12 @@ impl<'a> ValueKey<'a> {
     }
 }
 
+impl<'a> From<Value> for ValueKey<'a> {
+    fn from(value: Value) -> Self {
+        Self(Inner::Other(Cow::Owned(value)))
+    }
+}
+
 impl<'a> From<&'a Value> for ValueKey<'a> {
     fn from(value: &'a Value) -> Self {
         Self(Inner::Other(Cow::Borrowed(value)))

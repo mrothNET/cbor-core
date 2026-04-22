@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.7.1 - 2026-04-22
+
+### Added
+
+- `EncodeFormat` enum for selecting CBOR output format on `SequenceWriter`. Variants: `Binary`, `Hex`, `Diagnostic`, and `DiagnosticPretty`.
+- `From<Format> for EncodeFormat`, so any existing `SequenceWriter::new(w, Format::X)` call site continues to compile unchanged.
+- `From<Value> for ValueKey`, so an owned `Value` (for example a `const` key) can be passed directly to `Value::get`/`Index`/etc. without taking a reference.
+
+### Changed
+
+- `SequenceWriter::new` now accepts `impl Into<EncodeFormat>` instead of `Format` and rops the `const fn` marker.
+- `cbor2diag` example emits pretty-printed diagnostic notation.
+
+
 ## 0.7.0 — 2026-04-20
 
 ### Added

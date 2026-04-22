@@ -36,8 +36,10 @@ run_ci() {
       echo --  Build: $1 &&
       echo -- &&
       echo &&
-      cargo build --all-features &&
-      cargo build --all-features --release &&
+      cargo build --all-targets &&
+      cargo build --all-targets --release &&
+      cargo build --all-targets --all-features &&
+      cargo build --all-targets --all-features --release &&
       echo &&
       echo -- &&
       echo --  Test: $1 &&

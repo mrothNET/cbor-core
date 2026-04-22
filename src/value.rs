@@ -42,7 +42,7 @@ use crate::{
 /// let b = Value::from(true);
 /// ```
 ///
-/// The `array!` and `map!` macros build arrays and maps from literals:
+/// The [`array!`](crate::array) and [`map!`](crate::map) macros build arrays and maps from literals:
 ///
 /// ```
 /// use cbor_core::{Value, array, map};
@@ -105,7 +105,7 @@ use crate::{
 /// Scalar variants can also be built in `const` context. These are the
 /// `const` counterparts of the `From<T>` implementations. Use them for
 /// `const` items; in non-`const` code the shorter `Value::from(v)` or
-/// `Value::new(v)` spellings are preferred.
+/// [`Value::new(v)`](Value::new) spellings are preferred.
 ///
 /// | Constructor | Builds |
 /// |---|---|
@@ -171,8 +171,8 @@ use crate::{
 /// # Accessors
 ///
 /// Accessor methods extract or borrow the inner data of each variant.
-/// All return `Result<T>`, yielding `Err(Error::IncompatibleType)` on a
-/// type mismatch. The naming follows Rust conventions:
+/// All return [`Result<T>`](crate::Result), yielding [`Err(Error::IncompatibleType)`](Error::IncompatibleType)
+/// on a type mismatch. The naming follows Rust conventions:
 ///
 /// | Prefix | Meaning | Returns |
 /// |---|---|---|
@@ -192,8 +192,8 @@ use crate::{
 ///
 /// | Method | Returns | Notes |
 /// |---|---|---|
-/// | [`to_simple_value`](Self::to_simple_value) | `Result<u8>` | Raw simple value number |
-/// | [`to_bool`](Self::to_bool) | `Result<bool>` | Only for `true`/`false` |
+/// | [`to_simple_value`](Self::to_simple_value) | [`Result<u8>`](crate::Result) | Raw simple value number |
+/// | [`to_bool`](Self::to_bool) | [`Result<bool>`](crate::Result) | Only for `true`/`false` |
 ///
 /// ```
 /// use cbor_core::Value;
@@ -215,14 +215,14 @@ use crate::{
 /// This is handled transparently by the API.
 ///
 /// The `to_*` accessors perform checked
-/// narrowing into any Rust integer type, returning `Err(Overflow)` if
-/// the value does not fit, or `Err(NegativeUnsigned)` when extracting a
-/// negative value into an unsigned type.
+/// narrowing into any Rust integer type, returning [`Err(Overflow)`](Error::Overflow)
+/// if the value does not fit, or [`Err(NegativeUnsigned)`](Error::NegativeUnsigned)
+/// when extracting a negative value into an unsigned type.
 ///
 /// | Method | Returns |
 /// |---|---|
-/// | [`to_u8`](Self::to_u8) .. [`to_u128`](Self::to_u128), [`to_usize`](Self::to_usize) | `Result<uN>` |
-/// | [`to_i8`](Self::to_i8) .. [`to_i128`](Self::to_i128), [`to_isize`](Self::to_isize) | `Result<iN>` |
+/// | [`to_u8`](Self::to_u8) .. [`to_u128`](Self::to_u128), [`to_usize`](Self::to_usize) | [`Result<uN>`](crate::Result) |
+/// | [`to_i8`](Self::to_i8) .. [`to_i128`](Self::to_i128), [`to_isize`](Self::to_isize) | [`Result<iN>`](crate::Result) |
 ///
 /// ```
 /// use cbor_core::Value;
@@ -242,14 +242,14 @@ use crate::{
 /// Floats are stored internally in their shortest CBOR encoding (`f16`,
 /// `f32`, or `f64`). [`to_f64`](Self::to_f64) always succeeds since every
 /// float can widen to `f64`. [`to_f32`](Self::to_f32) fails with
-/// `Err(Precision)` if the value is stored as `f64`.
+/// [`Err(Precision)`](Error::Precision) if the value is stored as `f64`.
 /// A float internally stored as `f16` can always be converted to either
 /// an `f32` or `f64` for obvious reasons.
 ///
 /// | Method | Returns |
 /// |---|---|
-/// | [`to_f32`](Self::to_f32) | `Result<f32>` (fails for f64 values) |
-/// | [`to_f64`](Self::to_f64) | `Result<f64>` |
+/// | [`to_f32`](Self::to_f32) | [`Result<f32>`](crate::Result) (fails for f64 values) |
+/// | [`to_f64`](Self::to_f64) | [`Result<f64>`](crate::Result) |
 ///
 /// ```
 /// use cbor_core::Value;
@@ -516,12 +516,13 @@ use crate::{
 /// Big integers are internally represented as tagged byte strings
 /// (tags 2 and 3). The integer accessors recognise these tags and
 /// decode the bytes automatically, even when wrapped in additional
-/// custom tags. Byte-level accessors like `as_bytes()` also see
-/// through tags, so calling `as_bytes()` on a big integer returns
-/// the raw payload bytes.
+/// custom tags. Byte-level accessors like [`as_bytes()`](Self::as_bytes)
+/// also see through tags, so calling [`as_bytes()`](Self::as_bytes)
+/// on a big integer returns the raw payload bytes.
 ///
-/// If a tag is removed via `remove_tag`, `remove_all_tags`, or by
-/// consuming through `into_tag`, the value becomes a plain byte
+/// If a tag is removed via [`remove_tag`](Self::remove_tag),
+/// [`remove_all_tags`](Self::remove_all_tags), or by consuming through
+/// [`into_tag`](Self::into_tag), the value becomes a plain byte
 /// string and can no longer be read as an integer.
 ///
 /// # Type introspection
@@ -878,7 +879,7 @@ impl Value {
     /// [`DateTime`] helper.
     ///
     /// The date must be within
-    /// `0001-01-01T00:00:00Z` to `9999-12-31T23:59:59Z`.
+    /// `0000-01-01T00:00:00Z` to `9999-12-31T23:59:59Z`.
     ///
     /// # Panics
     ///
@@ -1447,10 +1448,10 @@ impl Value {
     /// strings may include a timezone offset, which is converted to
     /// UTC.
     ///
-    /// Returns `Err(IncompatibleType)` for values that are neither
-    /// numeric nor text, `Err(InvalidValue)` if a numeric value is out of
-    /// range, and `Err(InvalidFormat)` if a text string is not a
-    /// valid RFC 3339 timestamp. Leap seconds (`:60`) are rejected
+    /// Returns [`Err(IncompatibleType)`](Error::IncompatibleType) for
+    /// values that are neither numeric nor text, [`Err(InvalidValue)`](Error::InvalidValue)
+    /// if a numeric value is out of range, and [`Err(InvalidFormat)`](Error::InvalidFormat)
+    /// if a text string is not a valid RFC 3339 timestamp. Leap seconds (`:60`) are rejected
     /// because [`SystemTime`] cannot represent them.
     ///
     /// ```

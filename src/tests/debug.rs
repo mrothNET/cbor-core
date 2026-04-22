@@ -38,7 +38,7 @@ fn int_u64_max() {
 }
 
 #[test]
-fn int_neg_u64_max_minus_1() {
+fn int_neg_u64_max() {
     // Negative(u64::MAX) = -1 - u64::MAX = -18446744073709551616
     let value = Value::Negative(u64::MAX);
     assert_eq!(format!("{value:?}"), "-18446744073709551616");
