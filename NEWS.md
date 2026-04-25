@@ -3,6 +3,13 @@
 A deterministic CBOR::Core encoder and decoder for Rust, tracking
 `draft-rundgren-cbor-core-25`.
 
+## 0.8.0
+
+- Serde conversion between Rust types and CBOR values is now done
+  through methods on the value type, and the serde error type was
+  renamed.
+- A few short serde examples join the existing set.
+
 ## 0.7.0
 
 - CBOR sequences are now supported on both sides, with
