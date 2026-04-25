@@ -76,3 +76,19 @@ serde_bytes = "0.11"
 
 [package.metadata.docs.rs]
 all-features = true
+
+[[example]]
+name = "serde_struct"
+required-features = ["serde"]
+
+[[example]]
+name = "serde_enum_unit"
+required-features = ["serde"]
+
+[[example]]
+name = "serde_enum_tuple"
+required-features = ["serde"]
+
+[[example]]
+name = "serde_enum_struct"
+required-features = ["serde"]
