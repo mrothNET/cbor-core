@@ -10,18 +10,33 @@ if [ "$(sed -n '1p' Cargo.toml 2>/dev/null)" != '[package]' ] \
   exit 1
 fi
 
-if [ "${1:-}" = "--clean" ]; then
+cmd_help() {
+  cat <<EOF
+Usage: $0 <command>
+
+Commands:
+  run     Run build, test, and clippy in CI containers (amd64 and i386)
+  build   Build the CI container images
+  clean   Remove cached cargo and target directories
+  help    Show this help message (also --help, -h)
+EOF
+}
+
+cmd_clean() {
   rm -rf "$CACHE_DIR/cargo-amd64" "$CACHE_DIR/cargo-i386" \
          "$CACHE_DIR/target-amd64" "$CACHE_DIR/target-i386"
   rmdir "$CACHE_DIR" 2>/dev/null || true
-  exit 0
-fi
+}
 
-if [ "${1:-}" = "--build" ]; then
+cmd_build() {
   podman build -f Dockerfile.ci --pull --platform linux/amd64 -t $IMAGE_NAME:amd64 .
   podman build -f Dockerfile.ci --pull --platform linux/386   -t $IMAGE_NAME:i386  .
-  exit 0
-fi
+}
+
+cmd_run() {
+  run_ci amd64
+  run_ci i386
+}
 
 run_ci() {
   mkdir -p "$CACHE_DIR/cargo-$1" "$CACHE_DIR/target-$1"
@@ -56,5 +71,17 @@ run_ci() {
     "
 }
 
-run_ci amd64
-run_ci i386
+case "${1:-}" in
+  help|--help|-h) cmd_help ;;
+  clean)          cmd_clean ;;
+  build)          cmd_build ;;
+  run)            cmd_run ;;
+  "")
+    echo "Error: a command is required. Run '$0 help' for usage." >&2
+    exit 1
+    ;;
+  *)
+    echo "Error: unknown command '$1'. Run '$0 help' for usage." >&2
+    exit 1
+    ;;
+esac
