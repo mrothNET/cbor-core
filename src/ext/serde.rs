@@ -1,19 +1,21 @@
 //! Serde integration for CBOR [`Value`].
 //!
 //! This module provides [`Serialize`] and [`Deserialize`] implementations
-//! for [`Value`], as well as the convenience functions [`to_value`] and
-//! [`from_value`] for converting between arbitrary Rust types and
-//! [`Value`] through serde.
+//! for [`Value`]. Conversion between arbitrary Rust types and [`Value`]
+//! is performed through the inherent methods [`Value::serialized`] and
+//! [`Value::deserialized`]. The module also defines the
+//! [`SerdeError`] type returned by these conversions.
 //!
 //! # Converting Rust types to `Value`
 //!
 //! Any type that implements [`Serialize`] can be converted into a
-//! [`Value`] with [`to_value`]:
+//! [`Value`] with [`Value::serialized`]:
 //!
 //! ```
-//! use cbor_core::serde::to_value;
+//! use cbor_core::Value;
+//! use serde::Serialize;
 //!
-//! #[derive(serde::Serialize)]
+//! #[derive(Serialize)]
 //! struct Sensor {
 //!     id: u32,
 //!     label: String,
@@ -26,7 +28,7 @@
 //!     readings: vec![20.5, 21.0, 19.8],
 //! };
 //!
-//! let v = to_value(&s).unwrap();
+//! let v = Value::serialized(&s).unwrap();
 //! assert_eq!(v["id"].to_u32().unwrap(), 7);
 //! assert_eq!(v["label"].as_str().unwrap(), "temperature");
 //! assert_eq!(v["readings"][0].to_f64().unwrap(), 20.5);
@@ -34,14 +36,14 @@
 //!
 //! # Converting `Value` to Rust types
 //!
-//! [`from_value`] goes the other direction, extracting a
+//! [`Value::deserialized`] goes the other direction, extracting a
 //! [`Deserialize`] type from a [`Value`]:
 //!
 //! ```
 //! use cbor_core::{Value, map, array};
-//! use cbor_core::serde::from_value;
+//! use serde::Deserialize;
 //!
-//! #[derive(serde::Deserialize, Debug, PartialEq)]
+//! #[derive(Deserialize, Debug, PartialEq)]
 //! struct Sensor {
 //!     id: u32,
 //!     label: String,
@@ -54,9 +56,30 @@
 //!     "readings" => array![20.5, 21.0, 19.8],
 //! };
 //!
-//! let s: Sensor = from_value(&v).unwrap();
+//! let s: Sensor = v.deserialized().unwrap();
 //! assert_eq!(s.id, 7);
 //! assert_eq!(s.label, "temperature");
+//! ```
+//!
+//! # Going directly between bytes and Rust types
+//!
+//! Combining [`Value::serialized`] / [`Value::deserialized`] with
+//! [`Value::encode`], [`Value::decode`], [`Value::encode_hex`], and
+//! [`Value::decode_hex`] gives concise round-trips through the wire
+//! format:
+//!
+//! ```
+//! use cbor_core::Value;
+//! use serde::{Deserialize, Serialize};
+//!
+//! #[derive(Serialize, Deserialize, Debug, PartialEq)]
+//! struct Point { x: i32, y: i32 }
+//!
+//! let p = Point { x: 1, y: 2 };
+//!
+//! let hex = Value::serialized(&p).unwrap().encode_hex();
+//! let back: Point = Value::decode_hex(&hex).unwrap().deserialized().unwrap();
+//! assert_eq!(back, p);
 //! ```
 //!
 //! # Serializing `Value` with other formats
@@ -78,7 +101,7 @@
 //!
 //! The serde data model does not have a notion of CBOR tags or simple
 //! values. During deserialization, tags are stripped and their inner
-//! content is used directly — with the exception of big integers
+//! content is used directly, with the exception of big integers
 //! (tags 2 and 3), which are recognized and deserialized as integers.
 //! During serialization, tags are only emitted for big integers that
 //! exceed the `u64`/`i64` range; all other values are untagged.
@@ -105,72 +128,76 @@ use crate::Value;
 ///
 /// This is a string-based error type, separate from [`crate::Error`],
 /// because serde requires error types to support arbitrary messages
-/// via [`ser::Error::custom`] and [`de::Error::custom`].
+/// via [`ser::Error::custom`] and [`de::Error::custom`]. The contained
+/// message is accessible directly through the public field.
 #[derive(Debug, Clone)]
-pub struct Error(String);
+pub struct SerdeError(pub String);
 
-impl fmt::Display for Error {
+impl fmt::Display for SerdeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
     }
 }
 
-impl std::error::Error for Error {}
+impl std::error::Error for SerdeError {}
 
-impl ser::Error for Error {
+impl ser::Error for SerdeError {
     fn custom<T: fmt::Display>(msg: T) -> Self {
-        Error(msg.to_string())
+        SerdeError(msg.to_string())
     }
 }
 
-impl de::Error for Error {
+impl de::Error for SerdeError {
     fn custom<T: fmt::Display>(msg: T) -> Self {
-        Error(msg.to_string())
+        SerdeError(msg.to_string())
     }
 }
 
-impl From<crate::Error> for Error {
+impl From<crate::Error> for SerdeError {
     fn from(error: crate::Error) -> Self {
-        Error(error.to_string())
+        SerdeError(error.to_string())
     }
 }
 
 // ---------------------------------------------------------------------------
-// Public API
+// Public API on Value
 // ---------------------------------------------------------------------------
 
-/// Convert any `Serialize` value into a CBOR [`Value`].
-///
-/// ```
-/// use cbor_core::Value;
-/// use cbor_core::serde::to_value;
-///
-/// #[derive(serde::Serialize)]
-/// struct Point { x: i32, y: i32 }
-///
-/// let v = to_value(&Point { x: 1, y: 2 }).unwrap();
-/// assert_eq!(v["x"].to_i32().unwrap(), 1);
-/// assert_eq!(v["y"].to_i32().unwrap(), 2);
-/// ```
-pub fn to_value<T: Serialize + ?Sized>(value: &T) -> Result<Value, Error> {
-    value.serialize(ValueSerializer)
-}
+impl Value {
+    /// Serialize any [`Serialize`] value into a CBOR [`Value`].
+    ///
+    /// ```
+    /// use cbor_core::Value;
+    /// use serde::Serialize;
+    ///
+    /// #[derive(Serialize)]
+    /// struct Point { x: i32, y: i32 }
+    ///
+    /// let p = Point { x: 1, y: 2 };
+    /// let v = Value::serialized(&p).unwrap();
+    /// assert_eq!(v["x"].to_i32().unwrap(), 1);
+    /// assert_eq!(v["y"].to_i32().unwrap(), 2);
+    /// ```
+    pub fn serialized<T: ?Sized + Serialize>(value: &T) -> Result<Self, SerdeError> {
+        value.serialize(ValueSerializer)
+    }
 
-/// Convert a CBOR [`Value`] into any `Deserialize` type.
-///
-/// ```
-/// use cbor_core::{Value, map};
-/// use cbor_core::serde::from_value;
-///
-/// #[derive(serde::Deserialize, Debug, PartialEq)]
-/// struct Point { x: i32, y: i32 }
-///
-/// let v = map! { "x" => 1, "y" => 2 };
-/// let p: Point = from_value(&v).unwrap();
-/// assert_eq!(p, Point { x: 1, y: 2 });
-/// ```
-pub fn from_value<'de, T: Deserialize<'de>>(value: &'de Value) -> Result<T, Error> {
-    T::deserialize(ValueDeserializer(value))
+    /// Deserialize this [`Value`] into any [`Deserialize`] type.
+    ///
+    /// ```
+    /// use cbor_core::{Value, map};
+    /// use serde::Deserialize;
+    ///
+    /// #[derive(Deserialize, Debug, PartialEq)]
+    /// struct Point { x: i32, y: i32 }
+    ///
+    /// let v = map! { "x" => 1, "y" => 2 };
+    /// let p: Point = v.deserialized().unwrap();
+    /// assert_eq!(p, Point { x: 1, y: 2 });
+    /// ```
+    pub fn deserialized<'de, T: Deserialize<'de>>(&'de self) -> Result<T, SerdeError> {
+        T::deserialize(ValueDeserializer(self))
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -211,7 +238,7 @@ impl Serialize for Value {
                 }
                 m.end()
             }
-            // Tags are transparent — serialize the inner content.
+            // Tags are transparent: serialize the inner content.
             Value::Tag(_, content) => content.serialize(serializer),
         }
     }
@@ -309,7 +336,7 @@ struct ValueSerializer;
 
 macro_rules! serialize {
     ($method:ident, $type:ty) => {
-        fn $method(self, v: $type) -> Result<Value, Error> {
+        fn $method(self, v: $type) -> Result<Value, SerdeError> {
             Ok(Value::from(v))
         }
     };
@@ -317,7 +344,7 @@ macro_rules! serialize {
 
 impl ser::Serializer for ValueSerializer {
     type Ok = Value;
-    type Error = Error;
+    type Error = SerdeError;
 
     type SerializeSeq = SeqBuilder;
     type SerializeTuple = SeqBuilder;
@@ -344,26 +371,26 @@ impl ser::Serializer for ValueSerializer {
     serialize!(serialize_f32, f32);
     serialize!(serialize_f64, f64);
 
-    fn serialize_char(self, v: char) -> Result<Value, Error> {
+    fn serialize_char(self, v: char) -> Result<Value, SerdeError> {
         Ok(Value::from(v.to_string()))
     }
 
     serialize!(serialize_str, &str);
     serialize!(serialize_bytes, &[u8]);
 
-    fn serialize_none(self) -> Result<Value, Error> {
+    fn serialize_none(self) -> Result<Value, SerdeError> {
         Ok(Value::null())
     }
 
-    fn serialize_some<T: ?Sized + Serialize>(self, value: &T) -> Result<Value, Error> {
+    fn serialize_some<T: ?Sized + Serialize>(self, value: &T) -> Result<Value, SerdeError> {
         value.serialize(self)
     }
 
-    fn serialize_unit(self) -> Result<Value, Error> {
+    fn serialize_unit(self) -> Result<Value, SerdeError> {
         Ok(Value::null())
     }
 
-    fn serialize_unit_struct(self, _name: &'static str) -> Result<Value, Error> {
+    fn serialize_unit_struct(self, _name: &'static str) -> Result<Value, SerdeError> {
         Ok(Value::null())
     }
 
@@ -372,11 +399,15 @@ impl ser::Serializer for ValueSerializer {
         _name: &'static str,
         _variant_index: u32,
         variant: &'static str,
-    ) -> Result<Value, Error> {
+    ) -> Result<Value, SerdeError> {
         Ok(Value::from(variant))
     }
 
-    fn serialize_newtype_struct<T: ?Sized + Serialize>(self, _name: &'static str, value: &T) -> Result<Value, Error> {
+    fn serialize_newtype_struct<T: ?Sized + Serialize>(
+        self,
+        _name: &'static str,
+        value: &T,
+    ) -> Result<Value, SerdeError> {
         value.serialize(self)
     }
 
@@ -386,21 +417,21 @@ impl ser::Serializer for ValueSerializer {
         _variant_index: u32,
         variant: &'static str,
         value: &T,
-    ) -> Result<Value, Error> {
-        Ok(Value::map([(variant, to_value(value)?)]))
+    ) -> Result<Value, SerdeError> {
+        Ok(Value::map([(variant, Value::serialized(value)?)]))
     }
 
-    fn serialize_seq(self, len: Option<usize>) -> Result<SeqBuilder, Error> {
+    fn serialize_seq(self, len: Option<usize>) -> Result<SeqBuilder, SerdeError> {
         Ok(SeqBuilder {
             elements: Vec::with_capacity(len.unwrap_or(0)),
         })
     }
 
-    fn serialize_tuple(self, len: usize) -> Result<SeqBuilder, Error> {
+    fn serialize_tuple(self, len: usize) -> Result<SeqBuilder, SerdeError> {
         self.serialize_seq(Some(len))
     }
 
-    fn serialize_tuple_struct(self, _name: &'static str, len: usize) -> Result<SeqBuilder, Error> {
+    fn serialize_tuple_struct(self, _name: &'static str, len: usize) -> Result<SeqBuilder, SerdeError> {
         self.serialize_seq(Some(len))
     }
 
@@ -410,14 +441,14 @@ impl ser::Serializer for ValueSerializer {
         _variant_index: u32,
         variant: &'static str,
         len: usize,
-    ) -> Result<TupleVariantBuilder, Error> {
+    ) -> Result<TupleVariantBuilder, SerdeError> {
         Ok(TupleVariantBuilder {
             variant,
             elements: Vec::with_capacity(len),
         })
     }
 
-    fn serialize_map(self, len: Option<usize>) -> Result<MapBuilder, Error> {
+    fn serialize_map(self, len: Option<usize>) -> Result<MapBuilder, SerdeError> {
         let _ = len; // BTreeMap doesn't pre-allocate
         Ok(MapBuilder {
             entries: BTreeMap::new(),
@@ -425,7 +456,7 @@ impl ser::Serializer for ValueSerializer {
         })
     }
 
-    fn serialize_struct(self, _name: &'static str, len: usize) -> Result<MapBuilder, Error> {
+    fn serialize_struct(self, _name: &'static str, len: usize) -> Result<MapBuilder, SerdeError> {
         self.serialize_map(Some(len))
     }
 
@@ -435,7 +466,7 @@ impl ser::Serializer for ValueSerializer {
         _variant_index: u32,
         variant: &'static str,
         _len: usize,
-    ) -> Result<StructVariantBuilder, Error> {
+    ) -> Result<StructVariantBuilder, SerdeError> {
         Ok(StructVariantBuilder {
             variant,
             entries: BTreeMap::new(),
@@ -451,40 +482,40 @@ struct SeqBuilder {
 
 impl SerializeSeq for SeqBuilder {
     type Ok = Value;
-    type Error = Error;
+    type Error = SerdeError;
 
-    fn serialize_element<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<(), Error> {
-        self.elements.push(to_value(value)?);
+    fn serialize_element<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<(), SerdeError> {
+        self.elements.push(Value::serialized(value)?);
         Ok(())
     }
 
-    fn end(self) -> Result<Value, Error> {
+    fn end(self) -> Result<Value, SerdeError> {
         Ok(Value::Array(self.elements))
     }
 }
 
 impl ser::SerializeTuple for SeqBuilder {
     type Ok = Value;
-    type Error = Error;
+    type Error = SerdeError;
 
-    fn serialize_element<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<(), Error> {
+    fn serialize_element<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<(), SerdeError> {
         SerializeSeq::serialize_element(self, value)
     }
 
-    fn end(self) -> Result<Value, Error> {
+    fn end(self) -> Result<Value, SerdeError> {
         SerializeSeq::end(self)
     }
 }
 
 impl ser::SerializeTupleStruct for SeqBuilder {
     type Ok = Value;
-    type Error = Error;
+    type Error = SerdeError;
 
-    fn serialize_field<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<(), Error> {
+    fn serialize_field<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<(), SerdeError> {
         SerializeSeq::serialize_element(self, value)
     }
 
-    fn end(self) -> Result<Value, Error> {
+    fn end(self) -> Result<Value, SerdeError> {
         SerializeSeq::end(self)
     }
 }
@@ -496,14 +527,14 @@ struct TupleVariantBuilder {
 
 impl ser::SerializeTupleVariant for TupleVariantBuilder {
     type Ok = Value;
-    type Error = Error;
+    type Error = SerdeError;
 
-    fn serialize_field<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<(), Error> {
-        self.elements.push(to_value(value)?);
+    fn serialize_field<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<(), SerdeError> {
+        self.elements.push(Value::serialized(value)?);
         Ok(())
     }
 
-    fn end(self) -> Result<Value, Error> {
+    fn end(self) -> Result<Value, SerdeError> {
         Ok(Value::map([(self.variant, self.elements)]))
     }
 }
@@ -515,37 +546,37 @@ struct MapBuilder {
 
 impl SerializeMap for MapBuilder {
     type Ok = Value;
-    type Error = Error;
+    type Error = SerdeError;
 
-    fn serialize_key<T: ?Sized + Serialize>(&mut self, key: &T) -> Result<(), Error> {
-        self.next_key = Some(to_value(key)?);
+    fn serialize_key<T: ?Sized + Serialize>(&mut self, key: &T) -> Result<(), SerdeError> {
+        self.next_key = Some(Value::serialized(key)?);
         Ok(())
     }
 
-    fn serialize_value<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<(), Error> {
+    fn serialize_value<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<(), SerdeError> {
         let key = self
             .next_key
             .take()
-            .ok_or_else(|| Error("serialize_value called before serialize_key".into()))?;
-        self.entries.insert(key, to_value(value)?);
+            .ok_or_else(|| SerdeError("serialize_value called before serialize_key".into()))?;
+        self.entries.insert(key, Value::serialized(value)?);
         Ok(())
     }
 
-    fn end(self) -> Result<Value, Error> {
+    fn end(self) -> Result<Value, SerdeError> {
         Ok(Value::Map(self.entries))
     }
 }
 
 impl ser::SerializeStruct for MapBuilder {
     type Ok = Value;
-    type Error = Error;
+    type Error = SerdeError;
 
-    fn serialize_field<T: ?Sized + Serialize>(&mut self, key: &'static str, value: &T) -> Result<(), Error> {
-        self.entries.insert(Value::from(key), to_value(value)?);
+    fn serialize_field<T: ?Sized + Serialize>(&mut self, key: &'static str, value: &T) -> Result<(), SerdeError> {
+        self.entries.insert(Value::from(key), Value::serialized(value)?);
         Ok(())
     }
 
-    fn end(self) -> Result<Value, Error> {
+    fn end(self) -> Result<Value, SerdeError> {
         Ok(Value::Map(self.entries))
     }
 }
@@ -557,14 +588,14 @@ struct StructVariantBuilder {
 
 impl ser::SerializeStructVariant for StructVariantBuilder {
     type Ok = Value;
-    type Error = Error;
+    type Error = SerdeError;
 
-    fn serialize_field<T: ?Sized + Serialize>(&mut self, key: &'static str, value: &T) -> Result<(), Error> {
-        self.entries.insert(Value::from(key), to_value(value)?);
+    fn serialize_field<T: ?Sized + Serialize>(&mut self, key: &'static str, value: &T) -> Result<(), SerdeError> {
+        self.entries.insert(Value::from(key), Value::serialized(value)?);
         Ok(())
     }
 
-    fn end(self) -> Result<Value, Error> {
+    fn end(self) -> Result<Value, SerdeError> {
         Ok(Value::map([(self.variant, self.entries)]))
     }
 }
@@ -578,16 +609,16 @@ struct ValueDeserializer<'de>(&'de Value);
 
 macro_rules! deserialize {
     ($method:ident, $visit:ident) => {
-        fn $method<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
+        fn $method<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, SerdeError> {
             visitor.$visit(self.0.try_into()?)
         }
     };
 }
 
 impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
-    type Error = Error;
+    type Error = SerdeError;
 
-    fn deserialize_any<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
+    fn deserialize_any<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, SerdeError> {
         let this = self.0.peeled();
         if let Value::SimpleValue(sv) = this {
             if sv.data_type().is_null() {
@@ -639,18 +670,18 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
     deserialize!(deserialize_u64, visit_u64);
     deserialize!(deserialize_u128, visit_u128);
 
-    fn deserialize_f32<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
+    fn deserialize_f32<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, SerdeError> {
         visitor.visit_f32(self.0.to_f64()? as f32)
     }
 
     deserialize!(deserialize_f64, visit_f64);
 
-    fn deserialize_char<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
+    fn deserialize_char<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, SerdeError> {
         let s = self.0.as_str()?;
         let mut chars = s.chars();
-        let ch = chars.next().ok_or_else(|| Error("empty string for char".into()))?;
+        let ch = chars.next().ok_or_else(|| SerdeError("empty string for char".into()))?;
         if chars.next().is_some() {
-            return Err(Error("string contains more than one char".into()));
+            return Err(SerdeError("string contains more than one char".into()));
         }
         visitor.visit_char(ch)
     }
@@ -661,7 +692,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
     deserialize!(deserialize_bytes, visit_borrowed_bytes);
     deserialize!(deserialize_byte_buf, visit_borrowed_bytes);
 
-    fn deserialize_option<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
+    fn deserialize_option<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, SerdeError> {
         if self.0.untagged().data_type().is_null() {
             visitor.visit_none()
         } else {
@@ -669,7 +700,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         }
     }
 
-    fn deserialize_unit<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
+    fn deserialize_unit<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, SerdeError> {
         if self.0.untagged().data_type().is_null() {
             visitor.visit_unit()
         } else {
@@ -680,15 +711,19 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         }
     }
 
-    fn deserialize_unit_struct<V: Visitor<'de>>(self, _name: &'static str, visitor: V) -> Result<V::Value, Error> {
+    fn deserialize_unit_struct<V: Visitor<'de>>(self, _name: &'static str, visitor: V) -> Result<V::Value, SerdeError> {
         self.deserialize_unit(visitor)
     }
 
-    fn deserialize_newtype_struct<V: Visitor<'de>>(self, _name: &'static str, visitor: V) -> Result<V::Value, Error> {
+    fn deserialize_newtype_struct<V: Visitor<'de>>(
+        self,
+        _name: &'static str,
+        visitor: V,
+    ) -> Result<V::Value, SerdeError> {
         visitor.visit_newtype_struct(self)
     }
 
-    fn deserialize_seq<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
+    fn deserialize_seq<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, SerdeError> {
         match self.0.untagged() {
             Value::Array(arr) => visitor.visit_seq(SeqAccessImpl(arr.iter())),
             other => Err(de::Error::custom(format!(
@@ -698,7 +733,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         }
     }
 
-    fn deserialize_tuple<V: Visitor<'de>>(self, _len: usize, visitor: V) -> Result<V::Value, Error> {
+    fn deserialize_tuple<V: Visitor<'de>>(self, _len: usize, visitor: V) -> Result<V::Value, SerdeError> {
         self.deserialize_seq(visitor)
     }
 
@@ -707,11 +742,11 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         _name: &'static str,
         _len: usize,
         visitor: V,
-    ) -> Result<V::Value, Error> {
+    ) -> Result<V::Value, SerdeError> {
         self.deserialize_seq(visitor)
     }
 
-    fn deserialize_map<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
+    fn deserialize_map<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, SerdeError> {
         match self.0.untagged() {
             Value::Map(map) => visitor.visit_map(MapAccessImpl {
                 iter: map.iter(),
@@ -729,11 +764,11 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         _name: &'static str,
         _fields: &'static [&'static str],
         visitor: V,
-    ) -> Result<V::Value, Error> {
+    ) -> Result<V::Value, SerdeError> {
         self.deserialize_map(visitor)
     }
 
-    fn deserialize_identifier<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
+    fn deserialize_identifier<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, SerdeError> {
         match self.0.untagged() {
             Value::TextString(s) => visitor.visit_borrowed_str(s),
             other => Err(de::Error::custom(format!(
@@ -743,7 +778,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         }
     }
 
-    fn deserialize_ignored_any<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
+    fn deserialize_ignored_any<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, SerdeError> {
         visitor.visit_unit()
     }
 
@@ -752,7 +787,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         _name: &'static str,
         _variants: &'static [&'static str],
         visitor: V,
-    ) -> Result<V::Value, Error> {
+    ) -> Result<V::Value, SerdeError> {
         match self.0.untagged() {
             // Unit variant: "VariantName"
             Value::TextString(variant) => visitor.visit_enum(de::value::StrDeserializer::new(variant)),
@@ -779,9 +814,9 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
 struct SeqAccessImpl<'de>(std::slice::Iter<'de, Value>);
 
 impl<'de> SeqAccess<'de> for SeqAccessImpl<'de> {
-    type Error = Error;
+    type Error = SerdeError;
 
-    fn next_element_seed<T: DeserializeSeed<'de>>(&mut self, seed: T) -> Result<Option<T::Value>, Error> {
+    fn next_element_seed<T: DeserializeSeed<'de>>(&mut self, seed: T) -> Result<Option<T::Value>, SerdeError> {
         match self.0.next() {
             Some(v) => seed.deserialize(ValueDeserializer(v)).map(Some),
             None => Ok(None),
@@ -799,9 +834,9 @@ struct MapAccessImpl<'de> {
 }
 
 impl<'de> MapAccess<'de> for MapAccessImpl<'de> {
-    type Error = Error;
+    type Error = SerdeError;
 
-    fn next_key_seed<K: DeserializeSeed<'de>>(&mut self, seed: K) -> Result<Option<K::Value>, Error> {
+    fn next_key_seed<K: DeserializeSeed<'de>>(&mut self, seed: K) -> Result<Option<K::Value>, SerdeError> {
         match self.iter.next() {
             Some((k, v)) => {
                 self.pending_value = Some(v);
@@ -811,11 +846,11 @@ impl<'de> MapAccess<'de> for MapAccessImpl<'de> {
         }
     }
 
-    fn next_value_seed<V: DeserializeSeed<'de>>(&mut self, seed: V) -> Result<V::Value, Error> {
+    fn next_value_seed<V: DeserializeSeed<'de>>(&mut self, seed: V) -> Result<V::Value, SerdeError> {
         let v = self
             .pending_value
             .take()
-            .ok_or_else(|| Error("next_value_seed called before next_key_seed".into()))?;
+            .ok_or_else(|| SerdeError("next_value_seed called before next_key_seed".into()))?;
         seed.deserialize(ValueDeserializer(v))
     }
 
@@ -834,11 +869,11 @@ struct EnumAccessImpl<'de> {
 }
 
 impl<'de> de::EnumAccess<'de> for EnumAccessImpl<'de> {
-    type Error = Error;
+    type Error = SerdeError;
     type Variant = VariantAccessImpl<'de>;
 
-    fn variant_seed<V: DeserializeSeed<'de>>(self, seed: V) -> Result<(V::Value, Self::Variant), Error> {
-        let variant = seed.deserialize(de::value::StrDeserializer::<Error>::new(self.variant))?;
+    fn variant_seed<V: DeserializeSeed<'de>>(self, seed: V) -> Result<(V::Value, Self::Variant), SerdeError> {
+        let variant = seed.deserialize(de::value::StrDeserializer::<SerdeError>::new(self.variant))?;
         Ok((variant, VariantAccessImpl(self.value)))
     }
 }
@@ -846,28 +881,32 @@ impl<'de> de::EnumAccess<'de> for EnumAccessImpl<'de> {
 struct VariantAccessImpl<'de>(&'de Value);
 
 impl<'de> de::VariantAccess<'de> for VariantAccessImpl<'de> {
-    type Error = Error;
+    type Error = SerdeError;
 
-    fn unit_variant(self) -> Result<(), Error> {
+    fn unit_variant(self) -> Result<(), SerdeError> {
         if self.0.untagged().data_type().is_null() {
             Ok(())
         } else {
-            Err(Error(format!(
+            Err(SerdeError(format!(
                 "expected null for unit variant, got {}",
                 self.0.data_type().name()
             )))
         }
     }
 
-    fn newtype_variant_seed<T: DeserializeSeed<'de>>(self, seed: T) -> Result<T::Value, Error> {
+    fn newtype_variant_seed<T: DeserializeSeed<'de>>(self, seed: T) -> Result<T::Value, SerdeError> {
         seed.deserialize(ValueDeserializer(self.0))
     }
 
-    fn tuple_variant<V: Visitor<'de>>(self, _len: usize, visitor: V) -> Result<V::Value, Error> {
+    fn tuple_variant<V: Visitor<'de>>(self, _len: usize, visitor: V) -> Result<V::Value, SerdeError> {
         ValueDeserializer(self.0).deserialize_seq(visitor)
     }
 
-    fn struct_variant<V: Visitor<'de>>(self, _fields: &'static [&'static str], visitor: V) -> Result<V::Value, Error> {
+    fn struct_variant<V: Visitor<'de>>(
+        self,
+        _fields: &'static [&'static str],
+        visitor: V,
+    ) -> Result<V::Value, SerdeError> {
         ValueDeserializer(self.0).deserialize_map(visitor)
     }
 }
@@ -885,74 +924,74 @@ mod tests {
 
     #[test]
     fn round_trip_bool() {
-        let v = to_value(&true).unwrap();
+        let v = Value::serialized(&true).unwrap();
         assert!(v.to_bool().unwrap());
-        assert!(from_value::<bool>(&v).unwrap());
+        assert!(v.deserialized::<bool>().unwrap());
 
-        let v = to_value(&false).unwrap();
-        assert!(!from_value::<bool>(&v).unwrap());
+        let v = Value::serialized(&false).unwrap();
+        assert!(!v.deserialized::<bool>().unwrap());
     }
 
     #[test]
     fn round_trip_unsigned() {
-        let v = to_value(&42_u32).unwrap();
+        let v = Value::serialized(&42_u32).unwrap();
         assert_eq!(v.to_u64().unwrap(), 42);
-        assert_eq!(from_value::<u32>(&v).unwrap(), 42);
+        assert_eq!(v.deserialized::<u32>().unwrap(), 42);
     }
 
     #[test]
     fn round_trip_signed_positive() {
-        let v = to_value(&100_i64).unwrap();
-        assert_eq!(from_value::<i64>(&v).unwrap(), 100);
+        let v = Value::serialized(&100_i64).unwrap();
+        assert_eq!(v.deserialized::<i64>().unwrap(), 100);
     }
 
     #[test]
     fn round_trip_signed_negative() {
-        let v = to_value(&-42_i32).unwrap();
-        assert_eq!(from_value::<i32>(&v).unwrap(), -42);
+        let v = Value::serialized(&-42_i32).unwrap();
+        assert_eq!(v.deserialized::<i32>().unwrap(), -42);
     }
 
     #[test]
     fn round_trip_float() {
-        let v = to_value(&3.42_f64).unwrap();
-        assert_eq!(from_value::<f64>(&v).unwrap(), 3.42);
+        let v = Value::serialized(&3.42_f64).unwrap();
+        assert_eq!(v.deserialized::<f64>().unwrap(), 3.42);
     }
 
     #[test]
     fn round_trip_string() {
-        let v = to_value("hello").unwrap();
+        let v = Value::serialized("hello").unwrap();
         assert_eq!(v.as_str().unwrap(), "hello");
-        assert_eq!(from_value::<String>(&v).unwrap(), "hello");
+        assert_eq!(v.deserialized::<String>().unwrap(), "hello");
     }
 
     #[test]
     fn round_trip_bytes() {
         let data = vec![1_u8, 2, 3];
-        let v = to_value(&serde_bytes::Bytes::new(&data)).unwrap();
+        let v = Value::serialized(&serde_bytes::Bytes::new(&data)).unwrap();
         assert_eq!(v.as_bytes().unwrap(), &[1, 2, 3]);
-        let back: serde_bytes::ByteBuf = from_value(&v).unwrap();
+        let back: serde_bytes::ByteBuf = v.deserialized().unwrap();
         assert_eq!(back.as_ref(), &[1, 2, 3]);
     }
 
     #[test]
     fn round_trip_none() {
-        let v = to_value(&Option::<i32>::None).unwrap();
+        let v = Value::serialized(&Option::<i32>::None).unwrap();
         assert!(v.data_type().is_null());
-        assert_eq!(from_value::<Option<i32>>(&v).unwrap(), None);
+        assert_eq!(v.deserialized::<Option<i32>>().unwrap(), None);
     }
 
     #[test]
     fn round_trip_some() {
-        let v = to_value(&Some(42_u32)).unwrap();
-        assert_eq!(from_value::<Option<u32>>(&v).unwrap(), Some(42));
+        let v = Value::serialized(&Some(42_u32)).unwrap();
+        assert_eq!(v.deserialized::<Option<u32>>().unwrap(), Some(42));
     }
 
     // --- Round-trip: collections ---
 
     #[test]
     fn round_trip_vec() {
-        let v = to_value(&vec![1_u32, 2, 3]).unwrap();
-        assert_eq!(from_value::<Vec<u32>>(&v).unwrap(), vec![1, 2, 3]);
+        let v = Value::serialized(&vec![1_u32, 2, 3]).unwrap();
+        assert_eq!(v.deserialized::<Vec<u32>>().unwrap(), vec![1, 2, 3]);
     }
 
     #[test]
@@ -960,8 +999,8 @@ mod tests {
         let mut m = std::collections::BTreeMap::new();
         m.insert("a".to_string(), 1_u32);
         m.insert("b".to_string(), 2);
-        let v = to_value(&m).unwrap();
-        let back: std::collections::BTreeMap<String, u32> = from_value(&v).unwrap();
+        let v = Value::serialized(&m).unwrap();
+        let back: std::collections::BTreeMap<String, u32> = v.deserialized().unwrap();
         assert_eq!(back, m);
     }
 
@@ -976,10 +1015,10 @@ mod tests {
         }
 
         let p = Point { x: 10, y: -20 };
-        let v = to_value(&p).unwrap();
+        let v = Value::serialized(&p).unwrap();
         assert_eq!(v["x"].to_i32().unwrap(), 10);
         assert_eq!(v["y"].to_i32().unwrap(), -20);
-        let back: Point = from_value(&v).unwrap();
+        let back: Point = v.deserialized().unwrap();
         assert_eq!(back, p);
     }
 
@@ -999,8 +1038,8 @@ mod tests {
             name: "test".into(),
             inner: Inner { value: "nested".into() },
         };
-        let v = to_value(&o).unwrap();
-        let back: Outer = from_value(&v).unwrap();
+        let v = Value::serialized(&o).unwrap();
+        let back: Outer = v.deserialized().unwrap();
         assert_eq!(back, o);
     }
 
@@ -1015,9 +1054,9 @@ mod tests {
             Blue,
         }
 
-        let v = to_value(&Color::Green).unwrap();
+        let v = Value::serialized(&Color::Green).unwrap();
         assert_eq!(v.as_str().unwrap(), "Green");
-        let back: Color = from_value(&v).unwrap();
+        let back: Color = v.deserialized().unwrap();
         assert_eq!(back, Color::Green);
     }
 
@@ -1029,8 +1068,8 @@ mod tests {
             Square(f64),
         }
 
-        let v = to_value(&Shape::Circle(2.5)).unwrap();
-        let back: Shape = from_value(&v).unwrap();
+        let v = Value::serialized(&Shape::Circle(2.5)).unwrap();
+        let back: Shape = v.deserialized().unwrap();
         assert_eq!(back, Shape::Circle(2.5));
     }
 
@@ -1042,8 +1081,8 @@ mod tests {
             Move { x: i32, y: i32 },
         }
 
-        let v = to_value(&Message::Move { x: 1, y: 2 }).unwrap();
-        let back: Message = from_value(&v).unwrap();
+        let v = Value::serialized(&Message::Move { x: 1, y: 2 }).unwrap();
+        let back: Message = v.deserialized().unwrap();
         assert_eq!(back, Message::Move { x: 1, y: 2 });
     }
 
@@ -1054,15 +1093,15 @@ mod tests {
             Two(i32, i32),
         }
 
-        let v = to_value(&Pair::Two(3, 4)).unwrap();
-        let back: Pair = from_value(&v).unwrap();
+        let v = Value::serialized(&Pair::Two(3, 4)).unwrap();
+        let back: Pair = v.deserialized().unwrap();
         assert_eq!(back, Pair::Two(3, 4));
     }
 
     // --- Deserialize from hand-built Value ---
 
     #[test]
-    fn from_value_hand_built() {
+    fn deserialize_hand_built() {
         #[derive(Deserialize, Debug, PartialEq)]
         struct Record {
             id: u64,
@@ -1076,7 +1115,7 @@ mod tests {
             "active" => true,
         };
 
-        let r: Record = from_value(&v).unwrap();
+        let r: Record = v.deserialized().unwrap();
         assert_eq!(
             r,
             Record {
@@ -1128,9 +1167,9 @@ mod tests {
 
     #[test]
     fn tagged_value_transparent_deserialize() {
-        // Tag wrapping an integer — should deserialize as if untagged.
+        // Tag wrapping an integer should deserialize as if untagged.
         let v = Value::tag(42, 100_u64);
-        let n: u64 = from_value(&v).unwrap();
+        let n: u64 = v.deserialized().unwrap();
         assert_eq!(n, 100);
     }
 
@@ -1146,48 +1185,48 @@ mod tests {
     #[test]
     fn large_negative_i128() {
         let big = i64::MIN as i128 - 1;
-        let v = to_value(&big).unwrap();
-        let back: i128 = from_value(&v).unwrap();
+        let v = Value::serialized(&big).unwrap();
+        let back: i128 = v.deserialized().unwrap();
         assert_eq!(back, big);
     }
 
     #[test]
     fn unit_type() {
-        let v = to_value(&()).unwrap();
+        let v = Value::serialized(&()).unwrap();
         assert!(v.data_type().is_null());
-        from_value::<()>(&v).unwrap();
+        v.deserialized::<()>().unwrap();
     }
 
     #[test]
     fn char_round_trip() {
-        let v = to_value(&'Z').unwrap();
-        assert_eq!(from_value::<char>(&v).unwrap(), 'Z');
+        let v = Value::serialized(&'Z').unwrap();
+        assert_eq!(v.deserialized::<char>().unwrap(), 'Z');
     }
 
     #[test]
     fn empty_vec() {
-        let v = to_value(&Vec::<i32>::new()).unwrap();
-        assert_eq!(from_value::<Vec<i32>>(&v).unwrap(), Vec::<i32>::new());
+        let v = Value::serialized(&Vec::<i32>::new()).unwrap();
+        assert_eq!(v.deserialized::<Vec<i32>>().unwrap(), Vec::<i32>::new());
     }
 
     #[test]
     fn empty_map() {
-        let v = to_value(&std::collections::BTreeMap::<String, i32>::new()).unwrap();
-        let back: std::collections::BTreeMap<String, i32> = from_value(&v).unwrap();
+        let v = Value::serialized(&std::collections::BTreeMap::<String, i32>::new()).unwrap();
+        let back: std::collections::BTreeMap<String, i32> = v.deserialized().unwrap();
         assert!(back.is_empty());
     }
 
     #[test]
     fn deserialize_error_type_mismatch() {
         let v = Value::from("not a number");
-        let result = from_value::<u32>(&v);
+        let result = v.deserialized::<u32>();
         assert!(result.is_err());
     }
 
     #[test]
     fn deserialize_error_overflow() {
         let v = Value::from(1000_u64);
-        let result = from_value::<u8>(&v);
+        let result = v.deserialized::<u8>();
         assert!(result.is_err());
     }
 
@@ -1199,28 +1238,39 @@ mod tests {
             port: Option<u16>,
         }
 
-        let with = to_value(&Config {
+        let with = Value::serialized(&Config {
             name: "srv".into(),
             port: Some(8080),
         })
         .unwrap();
-        let back: Config = from_value(&with).unwrap();
+        let back: Config = with.deserialized().unwrap();
         assert_eq!(back.port, Some(8080));
 
-        let without = to_value(&Config {
+        let without = Value::serialized(&Config {
             name: "srv".into(),
             port: None,
         })
         .unwrap();
-        let back: Config = from_value(&without).unwrap();
+        let back: Config = without.deserialized().unwrap();
         assert_eq!(back.port, None);
     }
 
     #[test]
     fn tuple() {
-        let v = to_value(&(1_u32, "hello", true)).unwrap();
-        let back: (u32, String, bool) = from_value(&v).unwrap();
+        let v = Value::serialized(&(1_u32, "hello", true)).unwrap();
+        let back: (u32, String, bool) = v.deserialized().unwrap();
         assert_eq!(back, (1, "hello".into(), true));
+    }
+
+    // --- SerdeError public field ---
+
+    #[test]
+    fn serde_error_message_accessible() {
+        let v = Value::from("not a number");
+        let err = v.deserialized::<u32>().unwrap_err();
+        // The public String field is directly readable.
+        assert!(!err.0.is_empty());
+        assert_eq!(err.to_string(), err.0);
     }
 
     // --- Deserialize Value from JSON (proves Deserialize impl works) ---

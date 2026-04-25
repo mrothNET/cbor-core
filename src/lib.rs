@@ -214,7 +214,7 @@
 //!
 //! | Feature | Adds |
 //! |---|---|
-//! | `serde` | `Serialize`/`Deserialize` for `Value`, [`serde::to_value`], [`serde::from_value`] |
+//! | `serde` | `Serialize`/`Deserialize` for `Value`, [`Value::serialized`], [`Value::deserialized`] |
 //! | `chrono` | Conversions between `chrono::DateTime` and `DateTime`/`EpochTime`/`Value` |
 //! | `time` | Conversions between `time::UtcDateTime`/`OffsetDateTime` and `DateTime`/`EpochTime`/`Value` |
 //! | `jiff` | Conversions between `jiff::Timestamp`/`Zoned` and `DateTime`/`EpochTime`/`Value` |
@@ -266,6 +266,9 @@ pub use value_key::ValueKey;
 
 #[cfg(feature = "serde")]
 pub use ext::serde;
+#[cfg(feature = "serde")]
+#[doc(no_inline)]
+pub use serde::SerdeError;
 
 use integer::*;
 

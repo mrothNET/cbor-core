@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `Value::serialized` and `Value::deserialized` replace the free functions `serde::to_value` / `serde::from_value`.
+
+### Changed
+
+- The serde error type was renamed from `cbor_core::serde::Error` to `SerdeError`, and its single message field is public (`pub String`).
+
+### Removed
+
+- Free functions `cbor_core::serde::to_value` and `cbor_core::serde::from_value` removed. Use `Value::serialized(&x)` and `value.deserialized()` instead.
+
 ## 0.7.1 - 2026-04-22
 
 ### Added
