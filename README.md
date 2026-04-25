@@ -93,7 +93,7 @@ add the relevant feature flag to `Cargo.toml`.
 
 | Feature name | Enables |
 |---|---|
-| `serde` | `Serialize`/`Deserialize` for `Value`, plus `to_value()`/`from_value()` for converting between Rust types and `Value` |
+| `serde` | `Serialize`/`Deserialize` for `Value`, `Value::serialized`, `Value::deserialized` |
 | `chrono` | Conversions between `chrono::DateTime` and `DateTime`/`EpochTime`/`Value` |
 | `time` | Conversions between `time::UtcDateTime`/`time::OffsetDateTime` and `DateTime`/`EpochTime`/`Value` |
 | `jiff` | Conversions between `jiff::Timestamp`/`jiff::Zoned` and `DateTime`/`EpochTime`/`Value` |
