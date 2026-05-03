@@ -147,7 +147,7 @@ impl TryFrom<&Zoned> for crate::EpochTime {
 // Value → jiff::Timestamp
 // ---------------------------------------------------------------------------
 
-impl TryFrom<Value> for Timestamp {
+impl<'a> TryFrom<Value<'a>> for Timestamp {
     type Error = Error;
 
     /// Extracts a `jiff::Timestamp` from a CBOR time value.
@@ -159,7 +159,7 @@ impl TryFrom<Value> for Timestamp {
     }
 }
 
-impl TryFrom<&Value> for Timestamp {
+impl<'a> TryFrom<&Value<'a>> for Timestamp {
     type Error = Error;
 
     fn try_from(value: &Value) -> Result<Self> {
@@ -185,7 +185,7 @@ fn value_to_timestamp(value: &Value) -> Result<Timestamp> {
 // Value → jiff::Zoned
 // ---------------------------------------------------------------------------
 
-impl TryFrom<Value> for Zoned {
+impl<'a> TryFrom<Value<'a>> for Zoned {
     type Error = Error;
 
     /// Extracts a `jiff::Zoned` from a CBOR time value.
@@ -197,7 +197,7 @@ impl TryFrom<Value> for Zoned {
     }
 }
 
-impl TryFrom<&Value> for Zoned {
+impl<'a> TryFrom<&Value<'a>> for Zoned {
     type Error = Error;
 
     fn try_from(value: &Value) -> Result<Self> {

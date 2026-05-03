@@ -5,7 +5,7 @@
 
 use crate::{SimpleValue, Value, array, map};
 
-fn parse(s: &str) -> Value {
+fn parse(s: &str) -> Value<'_> {
     s.parse::<Value>().expect("parse should succeed")
 }
 
@@ -182,7 +182,7 @@ fn bstr_b64() {
 fn bstr_b64_url_safe() {
     // Bytes with +/- variants
     let v = parse("b64'-_8='");
-    assert_eq!(v, Value::ByteString(vec![0xfb, 0xff]));
+    assert_eq!(v, Value::ByteString(vec![0xfb, 0xff].into()));
 }
 
 #[test]
@@ -206,7 +206,7 @@ fn bstr_embedded() {
 
 #[test]
 fn bstr_embedded_empty() {
-    assert_eq!(parse("<<>>"), Value::ByteString(Vec::new()));
+    assert_eq!(parse("<<>>"), Value::ByteString(Vec::new().into()));
 }
 
 // --- Booleans, null, simple ---

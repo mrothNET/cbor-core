@@ -145,27 +145,27 @@ fn utc_date_time_to_epoch(value: &UtcDateTime) -> Result<crate::EpochTime> {
 // Value → time::OffsetDateTime
 // ---------------------------------------------------------------------------
 
-impl TryFrom<Value> for OffsetDateTime {
+impl<'a> TryFrom<Value<'a>> for OffsetDateTime {
     type Error = Error;
 
     /// Extracts a `time::OffsetDateTime` from a CBOR time value.
     ///
     /// Date/time strings (tag 0) preserve the original timezone offset.
     /// Epoch integers/floats are returned with a UTC offset.
-    fn try_from(value: Value) -> Result<Self> {
+    fn try_from(value: Value<'a>) -> Result<Self> {
         value_to_time_offset_data_time(&value)
     }
 }
 
-impl TryFrom<&Value> for OffsetDateTime {
+impl<'a> TryFrom<&Value<'a>> for OffsetDateTime {
     type Error = Error;
 
-    fn try_from(value: &Value) -> Result<Self> {
+    fn try_from(value: &Value<'a>) -> Result<Self> {
         value_to_time_offset_data_time(value)
     }
 }
 
-fn value_to_time_offset_data_time(value: &Value) -> Result<OffsetDateTime> {
+fn value_to_time_offset_data_time(value: &Value<'_>) -> Result<OffsetDateTime> {
     if let Ok(s) = value.as_str() {
         offset_date_time_from_str(s)
     } else if let Ok(f) = value.to_f64() {
@@ -183,27 +183,27 @@ fn value_to_time_offset_data_time(value: &Value) -> Result<OffsetDateTime> {
 // Value → time::UtcDateTime
 // ---------------------------------------------------------------------------
 
-impl TryFrom<Value> for UtcDateTime {
+impl<'a> TryFrom<Value<'a>> for UtcDateTime {
     type Error = Error;
 
     /// Extracts a `time::UtcDateTime` from a CBOR time value.
     ///
     /// Date/time strings (tag 0) preserve the original timezone offset.
     /// Epoch integers/floats are returned with a UTC offset.
-    fn try_from(value: Value) -> Result<Self> {
+    fn try_from(value: Value<'a>) -> Result<Self> {
         value_to_time_utc_data_time(&value)
     }
 }
 
-impl TryFrom<&Value> for UtcDateTime {
+impl<'a> TryFrom<&Value<'a>> for UtcDateTime {
     type Error = Error;
 
-    fn try_from(value: &Value) -> Result<Self> {
+    fn try_from(value: &Value<'a>) -> Result<Self> {
         value_to_time_utc_data_time(value)
     }
 }
 
-fn value_to_time_utc_data_time(value: &Value) -> Result<UtcDateTime> {
+fn value_to_time_utc_data_time(value: &Value<'_>) -> Result<UtcDateTime> {
     if let Ok(s) = value.as_str() {
         offset_date_time_from_str(s).map(|dt| dt.to_utc())
     } else if let Ok(f) = value.to_f64() {

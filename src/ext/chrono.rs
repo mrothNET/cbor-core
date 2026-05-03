@@ -91,27 +91,27 @@ fn chrono_to_epoch<Tz: TimeZone>(value: &DateTime<Tz>) -> Result<crate::EpochTim
 // Value → chrono::DateTime<Utc>
 // ---------------------------------------------------------------------------
 
-impl TryFrom<Value> for DateTime<Utc> {
+impl<'a> TryFrom<Value<'a>> for DateTime<Utc> {
     type Error = Error;
 
     /// Extracts a `chrono::DateTime<Utc>` from a CBOR time value.
     ///
     /// Accepts date/time strings (tag 0), epoch integers/floats (tag 1),
     /// and untagged integers, floats, or text strings.
-    fn try_from(value: Value) -> Result<Self> {
+    fn try_from(value: Value<'a>) -> Result<Self> {
         value_to_chrono_utc(&value)
     }
 }
 
-impl TryFrom<&Value> for DateTime<Utc> {
+impl<'a> TryFrom<&Value<'a>> for DateTime<Utc> {
     type Error = Error;
 
-    fn try_from(value: &Value) -> Result<Self> {
+    fn try_from(value: &Value<'a>) -> Result<Self> {
         value_to_chrono_utc(value)
     }
 }
 
-fn value_to_chrono_utc(value: &Value) -> Result<DateTime<Utc>> {
+fn value_to_chrono_utc(value: &Value<'_>) -> Result<DateTime<Utc>> {
     if let Ok(s) = value.as_str() {
         date_time_from_str(s).map(|dt| dt.to_utc())
     } else if let Ok(f) = value.to_f64() {
@@ -129,27 +129,27 @@ fn value_to_chrono_utc(value: &Value) -> Result<DateTime<Utc>> {
 // Value → chrono::DateTime<FixedOffset>
 // ---------------------------------------------------------------------------
 
-impl TryFrom<Value> for DateTime<FixedOffset> {
+impl<'a> TryFrom<Value<'a>> for DateTime<FixedOffset> {
     type Error = Error;
 
     /// Extracts a `chrono::DateTime<FixedOffset>` from a CBOR time value.
     ///
     /// Date/time strings (tag 0) preserve the original timezone offset.
     /// Epoch integers/floats are returned with a UTC offset.
-    fn try_from(value: Value) -> Result<Self> {
+    fn try_from(value: Value<'a>) -> Result<Self> {
         value_to_chrono_fixed(&value)
     }
 }
 
-impl TryFrom<&Value> for DateTime<FixedOffset> {
+impl<'a> TryFrom<&Value<'a>> for DateTime<FixedOffset> {
     type Error = Error;
 
-    fn try_from(value: &Value) -> Result<Self> {
+    fn try_from(value: &Value<'a>) -> Result<Self> {
         value_to_chrono_fixed(value)
     }
 }
 
-fn value_to_chrono_fixed(value: &Value) -> Result<DateTime<FixedOffset>> {
+fn value_to_chrono_fixed(value: &Value<'_>) -> Result<DateTime<FixedOffset>> {
     if let Ok(s) = value.as_str() {
         date_time_from_str(s)
     } else if let Ok(f) = value.to_f64() {

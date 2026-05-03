@@ -15,9 +15,9 @@ pub(crate) enum Payload<'a> {
     None,
     Bytes(&'a [u8]),
     Text(&'a str),
-    Array(&'a [Value]),
-    Map(&'a BTreeMap<Value, Value>),
-    TagContent(&'a Value),
+    Array(&'a [Value<'a>]),
+    Map(&'a BTreeMap<Value<'a>, Value<'a>>),
+    TagContent(&'a Value<'a>),
 }
 
 impl Payload<'_> {
@@ -61,8 +61,11 @@ impl Ord for dyn ValueView + '_ {
     }
 }
 
-impl<'a> Borrow<dyn ValueView + 'a> for Value {
-    fn borrow(&self) -> &(dyn ValueView + 'a) {
+impl<'a, 'b> Borrow<dyn ValueView + 'b> for Value<'a>
+where
+    'a: 'b,
+{
+    fn borrow(&self) -> &(dyn ValueView + 'b) {
         self
     }
 }

@@ -1,53 +1,53 @@
 use super::*;
 
-impl From<Array> for Value {
-    fn from(value: Array) -> Self {
+impl<'a> From<Array<'a>> for Value<'a> {
+    fn from(value: Array<'a>) -> Self {
         Self::Array(value.into_inner())
     }
 }
 
-impl From<Vec<Value>> for Value {
-    fn from(value: Vec<Value>) -> Self {
+impl<'a> From<Vec<Value<'a>>> for Value<'a> {
+    fn from(value: Vec<Value<'a>>) -> Self {
         Self::Array(value)
     }
 }
 
-impl<const N: usize> From<[Value; N]> for Value {
-    fn from(value: [Value; N]) -> Self {
+impl<'a, const N: usize> From<[Value<'a>; N]> for Value<'a> {
+    fn from(value: [Value<'a>; N]) -> Self {
         Self::Array(value.to_vec())
     }
 }
 
-impl From<Box<[Value]>> for Value {
-    fn from(value: Box<[Value]>) -> Self {
-        Self::Array(value.to_vec())
+impl<'a> From<Box<[Value<'a>]>> for Value<'a> {
+    fn from(value: Box<[Value<'a>]>) -> Self {
+        Self::Array(value.into_vec())
     }
 }
 
-impl TryFrom<Value> for Vec<Value> {
+impl<'a> TryFrom<Value<'a>> for Vec<Value<'a>> {
     type Error = Error;
-    fn try_from(value: Value) -> Result<Self> {
+    fn try_from(value: Value<'a>) -> Result<Self> {
         value.into_array()
     }
 }
 
-impl<'a> TryFrom<&'a Value> for &'a [Value] {
+impl<'a> TryFrom<&'a Value<'a>> for &'a [Value<'a>] {
     type Error = Error;
-    fn try_from(value: &'a Value) -> Result<Self> {
+    fn try_from(value: &'a Value<'a>) -> Result<Self> {
         value.as_array()
     }
 }
 
-impl<'a> TryFrom<&'a mut Value> for &'a mut Vec<Value> {
+impl<'a> TryFrom<&'a mut Value<'a>> for &'a mut Vec<Value<'a>> {
     type Error = Error;
-    fn try_from(value: &'a mut Value) -> Result<Self> {
+    fn try_from(value: &'a mut Value<'a>) -> Result<Self> {
         value.as_array_mut()
     }
 }
 
-impl TryFrom<Value> for Array {
+impl<'a> TryFrom<Value<'a>> for Array<'a> {
     type Error = Error;
-    fn try_from(value: Value) -> Result<Self> {
+    fn try_from(value: Value<'a>) -> Result<Self> {
         value.into_array().map(Array::from)
     }
 }

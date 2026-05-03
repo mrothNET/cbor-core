@@ -12,7 +12,7 @@ use crate::{
 // Integer → Value
 // ---------------------------------------------------------------------------
 
-impl From<Integer> for Value {
+impl<'a> From<Integer> for Value<'a> {
     /// Encodes a `rug::Integer` as a CBOR integer.
     ///
     /// Values that fit in a `u64`/`i64` are encoded as plain integers.
@@ -22,13 +22,13 @@ impl From<Integer> for Value {
     }
 }
 
-impl From<&Integer> for Value {
+impl<'a> From<&Integer> for Value<'a> {
     fn from(value: &Integer) -> Self {
         from_rug_integer(value)
     }
 }
 
-fn from_rug_integer(value: &Integer) -> Value {
+fn from_rug_integer<'a>(value: &Integer) -> Value<'a> {
     use std::cmp::Ordering;
 
     match value.cmp0() {
@@ -40,9 +40,9 @@ fn from_rug_integer(value: &Integer) -> Value {
             if let Ok(number) = u64_from_slice(trimmed) {
                 Value::Unsigned(number)
             } else if bytes.len() == trimmed.len() {
-                Value::tag(tag::POS_BIG_INT, bytes)
+                Value::tag(tag::POS_BIG_INT, Value::byte_string(bytes)) // reuse Vec
             } else {
-                Value::tag(tag::POS_BIG_INT, trimmed)
+                Value::tag(tag::POS_BIG_INT, Value::byte_string(trimmed))
             }
         }
         Ordering::Less => {
@@ -55,9 +55,9 @@ fn from_rug_integer(value: &Integer) -> Value {
             if let Ok(number) = u64_from_slice(trimmed) {
                 Value::Negative(number)
             } else if bytes.len() == trimmed.len() {
-                Value::tag(tag::NEG_BIG_INT, bytes)
+                Value::tag(tag::NEG_BIG_INT, Value::byte_string(bytes))
             } else {
-                Value::tag(tag::NEG_BIG_INT, trimmed)
+                Value::tag(tag::NEG_BIG_INT, Value::byte_string(trimmed))
             }
         }
     }
@@ -67,26 +67,26 @@ fn from_rug_integer(value: &Integer) -> Value {
 // Value → Integer
 // ---------------------------------------------------------------------------
 
-impl TryFrom<Value> for Integer {
+impl<'a> TryFrom<Value<'a>> for Integer {
     type Error = Error;
 
     /// Extracts a `rug::Integer` from a CBOR integer value.
     ///
     /// Returns `Err(IncompatibleType)` for non-integer values.
-    fn try_from(value: Value) -> Result<Self> {
+    fn try_from(value: Value<'a>) -> Result<Self> {
         to_rug_integer(&value)
     }
 }
 
-impl TryFrom<&Value> for Integer {
+impl<'a> TryFrom<&Value<'a>> for Integer {
     type Error = Error;
 
-    fn try_from(value: &Value) -> Result<Self> {
+    fn try_from(value: &Value<'a>) -> Result<Self> {
         to_rug_integer(value)
     }
 }
 
-fn to_rug_integer(value: &Value) -> Result<Integer> {
+fn to_rug_integer(value: &Value<'_>) -> Result<Integer> {
     match value.as_integer_bytes()? {
         IntegerBytes::UnsignedOwned(bytes) => Ok(Integer::from(u64::from_be_bytes(bytes))),
         IntegerBytes::NegativeOwned(bytes) => Ok(Integer::from(!u64::from_be_bytes(bytes) as i64)),

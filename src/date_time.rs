@@ -58,7 +58,7 @@ const LEAP_SECOND_DATES: [(u16, u8, u8); 27] = [
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct DateTime(String);
 
-impl From<DateTime> for Value {
+impl<'a> From<DateTime> for Value<'a> {
     fn from(value: DateTime) -> Self {
         Self::tag(tag::DATE_TIME, value.0)
     }

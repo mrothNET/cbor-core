@@ -1,41 +1,41 @@
 use super::*;
 
-impl From<Map> for Value {
-    fn from(value: Map) -> Self {
+impl<'a> From<Map<'a>> for Value<'a> {
+    fn from(value: Map<'a>) -> Self {
         Self::Map(value.into_inner())
     }
 }
 
-impl From<BTreeMap<Value, Value>> for Value {
-    fn from(value: BTreeMap<Value, Value>) -> Self {
+impl<'a> From<BTreeMap<Value<'a>, Value<'a>>> for Value<'a> {
+    fn from(value: BTreeMap<Value<'a>, Value<'a>>) -> Self {
         Self::Map(value)
     }
 }
 
-impl TryFrom<Value> for BTreeMap<Value, Value> {
+impl<'a> TryFrom<Value<'a>> for BTreeMap<Value<'a>, Value<'a>> {
     type Error = Error;
-    fn try_from(value: Value) -> Result<Self> {
+    fn try_from(value: Value<'a>) -> Result<Self> {
         value.into_map()
     }
 }
 
-impl<'a> TryFrom<&'a Value> for &'a BTreeMap<Value, Value> {
+impl<'a> TryFrom<&'a Value<'a>> for &'a BTreeMap<Value<'a>, Value<'a>> {
     type Error = Error;
-    fn try_from(value: &'a Value) -> Result<Self> {
+    fn try_from(value: &'a Value<'a>) -> Result<Self> {
         value.as_map()
     }
 }
 
-impl<'a> TryFrom<&'a mut Value> for &'a mut BTreeMap<Value, Value> {
+impl<'a> TryFrom<&'a mut Value<'a>> for &'a mut BTreeMap<Value<'a>, Value<'a>> {
     type Error = Error;
-    fn try_from(value: &'a mut Value) -> Result<Self> {
+    fn try_from(value: &'a mut Value<'a>) -> Result<Self> {
         value.as_map_mut()
     }
 }
 
-impl TryFrom<Value> for Map {
+impl<'a> TryFrom<Value<'a>> for Map<'a> {
     type Error = Error;
-    fn try_from(value: Value) -> Result<Self> {
+    fn try_from(value: Value<'a>) -> Result<Self> {
         value.into_map().map(Map::from)
     }
 }

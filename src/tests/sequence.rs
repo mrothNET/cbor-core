@@ -114,7 +114,7 @@ fn writer_get_ref_and_get_mut() {
 // SequenceWriter: round-trip through SequenceDecoder
 // =====================================================================
 
-fn sample_items() -> Vec<Value> {
+fn sample_items() -> Vec<Value<'static>> {
     vec![
         Value::from(0),
         Value::from(-1_i8),

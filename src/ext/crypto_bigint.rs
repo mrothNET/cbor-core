@@ -23,7 +23,7 @@ fn pad_be_bytes(src: &[u8], dst: &mut [u8]) -> Result<()> {
 // Uint<LIMBS> → Value
 // ---------------------------------------------------------------------------
 
-impl<const LIMBS: usize> From<Uint<LIMBS>> for Value
+impl<'a, const LIMBS: usize> From<Uint<LIMBS>> for Value<'a>
 where
     Uint<LIMBS>: Encoding,
 {
@@ -36,7 +36,7 @@ where
     }
 }
 
-impl<const LIMBS: usize> From<&Uint<LIMBS>> for Value
+impl<'a, const LIMBS: usize> From<&Uint<LIMBS>> for Value<'a>
 where
     Uint<LIMBS>: Encoding,
 {
@@ -45,7 +45,7 @@ where
     }
 }
 
-fn from_crypto_uint<const LIMBS: usize>(value: &Uint<LIMBS>) -> Value
+fn from_crypto_uint<'a, const LIMBS: usize>(value: &Uint<LIMBS>) -> Value<'a>
 where
     Uint<LIMBS>: Encoding,
 {
@@ -55,7 +55,7 @@ where
     if let Ok(number) = u64_from_slice(trimmed) {
         Value::Unsigned(number)
     } else {
-        Value::tag(tag::POS_BIG_INT, trimmed)
+        Value::tag(tag::POS_BIG_INT, Value::byte_string(trimmed))
     }
 }
 
@@ -63,7 +63,7 @@ where
 // Int<LIMBS> → Value
 // ---------------------------------------------------------------------------
 
-impl<const LIMBS: usize> From<Int<LIMBS>> for Value
+impl<'a, const LIMBS: usize> From<Int<LIMBS>> for Value<'a>
 where
     Uint<LIMBS>: Encoding,
 {
@@ -73,7 +73,7 @@ where
     }
 }
 
-impl<const LIMBS: usize> From<&Int<LIMBS>> for Value
+impl<'a, const LIMBS: usize> From<&Int<LIMBS>> for Value<'a>
 where
     Uint<LIMBS>: Encoding,
 {
@@ -82,7 +82,7 @@ where
     }
 }
 
-fn from_crypto_int<const LIMBS: usize>(value: &Int<LIMBS>) -> Value
+fn from_crypto_int<'a, const LIMBS: usize>(value: &Int<LIMBS>) -> Value<'a>
 where
     Uint<LIMBS>: Encoding,
 {
@@ -99,7 +99,7 @@ where
         if let Ok(number) = u64_from_slice(trimmed) {
             Value::Negative(number)
         } else {
-            Value::tag(tag::NEG_BIG_INT, trimmed)
+            Value::tag(tag::NEG_BIG_INT, Value::byte_string(trimmed))
         }
     }
 }
@@ -108,7 +108,7 @@ where
 // Value → Uint<LIMBS>
 // ---------------------------------------------------------------------------
 
-impl<const LIMBS: usize> TryFrom<Value> for Uint<LIMBS>
+impl<'a, const LIMBS: usize> TryFrom<Value<'a>> for Uint<LIMBS>
 where
     Uint<LIMBS>: Encoding,
 {
@@ -124,7 +124,7 @@ where
     }
 }
 
-impl<const LIMBS: usize> TryFrom<&Value> for Uint<LIMBS>
+impl<'a, const LIMBS: usize> TryFrom<&Value<'a>> for Uint<LIMBS>
 where
     Uint<LIMBS>: Encoding,
 {
@@ -162,7 +162,7 @@ where
 // Value → Int<LIMBS>
 // ---------------------------------------------------------------------------
 
-impl<const LIMBS: usize> TryFrom<Value> for Int<LIMBS>
+impl<'a, const LIMBS: usize> TryFrom<Value<'a>> for Int<LIMBS>
 where
     Uint<LIMBS>: Encoding,
 {
@@ -177,7 +177,7 @@ where
     }
 }
 
-impl<const LIMBS: usize> TryFrom<&Value> for Int<LIMBS>
+impl<'a, const LIMBS: usize> TryFrom<&Value<'a>> for Int<LIMBS>
 where
     Uint<LIMBS>: Encoding,
 {
@@ -255,7 +255,7 @@ where
 // NonZero wrappers
 // ---------------------------------------------------------------------------
 
-impl<const LIMBS: usize> From<NonZero<Uint<LIMBS>>> for Value
+impl<'a, const LIMBS: usize> From<NonZero<Uint<LIMBS>>> for Value<'a>
 where
     Uint<LIMBS>: Encoding,
 {
@@ -264,7 +264,7 @@ where
     }
 }
 
-impl<const LIMBS: usize> From<&NonZero<Uint<LIMBS>>> for Value
+impl<'a, const LIMBS: usize> From<&NonZero<Uint<LIMBS>>> for Value<'a>
 where
     Uint<LIMBS>: Encoding,
 {
@@ -273,7 +273,7 @@ where
     }
 }
 
-impl<const LIMBS: usize> From<NonZero<Int<LIMBS>>> for Value
+impl<'a, const LIMBS: usize> From<NonZero<Int<LIMBS>>> for Value<'a>
 where
     Uint<LIMBS>: Encoding,
 {
@@ -282,7 +282,7 @@ where
     }
 }
 
-impl<const LIMBS: usize> From<&NonZero<Int<LIMBS>>> for Value
+impl<'a, const LIMBS: usize> From<&NonZero<Int<LIMBS>>> for Value<'a>
 where
     Uint<LIMBS>: Encoding,
 {

@@ -3,7 +3,7 @@ use crate::{Value, tag};
 
 macro_rules! try_from_uint {
     ($type:ty) => {
-        impl From<$type> for Value {
+        impl<'a> From<$type> for Value<'a> {
             fn from(value: $type) -> Self {
                 Self::Unsigned(value.into())
             }
@@ -16,7 +16,7 @@ try_from_uint!(u16);
 try_from_uint!(u32);
 try_from_uint!(u64);
 
-impl From<u128> for Value {
+impl<'a> From<u128> for Value<'a> {
     fn from(value: u128) -> Self {
         if value <= u64::MAX as u128 {
             Self::Unsigned(value as u64)
@@ -28,7 +28,7 @@ impl From<u128> for Value {
     }
 }
 
-impl From<usize> for Value {
+impl<'a> From<usize> for Value<'a> {
     fn from(value: usize) -> Self {
         Self::Unsigned(value.try_into().unwrap())
     }
@@ -38,7 +38,7 @@ impl From<usize> for Value {
 
 macro_rules! try_from_sint {
     ($type:ty) => {
-        impl From<$type> for Value {
+        impl<'a> From<$type> for Value<'a> {
             fn from(value: $type) -> Self {
                 if value >= 0 {
                     Self::Unsigned(value as u64)
@@ -55,7 +55,7 @@ try_from_sint!(i16);
 try_from_sint!(i32);
 try_from_sint!(i64);
 
-impl From<i128> for Value {
+impl<'a> From<i128> for Value<'a> {
     fn from(value: i128) -> Self {
         if value >= 0 {
             Self::from(value as u128)
@@ -77,7 +77,7 @@ impl From<i128> for Value {
     }
 }
 
-impl From<isize> for Value {
+impl<'a> From<isize> for Value<'a> {
     fn from(value: isize) -> Self {
         Self::from(i64::try_from(value).unwrap())
     }
@@ -87,16 +87,16 @@ impl From<isize> for Value {
 
 macro_rules! try_from_value {
     ($type:ty, $to_x:ident) => {
-        impl TryFrom<Value> for $type {
+        impl<'a> TryFrom<Value<'a>> for $type {
             type Error = crate::Error;
-            fn try_from(value: Value) -> crate::Result<Self> {
+            fn try_from(value: Value<'a>) -> crate::Result<Self> {
                 value.$to_x()
             }
         }
 
-        impl TryFrom<&Value> for $type {
+        impl<'a> TryFrom<&Value<'a>> for $type {
             type Error = crate::Error;
-            fn try_from(value: &Value) -> crate::Result<Self> {
+            fn try_from(value: &Value<'a>) -> crate::Result<Self> {
                 value.$to_x()
             }
         }

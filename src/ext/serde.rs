@@ -163,7 +163,7 @@ impl From<crate::Error> for SerdeError {
 // Public API on Value
 // ---------------------------------------------------------------------------
 
-impl Value {
+impl<'a> Value<'a> {
     /// Serialize any [`Serialize`] value into a CBOR [`Value`].
     ///
     /// ```
@@ -179,7 +179,7 @@ impl Value {
     /// assert_eq!(v["y"].to_i32().unwrap(), 2);
     /// ```
     pub fn serialized<T: ?Sized + Serialize>(value: &T) -> Result<Self, SerdeError> {
-        value.serialize(ValueSerializer)
+        value.serialize(ValueSerializer(std::marker::PhantomData))
     }
 
     /// Deserialize this [`Value`] into any [`Deserialize`] type.
@@ -204,7 +204,7 @@ impl Value {
 // Serialize impl for Value
 // ---------------------------------------------------------------------------
 
-impl Serialize for Value {
+impl<'a> Serialize for Value<'a> {
     fn serialize<S: ser::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match self {
             Value::SimpleValue(sv) => match sv.data_type() {
@@ -248,24 +248,24 @@ impl Serialize for Value {
 // Deserialize impl for Value
 // ---------------------------------------------------------------------------
 
-impl<'de> Deserialize<'de> for Value {
+impl<'de, 'a> Deserialize<'de> for Value<'a> {
     fn deserialize<D: de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer.deserialize_any(ValueVisitor)
+        deserializer.deserialize_any(ValueVisitor(std::marker::PhantomData))
     }
 }
 
-struct ValueVisitor;
+struct ValueVisitor<'a>(std::marker::PhantomData<&'a ()>);
 
 macro_rules! visit {
     ($method:ident, $type:ty) => {
-        fn $method<E>(self, v: $type) -> Result<Value, E> {
+        fn $method<E>(self, v: $type) -> Result<Value<'a>, E> {
             Ok(Value::from(v))
         }
     };
 }
 
-impl<'de> Visitor<'de> for ValueVisitor {
-    type Value = Value;
+impl<'de, 'a> Visitor<'de> for ValueVisitor<'a> {
+    type Value = Value<'a>;
 
     fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("any CBOR-compatible value")
@@ -288,29 +288,37 @@ impl<'de> Visitor<'de> for ValueVisitor {
     visit!(visit_f32, f32);
     visit!(visit_f64, f64);
 
-    fn visit_char<E>(self, v: char) -> Result<Value, E> {
+    fn visit_char<E>(self, v: char) -> Result<Value<'a>, E> {
         Ok(Value::from(v.to_string()))
     }
 
-    visit!(visit_str, &str);
+    // visit!(visit_str, &str);
+    fn visit_str<E>(self, v: &str) -> Result<Value<'a>, E> {
+        Ok(Value::from(v.to_string()))
+    }
+
     visit!(visit_string, String);
 
-    visit!(visit_bytes, &[u8]);
+    //visit!(visit_bytes, &[u8]);
+    fn visit_bytes<E>(self, v: &[u8]) -> Result<Value<'a>, E> {
+        Ok(Value::from(v.to_vec()))
+    }
+
     visit!(visit_byte_buf, Vec<u8>);
 
-    fn visit_none<E>(self) -> Result<Value, E> {
+    fn visit_none<E>(self) -> Result<Value<'a>, E> {
         Ok(Value::null())
     }
 
-    fn visit_some<D: de::Deserializer<'de>>(self, deserializer: D) -> Result<Value, D::Error> {
+    fn visit_some<D: de::Deserializer<'de>>(self, deserializer: D) -> Result<Value<'a>, D::Error> {
         Deserialize::deserialize(deserializer)
     }
 
-    fn visit_unit<E>(self) -> Result<Value, E> {
+    fn visit_unit<E>(self) -> Result<Value<'a>, E> {
         Ok(Value::null())
     }
 
-    fn visit_seq<A: SeqAccess<'de>>(self, mut access: A) -> Result<Value, A::Error> {
+    fn visit_seq<A: SeqAccess<'de>>(self, mut access: A) -> Result<Value<'a>, A::Error> {
         let mut elements = Vec::with_capacity(access.size_hint().unwrap_or(0));
         while let Some(elem) = access.next_element()? {
             elements.push(elem);
@@ -318,7 +326,7 @@ impl<'de> Visitor<'de> for ValueVisitor {
         Ok(Value::Array(elements))
     }
 
-    fn visit_map<A: MapAccess<'de>>(self, mut access: A) -> Result<Value, A::Error> {
+    fn visit_map<A: MapAccess<'de>>(self, mut access: A) -> Result<Value<'a>, A::Error> {
         let mut map = BTreeMap::new();
         while let Some((k, v)) = access.next_entry()? {
             map.insert(k, v);
@@ -332,27 +340,27 @@ impl<'de> Visitor<'de> for ValueVisitor {
 // ---------------------------------------------------------------------------
 
 /// Serde `Serializer` that produces a CBOR [`Value`].
-struct ValueSerializer;
+struct ValueSerializer<'a>(std::marker::PhantomData<&'a ()>);
 
 macro_rules! serialize {
     ($method:ident, $type:ty) => {
-        fn $method(self, v: $type) -> Result<Value, SerdeError> {
+        fn $method(self, v: $type) -> Result<Value<'a>, SerdeError> {
             Ok(Value::from(v))
         }
     };
 }
 
-impl ser::Serializer for ValueSerializer {
-    type Ok = Value;
+impl<'a> ser::Serializer for ValueSerializer<'a> {
+    type Ok = Value<'a>;
     type Error = SerdeError;
 
-    type SerializeSeq = SeqBuilder;
-    type SerializeTuple = SeqBuilder;
-    type SerializeTupleStruct = SeqBuilder;
-    type SerializeTupleVariant = TupleVariantBuilder;
-    type SerializeMap = MapBuilder;
-    type SerializeStruct = MapBuilder;
-    type SerializeStructVariant = StructVariantBuilder;
+    type SerializeSeq = SeqBuilder<'a>;
+    type SerializeTuple = SeqBuilder<'a>;
+    type SerializeTupleStruct = SeqBuilder<'a>;
+    type SerializeTupleVariant = TupleVariantBuilder<'a>;
+    type SerializeMap = MapBuilder<'a>;
+    type SerializeStruct = MapBuilder<'a>;
+    type SerializeStructVariant = StructVariantBuilder<'a>;
 
     serialize!(serialize_bool, bool);
 
@@ -371,26 +379,31 @@ impl ser::Serializer for ValueSerializer {
     serialize!(serialize_f32, f32);
     serialize!(serialize_f64, f64);
 
-    fn serialize_char(self, v: char) -> Result<Value, SerdeError> {
+    fn serialize_char(self, v: char) -> Result<Value<'a>, SerdeError> {
         Ok(Value::from(v.to_string()))
     }
 
-    serialize!(serialize_str, &str);
-    serialize!(serialize_bytes, &[u8]);
+    fn serialize_str(self, v: &str) -> Result<Value<'a>, SerdeError> {
+        Ok(Value::from(v.to_string()))
+    }
 
-    fn serialize_none(self) -> Result<Value, SerdeError> {
+    fn serialize_bytes(self, v: &[u8]) -> Result<Value<'a>, SerdeError> {
+        Ok(Value::from(v.to_vec()))
+    }
+
+    fn serialize_none(self) -> Result<Value<'a>, SerdeError> {
         Ok(Value::null())
     }
 
-    fn serialize_some<T: ?Sized + Serialize>(self, value: &T) -> Result<Value, SerdeError> {
+    fn serialize_some<T: ?Sized + Serialize>(self, value: &T) -> Result<Value<'a>, SerdeError> {
         value.serialize(self)
     }
 
-    fn serialize_unit(self) -> Result<Value, SerdeError> {
+    fn serialize_unit(self) -> Result<Value<'a>, SerdeError> {
         Ok(Value::null())
     }
 
-    fn serialize_unit_struct(self, _name: &'static str) -> Result<Value, SerdeError> {
+    fn serialize_unit_struct(self, _name: &'static str) -> Result<Value<'a>, SerdeError> {
         Ok(Value::null())
     }
 
@@ -399,7 +412,7 @@ impl ser::Serializer for ValueSerializer {
         _name: &'static str,
         _variant_index: u32,
         variant: &'static str,
-    ) -> Result<Value, SerdeError> {
+    ) -> Result<Value<'a>, SerdeError> {
         Ok(Value::from(variant))
     }
 
@@ -407,7 +420,7 @@ impl ser::Serializer for ValueSerializer {
         self,
         _name: &'static str,
         value: &T,
-    ) -> Result<Value, SerdeError> {
+    ) -> Result<Value<'a>, SerdeError> {
         value.serialize(self)
     }
 
@@ -417,21 +430,21 @@ impl ser::Serializer for ValueSerializer {
         _variant_index: u32,
         variant: &'static str,
         value: &T,
-    ) -> Result<Value, SerdeError> {
+    ) -> Result<Value<'a>, SerdeError> {
         Ok(Value::map([(variant, Value::serialized(value)?)]))
     }
 
-    fn serialize_seq(self, len: Option<usize>) -> Result<SeqBuilder, SerdeError> {
+    fn serialize_seq(self, len: Option<usize>) -> Result<SeqBuilder<'a>, SerdeError> {
         Ok(SeqBuilder {
             elements: Vec::with_capacity(len.unwrap_or(0)),
         })
     }
 
-    fn serialize_tuple(self, len: usize) -> Result<SeqBuilder, SerdeError> {
+    fn serialize_tuple(self, len: usize) -> Result<SeqBuilder<'a>, SerdeError> {
         self.serialize_seq(Some(len))
     }
 
-    fn serialize_tuple_struct(self, _name: &'static str, len: usize) -> Result<SeqBuilder, SerdeError> {
+    fn serialize_tuple_struct(self, _name: &'static str, len: usize) -> Result<SeqBuilder<'a>, SerdeError> {
         self.serialize_seq(Some(len))
     }
 
@@ -441,14 +454,14 @@ impl ser::Serializer for ValueSerializer {
         _variant_index: u32,
         variant: &'static str,
         len: usize,
-    ) -> Result<TupleVariantBuilder, SerdeError> {
+    ) -> Result<TupleVariantBuilder<'a>, SerdeError> {
         Ok(TupleVariantBuilder {
             variant,
             elements: Vec::with_capacity(len),
         })
     }
 
-    fn serialize_map(self, len: Option<usize>) -> Result<MapBuilder, SerdeError> {
+    fn serialize_map(self, len: Option<usize>) -> Result<MapBuilder<'a>, SerdeError> {
         let _ = len; // BTreeMap doesn't pre-allocate
         Ok(MapBuilder {
             entries: BTreeMap::new(),
@@ -456,7 +469,7 @@ impl ser::Serializer for ValueSerializer {
         })
     }
 
-    fn serialize_struct(self, _name: &'static str, len: usize) -> Result<MapBuilder, SerdeError> {
+    fn serialize_struct(self, _name: &'static str, len: usize) -> Result<MapBuilder<'a>, SerdeError> {
         self.serialize_map(Some(len))
     }
 
@@ -466,7 +479,7 @@ impl ser::Serializer for ValueSerializer {
         _variant_index: u32,
         variant: &'static str,
         _len: usize,
-    ) -> Result<StructVariantBuilder, SerdeError> {
+    ) -> Result<StructVariantBuilder<'a>, SerdeError> {
         Ok(StructVariantBuilder {
             variant,
             entries: BTreeMap::new(),
@@ -476,12 +489,12 @@ impl ser::Serializer for ValueSerializer {
 
 // --- Serializer helpers ---
 
-struct SeqBuilder {
-    elements: Vec<Value>,
+struct SeqBuilder<'a> {
+    elements: Vec<Value<'a>>,
 }
 
-impl SerializeSeq for SeqBuilder {
-    type Ok = Value;
+impl<'a> SerializeSeq for SeqBuilder<'a> {
+    type Ok = Value<'a>;
     type Error = SerdeError;
 
     fn serialize_element<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<(), SerdeError> {
@@ -489,44 +502,44 @@ impl SerializeSeq for SeqBuilder {
         Ok(())
     }
 
-    fn end(self) -> Result<Value, SerdeError> {
+    fn end(self) -> Result<Value<'a>, SerdeError> {
         Ok(Value::Array(self.elements))
     }
 }
 
-impl ser::SerializeTuple for SeqBuilder {
-    type Ok = Value;
+impl<'a> ser::SerializeTuple for SeqBuilder<'a> {
+    type Ok = Value<'a>;
     type Error = SerdeError;
 
     fn serialize_element<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<(), SerdeError> {
         SerializeSeq::serialize_element(self, value)
     }
 
-    fn end(self) -> Result<Value, SerdeError> {
+    fn end(self) -> Result<Value<'a>, SerdeError> {
         SerializeSeq::end(self)
     }
 }
 
-impl ser::SerializeTupleStruct for SeqBuilder {
-    type Ok = Value;
+impl<'a> ser::SerializeTupleStruct for SeqBuilder<'a> {
+    type Ok = Value<'a>;
     type Error = SerdeError;
 
     fn serialize_field<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<(), SerdeError> {
         SerializeSeq::serialize_element(self, value)
     }
 
-    fn end(self) -> Result<Value, SerdeError> {
+    fn end(self) -> Result<Value<'a>, SerdeError> {
         SerializeSeq::end(self)
     }
 }
 
-struct TupleVariantBuilder {
+struct TupleVariantBuilder<'a> {
     variant: &'static str,
-    elements: Vec<Value>,
+    elements: Vec<Value<'a>>,
 }
 
-impl ser::SerializeTupleVariant for TupleVariantBuilder {
-    type Ok = Value;
+impl<'a> ser::SerializeTupleVariant for TupleVariantBuilder<'a> {
+    type Ok = Value<'a>;
     type Error = SerdeError;
 
     fn serialize_field<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<(), SerdeError> {
@@ -534,18 +547,18 @@ impl ser::SerializeTupleVariant for TupleVariantBuilder {
         Ok(())
     }
 
-    fn end(self) -> Result<Value, SerdeError> {
+    fn end(self) -> Result<Value<'a>, SerdeError> {
         Ok(Value::map([(self.variant, self.elements)]))
     }
 }
 
-struct MapBuilder {
-    entries: BTreeMap<Value, Value>,
-    next_key: Option<Value>,
+struct MapBuilder<'a> {
+    entries: BTreeMap<Value<'a>, Value<'a>>,
+    next_key: Option<Value<'a>>,
 }
 
-impl SerializeMap for MapBuilder {
-    type Ok = Value;
+impl<'a> SerializeMap for MapBuilder<'a> {
+    type Ok = Value<'a>;
     type Error = SerdeError;
 
     fn serialize_key<T: ?Sized + Serialize>(&mut self, key: &T) -> Result<(), SerdeError> {
@@ -562,13 +575,13 @@ impl SerializeMap for MapBuilder {
         Ok(())
     }
 
-    fn end(self) -> Result<Value, SerdeError> {
+    fn end(self) -> Result<Value<'a>, SerdeError> {
         Ok(Value::Map(self.entries))
     }
 }
 
-impl ser::SerializeStruct for MapBuilder {
-    type Ok = Value;
+impl<'a> ser::SerializeStruct for MapBuilder<'a> {
+    type Ok = Value<'a>;
     type Error = SerdeError;
 
     fn serialize_field<T: ?Sized + Serialize>(&mut self, key: &'static str, value: &T) -> Result<(), SerdeError> {
@@ -576,18 +589,18 @@ impl ser::SerializeStruct for MapBuilder {
         Ok(())
     }
 
-    fn end(self) -> Result<Value, SerdeError> {
+    fn end(self) -> Result<Value<'a>, SerdeError> {
         Ok(Value::Map(self.entries))
     }
 }
 
-struct StructVariantBuilder {
+struct StructVariantBuilder<'a> {
     variant: &'static str,
-    entries: BTreeMap<Value, Value>,
+    entries: BTreeMap<Value<'a>, Value<'a>>,
 }
 
-impl ser::SerializeStructVariant for StructVariantBuilder {
-    type Ok = Value;
+impl<'a> ser::SerializeStructVariant for StructVariantBuilder<'a> {
+    type Ok = Value<'a>;
     type Error = SerdeError;
 
     fn serialize_field<T: ?Sized + Serialize>(&mut self, key: &'static str, value: &T) -> Result<(), SerdeError> {
@@ -595,7 +608,7 @@ impl ser::SerializeStructVariant for StructVariantBuilder {
         Ok(())
     }
 
-    fn end(self) -> Result<Value, SerdeError> {
+    fn end(self) -> Result<Value<'a>, SerdeError> {
         Ok(Value::map([(self.variant, self.entries)]))
     }
 }
@@ -605,7 +618,7 @@ impl ser::SerializeStructVariant for StructVariantBuilder {
 // ---------------------------------------------------------------------------
 
 /// Serde `Deserializer` that reads from a CBOR [`Value`] reference.
-struct ValueDeserializer<'de>(&'de Value);
+struct ValueDeserializer<'de, 'a>(&'de Value<'a>);
 
 macro_rules! deserialize {
     ($method:ident, $visit:ident) => {
@@ -615,7 +628,7 @@ macro_rules! deserialize {
     };
 }
 
-impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
+impl<'de, 'a> de::Deserializer<'de> for ValueDeserializer<'de, 'a> {
     type Error = SerdeError;
 
     fn deserialize_any<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, SerdeError> {
@@ -811,9 +824,9 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
 // SeqAccess / MapAccess
 // ---------------------------------------------------------------------------
 
-struct SeqAccessImpl<'de>(std::slice::Iter<'de, Value>);
+struct SeqAccessImpl<'de, 'a>(std::slice::Iter<'de, Value<'a>>);
 
-impl<'de> SeqAccess<'de> for SeqAccessImpl<'de> {
+impl<'de, 'a> SeqAccess<'de> for SeqAccessImpl<'de, 'a> {
     type Error = SerdeError;
 
     fn next_element_seed<T: DeserializeSeed<'de>>(&mut self, seed: T) -> Result<Option<T::Value>, SerdeError> {
@@ -828,12 +841,12 @@ impl<'de> SeqAccess<'de> for SeqAccessImpl<'de> {
     }
 }
 
-struct MapAccessImpl<'de> {
-    iter: std::collections::btree_map::Iter<'de, Value, Value>,
-    pending_value: Option<&'de Value>,
+struct MapAccessImpl<'de, 'a> {
+    iter: std::collections::btree_map::Iter<'de, Value<'a>, Value<'a>>,
+    pending_value: Option<&'de Value<'a>>,
 }
 
-impl<'de> MapAccess<'de> for MapAccessImpl<'de> {
+impl<'de, 'a> MapAccess<'de> for MapAccessImpl<'de, 'a> {
     type Error = SerdeError;
 
     fn next_key_seed<K: DeserializeSeed<'de>>(&mut self, seed: K) -> Result<Option<K::Value>, SerdeError> {
@@ -863,14 +876,14 @@ impl<'de> MapAccess<'de> for MapAccessImpl<'de> {
 // EnumAccess / VariantAccess
 // ---------------------------------------------------------------------------
 
-struct EnumAccessImpl<'de> {
+struct EnumAccessImpl<'de, 'a> {
     variant: &'de str,
-    value: &'de Value,
+    value: &'de Value<'a>,
 }
 
-impl<'de> de::EnumAccess<'de> for EnumAccessImpl<'de> {
+impl<'de, 'a> de::EnumAccess<'de> for EnumAccessImpl<'de, 'a> {
     type Error = SerdeError;
-    type Variant = VariantAccessImpl<'de>;
+    type Variant = VariantAccessImpl<'de, 'a>;
 
     fn variant_seed<V: DeserializeSeed<'de>>(self, seed: V) -> Result<(V::Value, Self::Variant), SerdeError> {
         let variant = seed.deserialize(de::value::StrDeserializer::<SerdeError>::new(self.variant))?;
@@ -878,9 +891,9 @@ impl<'de> de::EnumAccess<'de> for EnumAccessImpl<'de> {
     }
 }
 
-struct VariantAccessImpl<'de>(&'de Value);
+struct VariantAccessImpl<'de, 'a>(&'de Value<'a>);
 
-impl<'de> de::VariantAccess<'de> for VariantAccessImpl<'de> {
+impl<'de, 'a> de::VariantAccess<'de> for VariantAccessImpl<'de, 'a> {
     type Error = SerdeError;
 
     fn unit_variant(self) -> Result<(), SerdeError> {
@@ -1260,6 +1273,24 @@ mod tests {
         let v = Value::serialized(&(1_u32, "hello", true)).unwrap();
         let back: (u32, String, bool) = v.deserialized().unwrap();
         assert_eq!(back, (1, "hello".into(), true));
+    }
+
+    /// --- Borrowed values ---
+
+    #[test]
+    fn deserialize_borrowed() {
+        let v = map! { "text" => "Rust", "bytes" => b"CBOR" };
+
+        #[derive(Deserialize)]
+        struct Example<'a> {
+            text: &'a str,
+            bytes: &'a [u8],
+        }
+
+        let s: Example = v.deserialized().unwrap();
+
+        assert_eq!(s.text, "Rust");
+        assert_eq!(s.bytes, b"CBOR");
     }
 
     // --- SerdeError public field ---

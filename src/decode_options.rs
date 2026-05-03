@@ -250,7 +250,7 @@ impl DecodeOptions {
     ///     .unwrap();
     /// assert_eq!(v.to_u32().unwrap(), 42);
     /// ```
-    pub fn decode(&self, bytes: impl AsRef<[u8]>) -> Result<Value> {
+    pub fn decode<'a>(&self, bytes: impl AsRef<[u8]>) -> Result<Value<'a>> {
         let bytes = bytes.as_ref();
         match self.format {
             Format::Binary => {
@@ -313,7 +313,7 @@ impl DecodeOptions {
     /// assert_eq!(b.to_u32().unwrap(), 2);
     /// assert_eq!(c.to_u32().unwrap(), 3);
     /// ```
-    pub fn read_from(&self, reader: impl std::io::Read) -> IoResult<Value> {
+    pub fn read_from<'a>(&self, reader: impl std::io::Read) -> IoResult<Value<'a>> {
         match self.format {
             Format::Binary => {
                 let mut reader = reader;
@@ -375,7 +375,7 @@ impl DecodeOptions {
 
     /// Decode exactly one CBOR data item from an arbitrary reader.
     /// Used by the sequence iterators to share the core decoding logic.
-    pub(crate) fn decode_one<R>(&self, reader: &mut R) -> std::result::Result<Value, R::Error>
+    pub(crate) fn decode_one<'a, R>(&self, reader: &mut R) -> std::result::Result<Value<'a>, R::Error>
     where
         R: MyReader,
         R::Error: From<Error>,
@@ -393,12 +393,12 @@ impl DecodeOptions {
         self.format
     }
 
-    fn do_read<R>(
+    fn do_read<'a, R>(
         &self,
         reader: &mut R,
         recursion_limit: u16,
         oom_mitigation: usize,
-    ) -> std::result::Result<Value, R::Error>
+    ) -> std::result::Result<Value<'a>, R::Error>
     where
         R: MyReader,
         R::Error: From<Error>,
@@ -421,7 +421,7 @@ impl DecodeOptions {
                 if len > self.length_limit {
                     return Err(Error::LengthTooLarge.into());
                 }
-                Value::ByteString(reader.read_vec(len, oom_mitigation)?)
+                Value::ByteString(reader.read_vec(len, oom_mitigation)?.into())
             }
 
             Major::TextString => {
@@ -431,7 +431,7 @@ impl DecodeOptions {
                 }
                 let bytes = reader.read_vec(len, oom_mitigation)?;
                 let string = String::from_utf8(bytes).map_err(Error::from)?;
-                Value::TextString(string)
+                Value::TextString(string.into())
             }
 
             Major::Array => {

@@ -131,7 +131,7 @@ impl<W: Write> SequenceWriter<W> {
     /// sw.write_item(&Value::from(2)).unwrap();
     /// assert_eq!(buf, b"0102");
     /// ```
-    pub fn write_item(&mut self, value: &Value) -> io::Result<()> {
+    pub fn write_item(&mut self, value: &Value<'_>) -> io::Result<()> {
         match self.format {
             EncodeFormat::Binary => value.write_to(&mut self.writer)?,
             EncodeFormat::Hex => value.write_hex_to(&mut self.writer)?,
@@ -166,9 +166,10 @@ impl<W: Write> SequenceWriter<W> {
     ///     .unwrap();
     /// assert_eq!(buf, [0x01, 0x02, 0x03]);
     /// ```
-    pub fn write_items<'a, I>(&mut self, items: I) -> io::Result<()>
+    pub fn write_items<'a, 'b, I>(&mut self, items: I) -> io::Result<()>
     where
-        I: IntoIterator<Item = &'a Value>,
+        'a: 'b,
+        I: IntoIterator<Item = &'b Value<'a>>,
     {
         for item in items {
             self.write_item(item)?;
@@ -193,9 +194,10 @@ impl<W: Write> SequenceWriter<W> {
     /// sw.write_pairs(value.as_map().unwrap()).unwrap();
     /// assert_eq!(sw.into_inner(), br#""a", 1, "b", 2"#);
     /// ```
-    pub fn write_pairs<'a, I>(&mut self, pairs: I) -> io::Result<()>
+    pub fn write_pairs<'a, 'b, I>(&mut self, pairs: I) -> io::Result<()>
     where
-        I: IntoIterator<Item = (&'a Value, &'a Value)>,
+        'a: 'b,
+        I: IntoIterator<Item = (&'b Value<'a>, &'b Value<'a>)>,
     {
         for (k, v) in pairs {
             self.write_item(k)?;

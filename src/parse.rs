@@ -3,7 +3,7 @@
 //! Parses diagnostic-notation strings into [`Value`]. Exposed through the
 //! standard [`FromStr`] trait: `"42".parse::<Value>()`.
 
-use std::{collections::BTreeMap, str::FromStr};
+use std::{borrow::Cow, collections::BTreeMap, str::FromStr};
 
 use crate::{
     Error, Float, SimpleValue, Value,
@@ -14,7 +14,7 @@ use crate::{
     util::{trim_leading_zeros, u8_from_base64_digit, u8_from_hex_digit, u64_from_slice},
 };
 
-impl FromStr for Value {
+impl<'a> FromStr for Value<'a> {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Error> {
@@ -47,7 +47,7 @@ impl<R: MyReader> Parser<R> {
     /// Parse a single value and require that the input is then fully
     /// consumed (trailing whitespace and comments are accepted, nothing
     /// else). Used by in-memory decode paths.
-    pub(crate) fn parse_complete(&mut self) -> Result<Value, R::Error> {
+    pub(crate) fn parse_complete<'a>(&mut self) -> Result<Value<'a>, R::Error> {
         self.skip_whitespace()?;
         let value = self.parse_value()?;
         self.skip_whitespace()?;
@@ -64,7 +64,7 @@ impl<R: MyReader> Parser<R> {
     /// else is rejected. Used by [`DecodeOptions::read_from`] so the
     /// caller can pull successive elements of a CBOR sequence by
     /// calling `read_from` repeatedly.
-    pub(crate) fn parse_stream_item(&mut self) -> Result<Value, R::Error> {
+    pub(crate) fn parse_stream_item<'a>(&mut self) -> Result<Value<'a>, R::Error> {
         self.skip_whitespace()?;
         let value = self.parse_value()?;
         self.consume_trailing_separator()?;
@@ -75,7 +75,7 @@ impl<R: MyReader> Parser<R> {
     /// end of input (including a trailing comma). After returning a
     /// value, any trailing top-level comma is consumed, ready for the
     /// next call.
-    pub(crate) fn parse_seq_item(&mut self) -> Result<Option<Value>, R::Error> {
+    pub(crate) fn parse_seq_item<'a>(&mut self) -> Result<Option<Value<'a>>, R::Error> {
         self.skip_whitespace()?;
         if self.at_end()? {
             Ok(None)
@@ -195,7 +195,7 @@ impl<R: MyReader> Parser<R> {
         Ok(self.peek()?.is_none())
     }
 
-    fn parse_value(&mut self) -> Result<Value, R::Error> {
+    fn parse_value<'a>(&mut self) -> Result<Value<'a>, R::Error> {
         self.skip_whitespace()?;
         let byte = self.peek()?.ok_or(Error::UnexpectedEof)?;
         match byte {
@@ -225,7 +225,7 @@ impl<R: MyReader> Parser<R> {
         }
     }
 
-    fn parse_array(&mut self) -> Result<Value, R::Error> {
+    fn parse_array<'a>(&mut self) -> Result<Value<'a>, R::Error> {
         self.expect(b'[')?;
         self.skip_whitespace()?;
         let mut items = Vec::new();
@@ -249,7 +249,7 @@ impl<R: MyReader> Parser<R> {
         }
     }
 
-    fn parse_map(&mut self) -> Result<Value, R::Error> {
+    fn parse_map<'a>(&mut self) -> Result<Value<'a>, R::Error> {
         self.expect(b'{')?;
         self.skip_whitespace()?;
         let mut map: BTreeMap<Value, Value> = BTreeMap::new();
@@ -281,7 +281,7 @@ impl<R: MyReader> Parser<R> {
         }
     }
 
-    fn parse_number_or_tag(&mut self) -> Result<Value, R::Error> {
+    fn parse_number_or_tag<'a>(&mut self) -> Result<Value<'a>, R::Error> {
         let negative = self.eat(b'-')?;
 
         let value = if self.peek()? == Some(b'0') {
@@ -322,7 +322,7 @@ impl<R: MyReader> Parser<R> {
         }
     }
 
-    fn parse_decimal(&mut self, negative: bool) -> Result<Value, R::Error> {
+    fn parse_decimal<'a>(&mut self, negative: bool) -> Result<Value<'a>, R::Error> {
         let mut int_digits: Vec<u8> = Vec::new();
         while let Some(b) = self.peek()?
             && b.is_ascii_digit()
@@ -374,7 +374,7 @@ impl<R: MyReader> Parser<R> {
         Ok(be_bytes_to_value(&bytes, negative)?)
     }
 
-    fn parse_integer_base(&mut self, negative: bool, base: u32) -> Result<Value, R::Error> {
+    fn parse_integer_base<'a>(&mut self, negative: bool, base: u32) -> Result<Value<'a>, R::Error> {
         let mut digits: Vec<u8> = Vec::new();
         let mut last_was_digit = false;
         while let Some(b) = self.peek()? {
@@ -409,7 +409,7 @@ impl<R: MyReader> Parser<R> {
         }
     }
 
-    fn parse_simple_tail(&mut self) -> Result<Value, R::Error> {
+    fn parse_simple_tail<'a>(&mut self) -> Result<Value<'a>, R::Error> {
         self.skip_whitespace()?;
         let mut digits: Vec<u8> = Vec::new();
         while let Some(b) = self.peek()?
@@ -429,7 +429,7 @@ impl<R: MyReader> Parser<R> {
         }
     }
 
-    fn parse_float_hex_tail(&mut self) -> Result<Value, R::Error> {
+    fn parse_float_hex_tail<'a>(&mut self) -> Result<Value<'a>, R::Error> {
         let mut hex: Vec<u8> = Vec::new();
         while let Some(b) = self.peek()?
             && b != b'\''
@@ -451,7 +451,7 @@ impl<R: MyReader> Parser<R> {
         }
     }
 
-    fn parse_hex_bstr_tail(&mut self) -> Result<Value, R::Error> {
+    fn parse_hex_bstr_tail<'a>(&mut self) -> Result<Value<'a>, R::Error> {
         let mut bytes = Vec::new();
         let mut half: Option<u8> = None;
         loop {
@@ -460,7 +460,7 @@ impl<R: MyReader> Parser<R> {
                     if half.is_some() {
                         return Err(Error::InvalidFormat.into());
                     } else {
-                        return Ok(Value::ByteString(bytes));
+                        return Ok(Value::ByteString(bytes.into()));
                     }
                 }
                 b' ' | b'\t' | b'\r' | b'\n' => continue,
@@ -475,18 +475,18 @@ impl<R: MyReader> Parser<R> {
         }
     }
 
-    fn parse_b64_bstr_tail(&mut self) -> Result<Value, R::Error> {
+    fn parse_b64_bstr_tail<'a>(&mut self) -> Result<Value<'a>, R::Error> {
         let mut data: Vec<u8> = Vec::new();
         loop {
             match self.advance()? {
-                b'\'' => return Ok(Value::ByteString(decode_base64(&data)?)),
+                b'\'' => return Ok(Value::ByteString(decode_base64(&data)?.into())),
                 b' ' | b'\t' | b'\r' | b'\n' => continue,
                 byte => data.push(byte),
             }
         }
     }
 
-    fn parse_text_string(&mut self) -> Result<Value, R::Error> {
+    fn parse_text_string<'a>(&mut self) -> Result<Value<'a>, R::Error> {
         self.expect(b'"')?;
         let mut buf: Vec<u8> = Vec::new();
         loop {
@@ -509,13 +509,13 @@ impl<R: MyReader> Parser<R> {
         }
     }
 
-    fn parse_single_quoted_bstr(&mut self) -> Result<Value, R::Error> {
+    fn parse_single_quoted_bstr<'a>(&mut self) -> Result<Value<'a>, R::Error> {
         self.expect(b'\'')?;
         let mut bytes: Vec<u8> = Vec::new();
         loop {
             match self.advance()? {
                 b'\'' => {
-                    return Ok(Value::ByteString(bytes));
+                    return Ok(Value::ByteString(bytes.into()));
                 }
                 b'\r' => {
                     self.eat(b'\n')?;
@@ -590,13 +590,13 @@ impl<R: MyReader> Parser<R> {
         Ok(code)
     }
 
-    fn parse_embedded_bstr(&mut self) -> Result<Value, R::Error> {
+    fn parse_embedded_bstr<'a>(&mut self) -> Result<Value<'a>, R::Error> {
         self.expect(b'<')?;
         self.expect(b'<')?;
         let mut buf = Vec::new();
         self.skip_whitespace()?;
         if self.consume(b">>")? {
-            Ok(Value::ByteString(buf))
+            Ok(Value::ByteString(Cow::Borrowed(&[])))
         } else {
             self.enter()?;
             let result = loop {
@@ -606,7 +606,7 @@ impl<R: MyReader> Parser<R> {
                 if self.eat(b',')? {
                     continue;
                 } else if self.consume(b">>")? {
-                    break Ok(Value::ByteString(buf));
+                    break Ok(Value::ByteString(buf.into()));
                 } else {
                     break Err(Error::InvalidFormat.into());
                 }
@@ -680,7 +680,7 @@ fn digits_to_be_bytes(digits: &[u8], base: u32) -> Result<Vec<u8>, Error> {
 }
 
 /// Construct a CBOR integer value from a big-endian magnitude and a sign.
-fn be_bytes_to_value(bytes: &[u8], negative: bool) -> Result<Value, Error> {
+fn be_bytes_to_value<'a>(bytes: &[u8], negative: bool) -> Result<Value<'a>, Error> {
     let bytes = trim_leading_zeros(bytes);
 
     if bytes.is_empty() {
@@ -689,7 +689,7 @@ fn be_bytes_to_value(bytes: &[u8], negative: bool) -> Result<Value, Error> {
         if bytes.len() <= 8 {
             Ok(Value::Unsigned(u64_from_slice(bytes)?))
         } else {
-            Ok(Value::tag(tag::POS_BIG_INT, Value::from(bytes)))
+            Ok(Value::tag(tag::POS_BIG_INT, Value::byte_string(bytes)))
         }
     } else {
         let mut sub = bytes.to_vec();
@@ -707,7 +707,7 @@ fn be_bytes_to_value(bytes: &[u8], negative: bool) -> Result<Value, Error> {
         if sub.len() <= 8 {
             Ok(Value::Negative(u64_from_slice(sub)?))
         } else {
-            Ok(Value::tag(tag::NEG_BIG_INT, Value::from(sub)))
+            Ok(Value::tag(tag::NEG_BIG_INT, Value::byte_string(sub)))
         }
     }
 }

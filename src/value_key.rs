@@ -54,9 +54,9 @@ pub struct ValueKey<'a>(Inner<'a>);
 enum Inner<'a> {
     Bytes(&'a [u8]),
     Text(&'a str),
-    Array(&'a [Value]),
-    Map(&'a BTreeMap<Value, Value>),
-    Other(Cow<'a, Value>),
+    Array(&'a [Value<'a>]),
+    Map(&'a BTreeMap<Value<'a>, Value<'a>>),
+    Other(Cow<'a, Value<'a>>),
 }
 
 impl<'a> ValueKey<'a> {
@@ -69,38 +69,38 @@ impl<'a> ValueKey<'a> {
     }
 }
 
-impl<'a> From<Value> for ValueKey<'a> {
-    fn from(value: Value) -> Self {
+impl<'a> From<Value<'a>> for ValueKey<'a> {
+    fn from(value: Value<'a>) -> Self {
         Self(Inner::Other(Cow::Owned(value)))
     }
 }
 
-impl<'a> From<&'a Value> for ValueKey<'a> {
-    fn from(value: &'a Value) -> Self {
+impl<'a> From<&'a Value<'a>> for ValueKey<'a> {
+    fn from(value: &'a Value<'a>) -> Self {
         Self(Inner::Other(Cow::Borrowed(value)))
     }
 }
 
-impl<'a> From<&'a [Value]> for ValueKey<'a> {
-    fn from(value: &'a [Value]) -> Self {
+impl<'a> From<&'a [Value<'a>]> for ValueKey<'a> {
+    fn from(value: &'a [Value<'a>]) -> Self {
         Self(Inner::Array(value))
     }
 }
 
-impl<'a> From<&'a Array> for ValueKey<'a> {
-    fn from(value: &'a Array) -> Self {
+impl<'a> From<&'a Array<'a>> for ValueKey<'a> {
+    fn from(value: &'a Array<'a>) -> Self {
         Self(Inner::Array(&value.0))
     }
 }
 
-impl<'a> From<&'a Map> for ValueKey<'a> {
-    fn from(value: &'a Map) -> Self {
+impl<'a> From<&'a Map<'a>> for ValueKey<'a> {
+    fn from(value: &'a Map<'a>) -> Self {
         Self(Inner::Map(&value.0))
     }
 }
 
-impl<'a> From<&'a BTreeMap<Value, Value>> for ValueKey<'a> {
-    fn from(value: &'a BTreeMap<Value, Value>) -> Self {
+impl<'a> From<&'a BTreeMap<Value<'a>, Value<'a>>> for ValueKey<'a> {
+    fn from(value: &'a BTreeMap<Value<'a>, Value<'a>>) -> Self {
         Self(Inner::Map(value))
     }
 }

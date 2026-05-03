@@ -96,7 +96,7 @@ impl<'a> SequenceDecoder<'a> {
 }
 
 impl<'a> Iterator for SequenceDecoder<'a> {
-    type Item = Result<Value>;
+    type Item = Result<Value<'a>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match &mut self.inner {
@@ -205,7 +205,7 @@ impl<R: io::Read> SequenceReader<R> {
 }
 
 impl<R: io::Read> Iterator for SequenceReader<R> {
-    type Item = IoResult<Value>;
+    type Item = IoResult<Value<'static>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match &mut self.inner {

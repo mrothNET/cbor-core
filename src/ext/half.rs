@@ -21,7 +21,7 @@ impl From<f16> for Float {
     }
 }
 
-impl Value {
+impl<'a> Value<'a> {
     /// Convert to `half::f16`.
     ///
     /// Returns `Err(Precision)` for f32 or f64-width values.
@@ -34,15 +34,15 @@ impl Value {
     }
 }
 
-impl From<f16> for Value {
+impl<'a> From<f16> for Value<'a> {
     fn from(value: f16) -> Self {
         Self::Float(value.into())
     }
 }
 
-impl TryFrom<Value> for f16 {
+impl<'a> TryFrom<Value<'a>> for f16 {
     type Error = Error;
-    fn try_from(value: Value) -> Result<Self> {
+    fn try_from(value: Value<'a>) -> Result<Self> {
         value.to_f16()
     }
 }

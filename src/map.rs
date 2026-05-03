@@ -11,14 +11,14 @@ use crate::{Error, Value};
 ///
 /// Supported source types (where `K: Into<Value>`, `V: Into<Value>`):
 ///
-/// - `[(K, V); N]` — fixed-size array of pairs
-/// - `&[(K, V)]` — slice of pairs (requires `K: Copy, V: Copy`)
-/// - `Vec<(K, V)>` — vector of pairs
-/// - `Box<[(K, V)]>` — boxed slice of pairs
-/// - `BTreeMap<Value, Value>` — already-sorted map (moved as-is)
-/// - `&BTreeMap<K, V>` — borrowed map (requires `K: Copy, V: Copy`)
-/// - `&HashMap<K, V>` — borrowed hash map (requires `K: Copy, V: Copy`)
-/// - `()` — empty map
+/// - `[(K, V); N]` (fixed-size array of pairs)
+/// - `&[(K, V)]` (slice of pairs; requires `K: Copy, V: Copy`)
+/// - `Vec<(K, V)>` (vector of pairs)
+/// - `Box<[(K, V)]>` (boxed slice of pairs)
+/// - `BTreeMap<Value, Value>` (already-sorted map; moved as-is)
+/// - `&BTreeMap<K, V>` (borrowed map; requires `K: Copy, V: Copy`)
+/// - `&HashMap<K, V>` (borrowed hash map; requires `K: Copy, V: Copy`)
+/// - `()` (empty map)
 ///
 /// Keys and values are converted via their `Into<Value>`
 /// implementations. Keys are automatically sorted in CBOR canonical
@@ -51,9 +51,9 @@ use crate::{Error, Value};
 /// assert_eq!(m.len(), Some(0));
 /// ```
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct Map(pub(crate) BTreeMap<Value, Value>);
+pub struct Map<'a>(pub(crate) BTreeMap<Value<'a>, Value<'a>>);
 
-impl Map {
+impl<'a> Map<'a> {
     /// Create an empty map.
     #[must_use]
     pub const fn new() -> Self {
@@ -62,18 +62,18 @@ impl Map {
 
     /// Borrow the inner `BTreeMap`.
     #[must_use]
-    pub const fn get_ref(&self) -> &BTreeMap<Value, Value> {
+    pub const fn get_ref(&self) -> &BTreeMap<Value<'a>, Value<'a>> {
         &self.0
     }
 
     /// Mutably borrow the inner `BTreeMap`.
-    pub fn get_mut(&mut self) -> &mut BTreeMap<Value, Value> {
+    pub const fn get_mut(&mut self) -> &mut BTreeMap<Value<'a>, Value<'a>> {
         &mut self.0
     }
 
     /// Unwrap into the inner `BTreeMap`.
     #[must_use]
-    pub fn into_inner(self) -> BTreeMap<Value, Value> {
+    pub fn into_inner(self) -> BTreeMap<Value<'a>, Value<'a>> {
         self.0
     }
 
@@ -92,8 +92,8 @@ impl Map {
     /// ```
     pub fn from_pairs<K, V, I>(pairs: I) -> Self
     where
-        K: Into<Value>,
-        V: Into<Value>,
+        K: Into<Value<'a>>,
+        V: Into<Value<'a>>,
         I: IntoIterator<Item = (K, V)>,
     {
         Self(pairs.into_iter().map(|(k, v)| (k.into(), v.into())).collect())
@@ -117,8 +117,8 @@ impl Map {
     /// ```
     pub fn try_from_pairs<K, V, I>(pairs: I) -> Result<Self, Error>
     where
-        K: Into<Value>,
-        V: Into<Value>,
+        K: Into<Value<'a>>,
+        V: Into<Value<'a>>,
         I: IntoIterator<Item = (K, V)>,
     {
         let mut map = BTreeMap::new();
@@ -153,10 +153,10 @@ impl Map {
     /// ```
     pub fn from_sequence<I>(items: I) -> Result<Self, Error>
     where
-        I: IntoIterator<Item = Value>,
+        I: IntoIterator<Item = Value<'a>>,
     {
         let mut iter = items.into_iter();
-        let mut map: BTreeMap<Value, Value> = BTreeMap::new();
+        let mut map: BTreeMap<Value<'a>, Value<'a>> = BTreeMap::new();
         while let Some(key) = iter.next() {
             let value = iter.next().ok_or(Error::UnexpectedEof)?;
             if let Some((last_key, _)) = map.last_key_value()
@@ -194,11 +194,11 @@ impl Map {
     /// ```
     pub fn try_from_sequence<I, E>(items: I) -> Result<Self, E>
     where
-        I: IntoIterator<Item = Result<Value, E>>,
+        I: IntoIterator<Item = Result<Value<'a>, E>>,
         E: From<Error>,
     {
         let mut iter = items.into_iter();
-        let mut map: BTreeMap<Value, Value> = BTreeMap::new();
+        let mut map: BTreeMap<Value<'a>, Value<'a>> = BTreeMap::new();
         while let Some(key) = iter.next() {
             let key = key?;
             let value = iter.next().ok_or(Error::UnexpectedEof)??;
@@ -213,43 +213,43 @@ impl Map {
     }
 }
 
-impl From<BTreeMap<Value, Value>> for Map {
-    fn from(map: BTreeMap<Value, Value>) -> Self {
+impl<'a> From<BTreeMap<Value<'a>, Value<'a>>> for Map<'a> {
+    fn from(map: BTreeMap<Value<'a>, Value<'a>>) -> Self {
         Map(map)
     }
 }
 
-impl<K: Into<Value> + Copy, V: Into<Value> + Copy> From<&BTreeMap<K, V>> for Map {
+impl<'a, K: Into<Value<'a>> + Copy, V: Into<Value<'a>> + Copy> From<&BTreeMap<K, V>> for Map<'a> {
     fn from(map: &BTreeMap<K, V>) -> Self {
         Map(map.iter().map(|(&k, &v)| (k.into(), v.into())).collect())
     }
 }
 
-impl<K: Into<Value> + Copy, V: Into<Value> + Copy> From<&HashMap<K, V>> for Map {
+impl<'a, K: Into<Value<'a>> + Copy, V: Into<Value<'a>> + Copy> From<&HashMap<K, V>> for Map<'a> {
     fn from(map: &HashMap<K, V>) -> Self {
         Map(map.iter().map(|(&k, &v)| (k.into(), v.into())).collect())
     }
 }
 
-impl<K: Into<Value> + Copy, V: Into<Value> + Copy> From<&[(K, V)]> for Map {
+impl<'a, K: Into<Value<'a>> + Copy, V: Into<Value<'a>> + Copy> From<&[(K, V)]> for Map<'a> {
     fn from(slice: &[(K, V)]) -> Self {
         Self(slice.iter().map(|&(k, v)| (k.into(), v.into())).collect())
     }
 }
 
-impl<const N: usize, K: Into<Value>, V: Into<Value>> From<[(K, V); N]> for Map {
+impl<'a, const N: usize, K: Into<Value<'a>>, V: Into<Value<'a>>> From<[(K, V); N]> for Map<'a> {
     fn from(array: [(K, V); N]) -> Self {
         Self(array.into_iter().map(|(k, v)| (k.into(), v.into())).collect())
     }
 }
 
-impl<K: Into<Value>, V: Into<Value>> From<Vec<(K, V)>> for Map {
+impl<'a, K: Into<Value<'a>>, V: Into<Value<'a>>> From<Vec<(K, V)>> for Map<'a> {
     fn from(vec: Vec<(K, V)>) -> Self {
         Self(vec.into_iter().map(|(k, v)| (k.into(), v.into())).collect())
     }
 }
 
-impl<K: Into<Value>, V: Into<Value>> From<Box<[(K, V)]>> for Map {
+impl<'a, K: Into<Value<'a>>, V: Into<Value<'a>>> From<Box<[(K, V)]>> for Map<'a> {
     fn from(boxed: Box<[(K, V)]>) -> Self {
         Self(
             Vec::from(boxed)
@@ -260,7 +260,7 @@ impl<K: Into<Value>, V: Into<Value>> From<Box<[(K, V)]>> for Map {
     }
 }
 
-impl From<()> for Map {
+impl<'a> From<()> for Map<'a> {
     fn from(_: ()) -> Self {
         Self(BTreeMap::new())
     }

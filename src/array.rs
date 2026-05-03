@@ -8,11 +8,11 @@ use crate::Value;
 ///
 /// Supported source types (where `T: Into<Value>`):
 ///
-/// - `[T; N]` — fixed-size array
-/// - `&[T]` — slice (requires `T: Copy`)
-/// - `Vec<T>` — vector
-/// - `Box<[T]>` — boxed slice
-/// - `()` — empty array
+/// - `[T; N]` (fixed-size array)
+/// - `&[T]` (slice; requires `T: Copy`)
+/// - `Vec<T>` (vector)
+/// - `Box<[T]>` (boxed slice)
+/// - `()` (empty array)
 ///
 /// Elements are converted to `Value` via their `Into<Value>`
 /// implementation. This means any type that implements
@@ -36,9 +36,9 @@ use crate::Value;
 /// assert_eq!(d.len(), Some(0));
 /// ```
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
-pub struct Array(pub(crate) Vec<Value>);
+pub struct Array<'a>(pub(crate) Vec<Value<'a>>);
 
-impl Array {
+impl<'a> Array<'a> {
     /// Create an empty array.
     #[must_use]
     pub const fn new() -> Self {
@@ -47,18 +47,18 @@ impl Array {
 
     /// Borrow the inner `Vec`.
     #[must_use]
-    pub const fn get_ref(&self) -> &Vec<Value> {
+    pub const fn get_ref(&self) -> &Vec<Value<'a>> {
         &self.0
     }
 
     /// Mutably borrow the inner `Vec`.
-    pub fn get_mut(&mut self) -> &mut Vec<Value> {
+    pub const fn get_mut(&mut self) -> &mut Vec<Value<'a>> {
         &mut self.0
     }
 
     /// Unwrap into the inner `Vec`.
     #[must_use]
-    pub fn into_inner(self) -> Vec<Value> {
+    pub fn into_inner(self) -> Vec<Value<'a>> {
         self.0
     }
 
@@ -77,7 +77,7 @@ impl Array {
     /// ```
     pub fn from_sequence<I>(items: I) -> Self
     where
-        I: IntoIterator<Item = Value>,
+        I: IntoIterator<Item = Value<'a>>,
     {
         Self(items.into_iter().collect())
     }
@@ -100,37 +100,37 @@ impl Array {
     /// ```
     pub fn try_from_sequence<I, E>(items: I) -> Result<Self, E>
     where
-        I: IntoIterator<Item = Result<Value, E>>,
+        I: IntoIterator<Item = Result<Value<'a>, E>>,
     {
         items.into_iter().collect::<Result<Vec<_>, _>>().map(Self)
     }
 }
 
-impl<T: Into<Value> + Copy> From<&[T]> for Array {
+impl<'a, T: Into<Value<'a>> + Copy> From<&[T]> for Array<'a> {
     fn from(slice: &[T]) -> Self {
         Self(slice.iter().map(|&x| x.into()).collect())
     }
 }
 
-impl<const N: usize, T: Into<Value>> From<[T; N]> for Array {
+impl<'a, const N: usize, T: Into<Value<'a>>> From<[T; N]> for Array<'a> {
     fn from(array: [T; N]) -> Self {
         Self(array.into_iter().map(|x| x.into()).collect())
     }
 }
 
-impl<T: Into<Value>> From<Vec<T>> for Array {
+impl<'a, T: Into<Value<'a>>> From<Vec<T>> for Array<'a> {
     fn from(vec: Vec<T>) -> Self {
         Self(vec.into_iter().map(|x| x.into()).collect())
     }
 }
 
-impl<T: Into<Value>> From<Box<[T]>> for Array {
+impl<'a, T: Into<Value<'a>>> From<Box<[T]>> for Array<'a> {
     fn from(boxed: Box<[T]>) -> Self {
         Self(Vec::from(boxed).into_iter().map(|x| x.into()).collect())
     }
 }
 
-impl From<()> for Array {
+impl<'a> From<()> for Array<'a> {
     fn from(_: ()) -> Self {
         Self(Vec::new())
     }

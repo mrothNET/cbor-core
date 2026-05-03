@@ -53,7 +53,7 @@ impl std::hash::Hash for Inner {
     }
 }
 
-impl From<EpochTime> for Value {
+impl<'a> From<EpochTime> for Value<'a> {
     fn from(value: EpochTime) -> Self {
         match value.0 {
             Inner::Int(int) => Self::tag(tag::EPOCH_TIME, int),

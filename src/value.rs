@@ -10,6 +10,7 @@ mod simple_value;
 mod string;
 
 use std::{
+    borrow::Cow,
     cmp,
     collections::BTreeMap,
     hash::{Hash, Hasher},
@@ -537,7 +538,7 @@ use crate::{
 /// assert!(v.data_type().is_float());
 /// ```
 #[derive(Clone)]
-pub enum Value {
+pub enum Value<'a> {
     /// Simple value such as `null`, `true`, or `false` (major type 7).
     ///
     /// In CBOR, booleans and null are simple values, not distinct types.
@@ -590,7 +591,7 @@ pub enum Value {
     /// let v = Value::new(b"this is a byte string");
     /// # assert!(v.data_type().is_bytes());
     /// ```
-    ByteString(Vec<u8>),
+    ByteString(Cow<'a, [u8]>),
 
     /// UTF-8 text string (major type 3).
     ///
@@ -599,7 +600,7 @@ pub enum Value {
     /// let v = Value::new("Rust + CBOR::Core");
     /// # assert!(v.data_type().is_text());
     /// ```
-    TextString(String),
+    TextString(Cow<'a, str>),
 
     /// Array of data items (major type 4).
     ///
@@ -608,7 +609,7 @@ pub enum Value {
     /// let v = array![1, 2, 3, "text", b"bytes", true, 1.234, array![4,5,6]];
     /// # assert!(v.data_type().is_array());
     /// ```
-    Array(Vec<Value>),
+    Array(Vec<Value<'a>>),
 
     /// Map of key-value pairs in canonical order (major type 5).
     ///
@@ -617,7 +618,7 @@ pub enum Value {
     /// let v = map!{"answer" => 42, array![1,2,3] => "arrays as keys" };
     /// # assert!(v.data_type().is_map());
     /// ```
-    Map(BTreeMap<Value, Value>),
+    Map(BTreeMap<Value<'a>, Value<'a>>),
 
     /// Tagged data item (major type 6). The first field is the tag number,
     /// the second is the enclosed content.
@@ -627,23 +628,23 @@ pub enum Value {
     /// let v = Value::tag(0, "1955-11-12T22:04:00-08:00");
     /// # assert!(v.data_type().is_tag());
     /// ```
-    Tag(u64, Box<Value>),
+    Tag(u64, Box<Value<'a>>),
 }
 
-impl Default for Value {
+impl<'a> Default for Value<'a> {
     fn default() -> Self {
         Self::null()
     }
 }
 
-impl From<()> for Value {
+impl<'a> From<()> for Value<'a> {
     fn from(_: ()) -> Self {
         Value::null()
     }
 }
 
 /// Constructors
-impl Value {
+impl<'a> Value<'a> {
     /// Create a CBOR null value.
     ///
     /// In CBOR, null is the simple value 22.
@@ -715,7 +716,7 @@ impl Value {
     /// assert_eq!(V.to_u64(), Ok(42));
     /// ```
     #[must_use]
-    pub const fn from_u64(value: u64) -> Value {
+    pub const fn from_u64(value: u64) -> Self {
         Self::Unsigned(value)
     }
 
@@ -737,7 +738,7 @@ impl Value {
     /// assert_eq!(V.to_i64(), Ok(-42));
     /// ```
     #[must_use]
-    pub const fn from_i64(value: i64) -> Value {
+    pub const fn from_i64(value: i64) -> Self {
         if value >= 0 {
             Self::Unsigned(value as u64)
         } else {
@@ -763,7 +764,7 @@ impl Value {
     /// assert_eq!(V.to_f32(), Ok(1.0));
     /// ```
     #[must_use]
-    pub const fn from_f32(value: f32) -> Value {
+    pub const fn from_f32(value: f32) -> Self {
         Self::Float(Float::from_f32(value))
     }
 
@@ -780,7 +781,7 @@ impl Value {
     /// assert_eq!(V.to_f64(), Ok(1.5));
     /// ```
     #[must_use]
-    pub const fn from_f64(value: f64) -> Value {
+    pub const fn from_f64(value: f64) -> Self {
         Self::Float(Float::from_f64(value))
     }
 
@@ -800,7 +801,7 @@ impl Value {
     /// assert!(INF.to_f64().unwrap().is_infinite());
     /// ```
     #[must_use]
-    pub const fn from_payload(payload: u64) -> Value {
+    pub const fn from_payload(payload: u64) -> Self {
         Self::Float(Float::with_payload(payload))
     }
 
@@ -828,7 +829,7 @@ impl Value {
     ///
     /// Panics if the input cannot be converted into a CBOR value.
     #[must_use]
-    pub fn new(value: impl TryInto<Value>) -> Self {
+    pub fn new(value: impl TryInto<Value<'a>>) -> Self {
         match value.try_into() {
             Ok(value) => value,
             Err(_) => panic!("Invalid CBOR value"),
@@ -851,7 +852,7 @@ impl Value {
     /// ```
     #[must_use]
     pub fn byte_string(value: impl Into<Vec<u8>>) -> Self {
-        Self::ByteString(value.into())
+        Self::ByteString(value.into().into())
     }
 
     /// Create a CBOR text string (major type 3).
@@ -870,7 +871,7 @@ impl Value {
     /// ```
     #[must_use]
     pub fn text_string(value: impl Into<String>) -> Self {
-        Self::TextString(value.into())
+        Self::TextString(value.into().into())
     }
 
     /// Create a CBOR date/time string value (tag 0).
@@ -968,7 +969,7 @@ impl Value {
     /// assert_eq!(a.len(), Some(3));
     /// ```
     #[must_use]
-    pub fn array(array: impl Into<Array>) -> Self {
+    pub fn array(array: impl Into<Array<'a>>) -> Self {
         Self::Array(array.into().0)
     }
 
@@ -986,7 +987,7 @@ impl Value {
     /// assert_eq!(m.len(), Some(2));
     /// ```
     #[must_use]
-    pub fn map(map: impl Into<Map>) -> Self {
+    pub fn map(map: impl Into<Map<'a>>) -> Self {
         Self::Map(map.into().0)
     }
 
@@ -998,13 +999,13 @@ impl Value {
     /// assert_eq!(uri.tag_number().unwrap(), 32);
     /// ```
     #[must_use]
-    pub fn tag(number: u64, content: impl Into<Value>) -> Self {
+    pub fn tag(number: u64, content: impl Into<Value<'a>>) -> Self {
         Self::Tag(number, Box::new(content.into()))
     }
 }
 
 /// Decoding and reading
-impl Value {
+impl<'a> Value<'a> {
     /// Decode a CBOR data item from binary bytes.
     ///
     /// Accepts any byte source (`&[u8]`, `&str`, `String`, `Vec<u8>`,
@@ -1077,7 +1078,7 @@ impl Value {
 }
 
 /// Encoding and writing
-impl Value {
+impl<'a> Value<'a> {
     /// Encode this value to binary CBOR bytes.
     ///
     /// This is a convenience wrapper around [`write_to`](Self::write_to).
@@ -1188,7 +1189,7 @@ impl Value {
     }
 }
 
-impl ValueView for Value {
+impl<'a> ValueView for Value<'a> {
     fn head(&self) -> Head {
         match self {
             Value::SimpleValue(sv) => Head::from_u64(Major::SimpleOrFloat, sv.0.into()),
@@ -1216,7 +1217,7 @@ impl ValueView for Value {
 }
 
 /// Misc
-impl Value {
+impl<'a> Value<'a> {
     /// Return the [`DataType`] of this value for type-level dispatch.
     #[must_use]
     pub const fn data_type(&self) -> DataType {
@@ -1279,7 +1280,7 @@ impl Value {
 }
 
 /// Scalar accessors
-impl Value {
+impl<'a> Value<'a> {
     /// Extract a boolean. Returns `Err` for non-boolean values.
     pub const fn to_bool(&self) -> Result<bool> {
         match self {
@@ -1482,20 +1483,20 @@ impl Value {
 }
 
 /// Bytes and text strings
-impl Value {
+impl<'a> Value<'a> {
     /// Borrow the byte string as a slice.
     pub fn as_bytes(&self) -> Result<&[u8]> {
         match self {
-            Self::ByteString(vec) => Ok(vec.as_slice()),
+            Self::ByteString(bytes) => Ok(bytes.as_ref()),
             Self::Tag(_number, content) => content.untagged().as_bytes(),
             _ => Err(Error::IncompatibleType(self.data_type())),
         }
     }
 
     /// Borrow the byte string as a mutable `Vec`.
-    pub const fn as_bytes_mut(&mut self) -> Result<&mut Vec<u8>> {
+    pub fn as_bytes_mut(&mut self) -> Result<&mut Vec<u8>> {
         match self {
-            Self::ByteString(vec) => Ok(vec),
+            Self::ByteString(bytes) => Ok(bytes.to_mut()),
             Self::Tag(_number, content) => content.untagged_mut().as_bytes_mut(),
             _ => Err(Error::IncompatibleType(self.data_type())),
         }
@@ -1504,7 +1505,7 @@ impl Value {
     /// Take ownership of the byte string.
     pub fn into_bytes(self) -> Result<Vec<u8>> {
         match self {
-            Self::ByteString(vec) => Ok(vec),
+            Self::ByteString(bytes) => Ok(bytes.into_owned()),
             Self::Tag(_number, content) => content.into_untagged().into_bytes(),
             _ => Err(Error::IncompatibleType(self.data_type())),
         }
@@ -1513,16 +1514,16 @@ impl Value {
     /// Borrow the text string as a `&str`.
     pub fn as_str(&self) -> Result<&str> {
         match self {
-            Self::TextString(s) => Ok(s.as_str()),
+            Self::TextString(s) => Ok(s.as_ref()),
             Self::Tag(_number, content) => content.untagged().as_str(),
             _ => Err(Error::IncompatibleType(self.data_type())),
         }
     }
 
     /// Borrow the text string as a mutable `String`.
-    pub const fn as_string_mut(&mut self) -> Result<&mut String> {
+    pub fn as_string_mut(&mut self) -> Result<&mut String> {
         match self {
-            Self::TextString(s) => Ok(s),
+            Self::TextString(s) => Ok(s.to_mut()),
             Self::Tag(_number, content) => content.untagged_mut().as_string_mut(),
             _ => Err(Error::IncompatibleType(self.data_type())),
         }
@@ -1531,7 +1532,7 @@ impl Value {
     /// Take ownership of the text string.
     pub fn into_string(self) -> Result<String> {
         match self {
-            Self::TextString(s) => Ok(s),
+            Self::TextString(s) => Ok(s.into_owned()),
             Self::Tag(_number, content) => content.into_untagged().into_string(),
             _ => Err(Error::IncompatibleType(self.data_type())),
         }
@@ -1539,9 +1540,9 @@ impl Value {
 }
 
 /// Arrays and maps
-impl Value {
+impl<'a> Value<'a> {
     /// Borrow the array elements as a slice.
-    pub fn as_array(&self) -> Result<&[Value]> {
+    pub fn as_array(&self) -> Result<&[Value<'a>]> {
         match self {
             Self::Array(v) => Ok(v.as_slice()),
             Self::Tag(_number, content) => content.untagged().as_array(),
@@ -1550,7 +1551,7 @@ impl Value {
     }
 
     /// Borrow the array as a mutable `Vec`.
-    pub const fn as_array_mut(&mut self) -> Result<&mut Vec<Value>> {
+    pub const fn as_array_mut(&mut self) -> Result<&mut Vec<Value<'a>>> {
         match self {
             Self::Array(v) => Ok(v),
             Self::Tag(_number, content) => content.untagged_mut().as_array_mut(),
@@ -1559,7 +1560,7 @@ impl Value {
     }
 
     /// Take ownership of the array.
-    pub fn into_array(self) -> Result<Vec<Value>> {
+    pub fn into_array(self) -> Result<Vec<Value<'a>>> {
         match self {
             Self::Array(v) => Ok(v),
             Self::Tag(_number, content) => content.into_untagged().into_array(),
@@ -1568,7 +1569,7 @@ impl Value {
     }
 
     /// Borrow the map.
-    pub const fn as_map(&self) -> Result<&BTreeMap<Value, Value>> {
+    pub const fn as_map(&self) -> Result<&BTreeMap<Value<'a>, Value<'a>>> {
         match self {
             Self::Map(m) => Ok(m),
             Self::Tag(_number, content) => content.untagged().as_map(),
@@ -1577,7 +1578,7 @@ impl Value {
     }
 
     /// Borrow the map mutably.
-    pub const fn as_map_mut(&mut self) -> Result<&mut BTreeMap<Value, Value>> {
+    pub const fn as_map_mut(&mut self) -> Result<&mut BTreeMap<Value<'a>, Value<'a>>> {
         match self {
             Self::Map(m) => Ok(m),
             Self::Tag(_number, content) => content.untagged_mut().as_map_mut(),
@@ -1586,7 +1587,7 @@ impl Value {
     }
 
     /// Take ownership of the map.
-    pub fn into_map(self) -> Result<BTreeMap<Value, Value>> {
+    pub fn into_map(self) -> Result<BTreeMap<Value<'a>, Value<'a>>> {
         match self {
             Self::Map(m) => Ok(m),
             Self::Tag(_number, content) => content.into_untagged().into_map(),
@@ -1596,7 +1597,7 @@ impl Value {
 }
 
 /// Array and map helpers
-impl Value {
+impl<'a> Value<'a> {
     /// Look up an element by index (arrays) or key (maps).
     ///
     /// Accepts anything convertible into [`ValueKey`](crate::ValueKey):
@@ -1618,7 +1619,7 @@ impl Value {
     /// assert_eq!(m.get("x").unwrap().to_u32().unwrap(), 10);
     /// assert!(m.get("missing").is_none());
     /// ```
-    pub fn get<'a>(&self, index: impl Into<crate::ValueKey<'a>>) -> Option<&Value> {
+    pub fn get<'k>(&self, index: impl Into<crate::ValueKey<'k>>) -> Option<&Value<'a>> {
         let key = index.into();
         match self.untagged() {
             Value::Array(arr) => key.to_usize().and_then(|idx| arr.get(idx)),
@@ -1636,7 +1637,7 @@ impl Value {
     /// *a.get_mut(1).unwrap() = Value::from(99);
     /// assert_eq!(a[1].to_u32().unwrap(), 99);
     /// ```
-    pub fn get_mut<'a>(&mut self, index: impl Into<crate::ValueKey<'a>>) -> Option<&mut Value> {
+    pub fn get_mut<'k>(&mut self, index: impl Into<crate::ValueKey<'k>>) -> Option<&mut Value<'a>> {
         let key = index.into();
         match self.untagged_mut() {
             Value::Array(arr) => key.to_usize().and_then(|idx| arr.get_mut(idx)),
@@ -1677,7 +1678,7 @@ impl Value {
     /// ```
     ///
     /// [`BTreeMap::remove`]: std::collections::BTreeMap::remove
-    pub fn remove<'a>(&mut self, index: impl Into<crate::ValueKey<'a>>) -> Option<Value> {
+    pub fn remove<'k>(&mut self, index: impl Into<crate::ValueKey<'k>>) -> Option<Value<'a>> {
         let key = index.into();
         match self.untagged_mut() {
             Value::Array(arr) => {
@@ -1724,7 +1725,7 @@ impl Value {
     /// ```
     ///
     /// [`BTreeMap::insert`]: std::collections::BTreeMap::insert
-    pub fn insert(&mut self, key: impl Into<Value>, value: impl Into<Value>) -> Option<Value> {
+    pub fn insert(&mut self, key: impl Into<Value<'a>>, value: impl Into<Value<'a>>) -> Option<Value<'a>> {
         let key = key.into();
         let value = value.into();
         match self.untagged_mut() {
@@ -1756,7 +1757,7 @@ impl Value {
     /// assert_eq!(a.len().unwrap(), 4);
     /// assert_eq!(a[3].to_u32().unwrap(), 4);
     /// ```
-    pub fn append(&mut self, value: impl Into<Value>) {
+    pub fn append(&mut self, value: impl Into<Value<'a>>) {
         match self.untagged_mut() {
             Value::Array(arr) => arr.push(value.into()),
             other => panic!("append called on {:?}, expected array", other.data_type()),
@@ -1782,7 +1783,7 @@ impl Value {
     ///
     /// assert!(!Value::from(42).contains(0));
     /// ```
-    pub fn contains<'a>(&self, key: impl Into<crate::ValueKey<'a>>) -> bool {
+    pub fn contains<'k>(&self, key: impl Into<crate::ValueKey<'k>>) -> bool {
         let key = key.into();
         match self.untagged() {
             Value::Array(arr) => key.to_usize().is_some_and(|idx| idx < arr.len()),
@@ -1816,7 +1817,7 @@ impl Value {
 }
 
 /// Tags
-impl Value {
+impl<'a> Value<'a> {
     /// Return the tag number.
     pub const fn tag_number(&self) -> Result<u64> {
         match self {
@@ -1842,7 +1843,7 @@ impl Value {
     }
 
     /// Borrow tag number and content together.
-    pub fn as_tag(&self) -> Result<(u64, &Value)> {
+    pub fn as_tag(&self) -> Result<(u64, &Value<'a>)> {
         match self {
             Self::Tag(number, content) => Ok((*number, content)),
             _ => Err(Error::IncompatibleType(self.data_type())),
@@ -1850,7 +1851,7 @@ impl Value {
     }
 
     /// Borrow tag number and mutable content together.
-    pub fn as_tag_mut(&mut self) -> Result<(u64, &mut Value)> {
+    pub fn as_tag_mut(&mut self) -> Result<(u64, &mut Value<'a>)> {
         match self {
             Self::Tag(number, content) => Ok((*number, content)),
             _ => Err(Error::IncompatibleType(self.data_type())),
@@ -1858,7 +1859,7 @@ impl Value {
     }
 
     /// Consume self and return tag number and content.
-    pub fn into_tag(self) -> Result<(u64, Value)> {
+    pub fn into_tag(self) -> Result<(u64, Value<'a>)> {
         match self {
             Self::Tag(number, content) => Ok((number, *content)),
             _ => Err(Error::IncompatibleType(self.data_type())),

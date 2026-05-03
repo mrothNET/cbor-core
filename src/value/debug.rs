@@ -8,13 +8,13 @@ use std::fmt;
 
 use crate::{SimpleValue, Value};
 
-impl fmt::Display for Value {
+impl<'a> fmt::Display for Value<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Debug::fmt(self, f)
     }
 }
 
-impl fmt::Debug for Value {
+impl<'a> fmt::Debug for Value<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::SimpleValue(sv) => match *sv {
@@ -51,7 +51,7 @@ impl fmt::Debug for Value {
 
             Self::ByteString(bytes) => {
                 f.write_str("h'")?;
-                for b in bytes {
+                for b in bytes.as_ref() {
                     write!(f, "{b:02x}")?;
                 }
                 f.write_str("'")

@@ -9,7 +9,7 @@ use crate::{
 // BigUint → Value
 // ---------------------------------------------------------------------------
 
-impl From<BigUint> for Value {
+impl<'a> From<BigUint> for Value<'a> {
     /// Encodes a `BigUint` as a CBOR integer.
     ///
     /// Values that fit in a `u64` are encoded as a plain unsigned integer.
@@ -19,7 +19,7 @@ impl From<BigUint> for Value {
     }
 }
 
-impl From<&BigUint> for Value {
+impl<'a> From<&BigUint> for Value<'a> {
     /// Encodes a `BigUint` as a CBOR integer.
     ///
     /// Values that fit in a `u64` are encoded as a plain unsigned integer.
@@ -29,16 +29,16 @@ impl From<&BigUint> for Value {
     }
 }
 
-fn from_big_uint(value: &BigUint) -> Value {
+fn from_big_uint<'a>(value: &BigUint) -> Value<'a> {
     let bytes = value.to_bytes_be();
     let trimmed = trim_leading_zeros(&bytes);
 
     if let Ok(number) = u64_from_slice(trimmed) {
         Value::Unsigned(number)
     } else if bytes.len() == trimmed.len() {
-        Value::tag(tag::POS_BIG_INT, bytes) // reuse Vec
+        Value::tag(tag::POS_BIG_INT, Value::byte_string(bytes)) // reuse Vec
     } else {
-        Value::tag(tag::POS_BIG_INT, trimmed) // implicit new Vec
+        Value::tag(tag::POS_BIG_INT, Value::byte_string(trimmed)) // implicit new Vec
     }
 }
 
@@ -46,21 +46,21 @@ fn from_big_uint(value: &BigUint) -> Value {
 // BigInt → Value
 // ---------------------------------------------------------------------------
 
-impl From<BigInt> for Value {
+impl<'a> From<BigInt> for Value<'a> {
     /// Encodes a `BigInt` as a CBOR integer.
     fn from(value: BigInt) -> Self {
         from_big_int(&value)
     }
 }
 
-impl From<&BigInt> for Value {
+impl<'a> From<&BigInt> for Value<'a> {
     /// Encodes a `BigInt` as a CBOR integer.
     fn from(value: &BigInt) -> Self {
         from_big_int(value)
     }
 }
 
-fn from_big_int(value: &BigInt) -> Value {
+fn from_big_int<'a>(value: &BigInt) -> Value<'a> {
     let magnitude = value.magnitude();
     match value.sign() {
         Sign::NoSign | Sign::Plus => magnitude.into(),
@@ -71,9 +71,9 @@ fn from_big_int(value: &BigInt) -> Value {
             if let Ok(number) = u64_from_slice(trimmed) {
                 Value::Negative(number)
             } else if bytes.len() == trimmed.len() {
-                Value::tag(tag::NEG_BIG_INT, bytes) // reuse Vec
+                Value::tag(tag::NEG_BIG_INT, Value::byte_string(bytes)) // reuse Vec
             } else {
-                Value::tag(tag::NEG_BIG_INT, trimmed) // implicit new Vec
+                Value::tag(tag::NEG_BIG_INT, Value::byte_string(trimmed)) // implicit new Vec
             }
         }
     }
@@ -83,31 +83,31 @@ fn from_big_int(value: &BigInt) -> Value {
 // Value → BigUint
 // ---------------------------------------------------------------------------
 
-impl TryFrom<Value> for BigUint {
+impl<'a> TryFrom<Value<'a>> for BigUint {
     type Error = Error;
 
     /// Extracts a `BigUint` from a CBOR integer value.
     ///
     /// Returns `Err(NegativeUnsigned)` for negative integers,
     /// `Err(IncompatibleType)` for non-integer values.
-    fn try_from(value: Value) -> Result<Self> {
+    fn try_from(value: Value<'a>) -> Result<Self> {
         to_num_biguint(&value)
     }
 }
 
-impl TryFrom<&Value> for BigUint {
+impl<'a> TryFrom<&Value<'a>> for BigUint {
     type Error = Error;
 
     /// Extracts a `BigUint` from a CBOR integer value.
     ///
     /// Returns `Err(NegativeUnsigned)` for negative integers,
     /// `Err(IncompatibleType)` for non-integer values.
-    fn try_from(value: &Value) -> Result<Self> {
+    fn try_from(value: &Value<'a>) -> Result<Self> {
         to_num_biguint(value)
     }
 }
 
-fn to_num_biguint(value: &Value) -> Result<BigUint> {
+fn to_num_biguint(value: &Value<'_>) -> Result<BigUint> {
     match value.as_integer_bytes()? {
         crate::integer::IntegerBytes::UnsignedOwned(bytes) => Ok(BigUint::from(u64::from_be_bytes(bytes))),
         crate::integer::IntegerBytes::NegativeOwned(_) => Err(Error::NegativeUnsigned),
@@ -120,29 +120,29 @@ fn to_num_biguint(value: &Value) -> Result<BigUint> {
 // Value → BigInt
 // ---------------------------------------------------------------------------
 
-impl TryFrom<Value> for BigInt {
+impl<'a> TryFrom<Value<'a>> for BigInt {
     type Error = Error;
 
     /// Extracts a `BigInt` from a CBOR integer value.
     ///
     /// Returns `Err(IncompatibleType)` for non-integer values.
-    fn try_from(value: Value) -> Result<Self> {
+    fn try_from(value: Value<'a>) -> Result<Self> {
         to_num_bigint(&value)
     }
 }
 
-impl TryFrom<&Value> for BigInt {
+impl<'a> TryFrom<&Value<'a>> for BigInt {
     type Error = Error;
 
     /// Extracts a `BigInt` from a CBOR integer value.
     ///
     /// Returns `Err(IncompatibleType)` for non-integer values.
-    fn try_from(value: &Value) -> Result<Self> {
+    fn try_from(value: &Value<'a>) -> Result<Self> {
         to_num_bigint(value)
     }
 }
 
-fn to_num_bigint(value: &Value) -> Result<BigInt> {
+fn to_num_bigint(value: &Value<'_>) -> Result<BigInt> {
     match value.as_integer_bytes()? {
         crate::integer::IntegerBytes::UnsignedOwned(bytes) => Ok(BigUint::from_bytes_be(&bytes).into()),
         crate::integer::IntegerBytes::NegativeOwned(bytes) => Ok(BigInt::from(!u64::from_be_bytes(bytes) as i64)),
