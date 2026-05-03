@@ -211,6 +211,13 @@ fn from_simple_value() {
 // ===== Text & byte string accessors =====
 
 #[test]
+fn text_from_char() {
+    let v = Value::from('X');
+    assert!(v.data_type().is_text());
+    assert_eq!(v.as_str(), Ok("X"));
+}
+
+#[test]
 fn text_string() {
     let v = Value::from("hello");
     assert!(v.data_type().is_text());

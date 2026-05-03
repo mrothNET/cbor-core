@@ -1,5 +1,11 @@
 use super::*;
 
+impl From<char> for Value {
+    fn from(value: char) -> Self {
+        Self::TextString(value.to_string())
+    }
+}
+
 impl From<&str> for Value {
     fn from(value: &str) -> Self {
         Self::TextString(value.into())

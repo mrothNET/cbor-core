@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `From<char> for Value` to convert a char into a `Value`.
+
 ## 0.8.0 - 2026-04-26
 
 ### Added
