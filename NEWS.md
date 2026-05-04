@@ -3,6 +3,21 @@
 A deterministic CBOR::Core encoder and decoder for Rust, tracking
 `draft-rundgren-cbor-core-25`.
 
+## 0.9.0
+
+- Decoding binary CBOR from a byte slice no longer copies the text
+  and byte strings inside: they now borrow from the input. The value
+  type gained a lifetime parameter to express this, but values
+  constructed from owned data continue to behave the way they did
+  before, so most existing call sites keep working unchanged.
+- New helpers cover the cases where ownership is wanted up front:
+  one consumes a value into a fully owned form, another clones into
+  one, and a dedicated decode entry point produces an owned value
+  directly without going through the borrowed intermediate.
+- A handful of decode entry points took small signature adjustments
+  to thread the input lifetime through; see the changelog for the
+  exact items.
+
 ## 0.8.0
 
 - Serde conversion between Rust types and CBOR values is now done
