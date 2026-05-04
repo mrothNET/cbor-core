@@ -528,14 +528,28 @@ use crate::{
 ///
 /// # Type introspection
 ///
-/// [`data_type`](Self::data_type) returns a [`DataType`] enum for
-/// lightweight type checks without matching on the full enum.
+/// [`data_type`](Self::data_type) returns a [`DataType`] enum that
+/// classifies the value by major type, plus a few promoted variants
+/// for well-known tag/content combinations
+/// ([`DateTime`](DataType::DateTime), [`EpochTime`](DataType::EpochTime),
+/// [`BigInt`](DataType::BigInt)). Use it for cheap type checks and
+/// dispatch without matching on the full [`Value`] enum.
+///
+/// `DataType` carries a family of `is_*` predicates that group related
+/// variants by semantic role: [`is_integer`](DataType::is_integer)
+/// covers both [`Int`](DataType::Int) and [`BigInt`](DataType::BigInt),
+/// [`is_float`](DataType::is_float) covers all three precisions, and
+/// so on.
 ///
 /// ```
 /// use cbor_core::Value;
 ///
 /// let v = Value::from(3.14);
 /// assert!(v.data_type().is_float());
+///
+/// // BigInt counts as an integer even though it's a tagged byte string.
+/// let big = Value::from(u128::MAX);
+/// assert!(big.data_type().is_integer());
 /// ```
 #[derive(Clone)]
 pub enum Value<'a> {
@@ -792,7 +806,13 @@ impl<'a> Value<'a> {
     /// its signalling bits in a width-invariant layout. The typical use
     /// is defining `const` sentinel values that signal application-level
     /// conditions through NaN payloads. See [`Float::with_payload`] for
-    /// the payload layout and panic conditions.
+    /// the payload layout.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `payload` exceeds the 53-bit maximum
+    /// (`0x1f_ffff_ffff_ffff`). Inputs within the 53-bit range never
+    /// panic.
     ///
     /// ```
     /// use cbor_core::Value;
@@ -1352,7 +1372,50 @@ impl<'a> ValueView for Value<'a> {
 
 /// Misc
 impl<'a> Value<'a> {
-    /// Return the [`DataType`] of this value for type-level dispatch.
+    /// Classify this value by its [`DataType`].
+    ///
+    /// `DataType` is a flat enum with a variant per CBOR major type,
+    /// plus a few promoted variants for tag/content combinations that
+    /// carry well-known semantics:
+    ///
+    /// * Tag 0 wrapping a text string becomes
+    ///   [`DataType::DateTime`].
+    /// * Tag 1 wrapping a numeric value becomes
+    ///   [`DataType::EpochTime`].
+    /// * Tags 2 and 3 wrapping a byte string become
+    ///   [`DataType::BigInt`].
+    ///
+    /// Every other tag, including tag 0 over a non-text content or tag
+    /// 2 over a non-bytes content, classifies as plain
+    /// [`DataType::Tag`].
+    ///
+    /// Floats expose their precision: an f16 value reports
+    /// [`DataType::Float16`], an f32 reports [`DataType::Float32`], and
+    /// an f64 reports [`DataType::Float64`].
+    ///
+    /// The classification looks at structure only; it does not validate
+    /// content. A [`DataType::DateTime`] value is "tag 0 wrapping
+    /// text", not "a valid RFC 3339 timestamp"; full validation happens
+    /// in the accessor methods. See [`DataType`] for the predicate
+    /// helpers (`is_integer`, `is_numeric`, etc.) that group these
+    /// variants by semantic role.
+    ///
+    /// ```
+    /// use cbor_core::{DataType, Value};
+    ///
+    /// assert_eq!(Value::from(42).data_type(), DataType::Int);
+    /// assert_eq!(Value::from("hi").data_type(), DataType::Text);
+    /// assert_eq!(Value::from(3.14_f64).data_type(), DataType::Float64);
+    /// assert_eq!(Value::null().data_type(), DataType::Null);
+    ///
+    /// // Tag 0 over a text string is recognised as a date/time.
+    /// let dt = Value::tag(0, "2025-03-30T12:24:16Z");
+    /// assert_eq!(dt.data_type(), DataType::DateTime);
+    ///
+    /// // Other tags fall through to plain Tag.
+    /// let custom = Value::tag(1234, 0);
+    /// assert_eq!(custom.data_type(), DataType::Tag);
+    /// ```
     #[must_use]
     pub const fn data_type(&self) -> DataType {
         match self {

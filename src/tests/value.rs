@@ -1127,6 +1127,22 @@ fn to_system_time_untagged() {
 }
 
 #[test]
+fn to_system_time_untagged_text_string() {
+    use std::time::Duration;
+    let v = Value::from("2000-01-01T00:00:00Z");
+    assert_eq!(
+        v.to_system_time(),
+        Ok(UNIX_EPOCH + Duration::from_secs(946_684_800))
+    );
+}
+
+#[test]
+fn to_system_time_untagged_text_string_invalid() {
+    let v = Value::from("not a timestamp");
+    assert_eq!(v.to_system_time(), Err(Error::InvalidFormat));
+}
+
+#[test]
 fn to_system_time_other_tag() {
     let v = Value::tag(32, 0);
     assert_eq!(v.to_system_time(), Ok(UNIX_EPOCH));

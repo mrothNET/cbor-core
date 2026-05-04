@@ -56,7 +56,7 @@ value, nested structures included:
 ```rust
 use cbor_core::Value;
 
-let cert: Value = r#"{
+let diag = r#"{
     "iss": "https://issuer.example",
     "sub": "user-42",
     "iat": 1700000000,
@@ -66,9 +66,11 @@ let cert: Value = r#"{
         "x":   h'd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a'
     },
     "scope": ["read", "write"]
-}"#.parse().unwrap();
+}"#;
 
-assert_eq!(cert["cnf"]["crv"].as_str(), Some("Ed25519"));
+let cert: Value = diag.parse().unwrap();
+
+assert_eq!(cert["cnf"]["crv"].as_str(), Ok("Ed25519"));
 ```
 
 The grammar covers integers in any base (with `_` separators),
