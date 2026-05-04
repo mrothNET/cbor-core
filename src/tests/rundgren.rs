@@ -735,7 +735,7 @@ fn payload_1fffffffffffff_f64_max() {
 fn invalid_improper_map_key_ordering() {
     // {"b": 1, "a": 0} — keys not in deterministic order
     assert_eq!(
-        Value::decode([0xa2, 0x61, 0x62, 0x01, 0x61, 0x61, 0x00]),
+        Value::decode(&[0xa2, 0x61, 0x62, 0x01, 0x61, 0x61, 0x00]),
         Err(Error::NonDeterministic)
     );
 }
@@ -743,20 +743,20 @@ fn invalid_improper_map_key_ordering() {
 #[test]
 fn invalid_array_length_leading_zero() {
     // [4, 5] encoded with 98 02 (two-byte length) instead of 82
-    assert_eq!(Value::decode([0x98, 0x02, 0x04, 0x05]), Err(Error::NonDeterministic));
+    assert_eq!(Value::decode(&[0x98, 0x02, 0x04, 0x05]), Err(Error::NonDeterministic));
 }
 
 #[test]
 fn invalid_integer_leading_zero() {
     // 255 encoded as 19 00 ff (two-byte) instead of 18 ff (one-byte)
-    assert_eq!(Value::decode([0x19, 0x00, 0xff]), Err(Error::NonDeterministic));
+    assert_eq!(Value::decode(&[0x19, 0x00, 0xff]), Err(Error::NonDeterministic));
 }
 
 #[test]
 fn invalid_bigint_leading_zero() {
     // -18446744073709551617 with leading zero in bigint payload
     assert_eq!(
-        Value::decode([0xc3, 0x4a, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
+        Value::decode(&[0xc3, 0x4a, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
         Err(Error::NonDeterministic)
     );
 }
@@ -765,7 +765,7 @@ fn invalid_bigint_leading_zero() {
 fn invalid_float_not_shortest_10_point_5() {
     // 10.5 encoded as f32 (fa 41280000) instead of f16
     assert_eq!(
-        Value::decode([0xfa, 0x41, 0x28, 0x00, 0x00]),
+        Value::decode(&[0xfa, 0x41, 0x28, 0x00, 0x00]),
         Err(Error::NonDeterministic)
     );
 }
@@ -774,7 +774,7 @@ fn invalid_float_not_shortest_10_point_5() {
 fn invalid_float_not_shortest_nan() {
     // NaN encoded as f32 (fa 7fc00000) instead of f16
     assert_eq!(
-        Value::decode([0xfa, 0x7f, 0xc0, 0x00, 0x00]),
+        Value::decode(&[0xfa, 0x7f, 0xc0, 0x00, 0x00]),
         Err(Error::NonDeterministic)
     );
 }
@@ -783,7 +783,7 @@ fn invalid_float_not_shortest_nan() {
 fn invalid_float_not_shortest_nan_payload() {
     // float'7fff' encoded as f32 (fa 7fffe000) instead of f16
     assert_eq!(
-        Value::decode([0xfa, 0x7f, 0xff, 0xe0, 0x00]),
+        Value::decode(&[0xfa, 0x7f, 0xff, 0xe0, 0x00]),
         Err(Error::NonDeterministic)
     );
 }
@@ -792,7 +792,7 @@ fn invalid_float_not_shortest_nan_payload() {
 fn invalid_bigint_fits_in_u64() {
     // 65536 encoded as bigint instead normal integer
     assert_eq!(
-        Value::decode([0xc2, 0x43, 0x01, 0x00, 0x00]),
+        Value::decode(&[0xc2, 0x43, 0x01, 0x00, 0x00]),
         Err(Error::NonDeterministic)
     );
 }
@@ -801,7 +801,7 @@ fn invalid_bigint_fits_in_u64() {
 fn invalid_indefinite_length() {
     // indefinite length object
     assert_eq!(
-        Value::decode([0x5f, 0x41, 0x01, 0x42, 0x02, 0x03, 0xff]),
+        Value::decode(&[0x5f, 0x41, 0x01, 0x42, 0x02, 0x03, 0xff]),
         Err(Error::Malformed)
     );
 }
@@ -809,20 +809,20 @@ fn invalid_indefinite_length() {
 #[test]
 fn invalid_reserved_info_byte() {
     // reserved info value 28
-    assert_eq!(Value::decode([0xfc]), Err(Error::Malformed));
+    assert_eq!(Value::decode(&[0xfc]), Err(Error::Malformed));
 }
 
 #[test]
 fn invalid_simple_value_encoding() {
     // f8 18 — invalid simple number 24 is not allowed / non existent, so this is malformed binary data
-    assert_eq!(Value::decode([0xf8, 0x18]), Err(Error::Malformed));
+    assert_eq!(Value::decode(&[0xf8, 0x18]), Err(Error::Malformed));
 }
 
 #[test]
 fn invalid_extremely_large_length() {
     // bstr with length 4_503_599_627_370_496 (0x0010_0000_0000_0000)
     assert_eq!(
-        Value::decode([0x5b, 0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
+        Value::decode(&[0x5b, 0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
         Err(Error::LengthTooLarge)
     );
 }

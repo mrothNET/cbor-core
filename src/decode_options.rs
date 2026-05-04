@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{borrow::Cow, collections::BTreeMap};
 
 use crate::{
     DataType, Error, Float, Format, IoResult, Result, SequenceDecoder, SequenceReader, SimpleValue, Value,
@@ -74,7 +74,7 @@ use crate::{
 /// ```
 /// use cbor_core::DecodeOptions;
 ///
-/// let v = DecodeOptions::new().decode([0x18, 42]).unwrap();
+/// let v = DecodeOptions::new().decode(&[0x18, 42]).unwrap();
 /// assert_eq!(v.to_u32().unwrap(), 42);
 /// ```
 ///
@@ -100,7 +100,7 @@ use crate::{
 ///     .length_limit(4096)
 ///     .oom_mitigation(64 * 1024);
 ///
-/// assert!(strict.decode([0x18, 42]).is_ok());
+/// assert!(strict.decode(&[0x18, 42]).is_ok());
 /// ```
 #[derive(Debug, Clone)]
 pub struct DecodeOptions {
@@ -123,7 +123,7 @@ impl DecodeOptions {
     /// use cbor_core::DecodeOptions;
     ///
     /// let opts = DecodeOptions::new();
-    /// let v = opts.decode([0x18, 42]).unwrap();
+    /// let v = opts.decode(&[0x18, 42]).unwrap();
     /// assert_eq!(v.to_u32().unwrap(), 42);
     /// ```
     #[must_use]
@@ -145,7 +145,7 @@ impl DecodeOptions {
     /// use cbor_core::{DecodeOptions, Format};
     ///
     /// let hex = DecodeOptions::new().format(Format::Hex).decode("182a").unwrap();
-    /// let bin = DecodeOptions::new().decode([0x18, 0x2a]).unwrap();
+    /// let bin = DecodeOptions::new().decode(&[0x18, 0x2a]).unwrap();
     /// assert_eq!(hex, bin);
     ///
     /// let v = DecodeOptions::new().format(Format::Diagnostic).decode("42").unwrap();
@@ -167,7 +167,7 @@ impl DecodeOptions {
     /// // Two nested one-element arrays: 0x81 0x81 0x00
     /// let err = DecodeOptions::new()
     ///     .recursion_limit(1)
-    ///     .decode([0x81, 0x81, 0x00])
+    ///     .decode(&[0x81, 0x81, 0x00])
     ///     .unwrap_err();
     /// assert_eq!(err, Error::NestingTooDeep);
     /// ```
@@ -212,7 +212,7 @@ impl DecodeOptions {
     /// // A two-element array: 0x82 0x01 0x02
     /// let v = DecodeOptions::new()
     ///     .oom_mitigation(0)
-    ///     .decode([0x82, 0x01, 0x02])
+    ///     .decode(&[0x82, 0x01, 0x02])
     ///     .unwrap();
     /// assert_eq!(v.len(), Some(2));
     /// ```
@@ -223,9 +223,15 @@ impl DecodeOptions {
 
     /// Decode exactly one CBOR data item from an in-memory buffer.
     ///
-    /// Accepts any `AsRef<[u8]>`: `&[u8]`, `Vec<u8>`, `&str`, `String`,
-    /// and so on. The input must contain **exactly one** value: any
-    /// bytes remaining after a successful decode cause
+    /// Takes the input by reference: `&[u8]`, `&[u8; N]`, `&Vec<u8>`,
+    /// `&str`, `&String`, etc. all work via `T: AsRef<[u8]> + ?Sized`.
+    /// In [`Format::Binary`], decoded text and byte strings borrow
+    /// directly from the input slice and the returned [`Value`]
+    /// inherits that lifetime; in [`Format::Hex`] and
+    /// [`Format::Diagnostic`] the result is owned.
+    ///
+    /// The input must contain **exactly one** value: any bytes
+    /// remaining after a successful decode cause
     /// [`Error::InvalidFormat`]. In [`Format::Diagnostic`] mode
     /// trailing whitespace and comments are accepted, but nothing
     /// else. Use [`sequence_decoder`](Self::sequence_decoder) when the input is a CBOR
@@ -238,7 +244,7 @@ impl DecodeOptions {
     /// ```
     /// use cbor_core::{DecodeOptions, Format};
     ///
-    /// let v = DecodeOptions::new().decode([0x18, 42]).unwrap();
+    /// let v = DecodeOptions::new().decode(&[0x18, 42]).unwrap();
     /// assert_eq!(v.to_u32().unwrap(), 42);
     ///
     /// let v = DecodeOptions::new().format(Format::Hex).decode("182a").unwrap();
@@ -250,7 +256,10 @@ impl DecodeOptions {
     ///     .unwrap();
     /// assert_eq!(v.to_u32().unwrap(), 42);
     /// ```
-    pub fn decode<'a>(&self, bytes: impl AsRef<[u8]>) -> Result<Value<'a>> {
+    pub fn decode<'a, T>(&self, bytes: &'a T) -> Result<Value<'a>>
+    where
+        T: AsRef<[u8]> + ?Sized,
+    {
         let bytes = bytes.as_ref();
         match self.format {
             Format::Binary => {
@@ -276,6 +285,71 @@ impl DecodeOptions {
         }
     }
 
+    /// Decode exactly one CBOR data item into an owned [`Value`].
+    ///
+    /// Takes the input by value: `Vec<u8>`, `&[u8]`, `&str`, and
+    /// anything else that implements `AsRef<[u8]>` all work. Unlike
+    /// [`decode`](Self::decode), the result never borrows from the
+    /// input regardless of format: text and byte strings are always
+    /// copied into owned allocations. The returned value can be held
+    /// as `Value<'static>` and stored or sent across threads without
+    /// any lifetime constraint.
+    ///
+    /// Use this when the input is short-lived (a temporary buffer, a
+    /// `Vec` returned from a function, etc.) and the decoded value
+    /// needs to outlive it. When the input already lives long enough,
+    /// [`decode`](Self::decode) avoids the copies.
+    ///
+    /// The input must contain **exactly one** value: any bytes
+    /// remaining after a successful decode cause
+    /// [`Error::InvalidFormat`]. In [`Format::Diagnostic`] mode
+    /// trailing whitespace and comments are accepted, but nothing
+    /// else. Use [`sequence_decoder`](Self::sequence_decoder) when
+    /// the input is a CBOR sequence.
+    ///
+    /// An empty buffer (and, for diagnostic notation, one containing
+    /// only whitespace and comments) returns [`Error::UnexpectedEof`].
+    /// A partial value returns [`Error::UnexpectedEof`] too.
+    ///
+    /// ```
+    /// use cbor_core::{DecodeOptions, Format, Value};
+    ///
+    /// // Decode from a short-lived Vec without worrying about lifetimes.
+    /// let bytes: Vec<u8> = vec![0x18, 42];
+    /// let v: Value<'static> = DecodeOptions::new().decode_owned(bytes).unwrap();
+    /// assert_eq!(v.to_u32().unwrap(), 42);
+    ///
+    /// // Hex and diagnostic formats work the same way.
+    /// let v: Value<'static> = DecodeOptions::new()
+    ///     .format(Format::Hex)
+    ///     .decode_owned("182a")
+    ///     .unwrap();
+    /// assert_eq!(v.to_u32().unwrap(), 42);
+    /// ```
+    pub fn decode_owned<'a>(&self, bytes: impl AsRef<[u8]>) -> Result<Value<'a>> {
+        let mut bytes = bytes.as_ref();
+
+        match self.format {
+            Format::Binary | Format::Hex => {
+                let value = self.read_from(&mut bytes).map_err(|err| match err {
+                    crate::IoError::Io(_io_error) => unreachable!(),
+                    crate::IoError::Data(error) => error,
+                })?;
+
+                if bytes.is_empty() {
+                    Ok(value)
+                } else {
+                    Err(Error::InvalidFormat)
+                }
+            }
+
+            Format::Diagnostic => {
+                let mut parser = Parser::new(SliceReader(bytes), self.recursion_limit);
+                parser.parse_complete()
+            }
+        }
+    }
+
     /// Read a single CBOR data item from a stream.
     ///
     /// Designed to be called repeatedly to pull successive elements of
@@ -288,6 +362,11 @@ impl DecodeOptions {
     ///   are consumed up to either end of stream or a top-level
     ///   separator comma (the comma is also consumed). Anything else
     ///   after the value fails with [`Error::InvalidFormat`].
+    ///
+    /// Bytes are read into an internal buffer, so the result is
+    /// always owned and can be held as `Value<'static>`. For
+    /// zero-copy decoding from a byte slice, use
+    /// [`decode`](Self::decode) instead.
     ///
     /// I/O failures are returned as [`IoError::Io`](crate::IoError::Io);
     /// malformed or oversized input as [`IoError::Data`](crate::IoError::Data).
@@ -333,9 +412,11 @@ impl DecodeOptions {
     /// Create an iterator over a CBOR sequence stored in memory.
     ///
     /// The returned [`SequenceDecoder`] yields each successive item of the
-    /// sequence as `Result<Value>`. The iterator captures a snapshot
-    /// of these options; subsequent changes to `self` do not affect
-    /// it.
+    /// sequence as `Result<Value<'a>>`, where `'a` is the lifetime of
+    /// the input slice. In binary format, items borrow text and byte
+    /// strings from the input; in hex and diagnostic format the items
+    /// are owned. The iterator captures a snapshot of these options;
+    /// subsequent changes to `self` do not affect it.
     ///
     /// ```
     /// use cbor_core::{DecodeOptions, Format};
@@ -348,15 +429,22 @@ impl DecodeOptions {
     ///     .unwrap();
     /// assert_eq!(items.len(), 3);
     /// ```
-    pub fn sequence_decoder<'a, B: AsRef<[u8]> + ?Sized>(&self, input: &'a B) -> SequenceDecoder<'a> {
+    pub fn sequence_decoder<'a, T>(&self, input: &'a T) -> SequenceDecoder<'a>
+    where
+        T: AsRef<[u8]> + ?Sized,
+    {
         SequenceDecoder::with_options(self.clone(), input.as_ref())
     }
 
     /// Create an iterator over a CBOR sequence read from a stream.
     ///
     /// The returned [`SequenceReader`] yields each successive item as
-    /// `IoResult<Value>`. `None` indicates a clean end between items;
-    /// a truncated item produces `Some(Err(_))`.
+    /// `IoResult<Value<'static>>`. `None` indicates a clean end
+    /// between items; a truncated item produces `Some(Err(_))`. Items
+    /// are always owned (the bytes are read into an internal
+    /// buffer); for zero-copy iteration use
+    /// [`sequence_decoder`](Self::sequence_decoder) on a byte slice
+    /// instead.
     ///
     /// ```
     /// use cbor_core::DecodeOptions;
@@ -377,7 +465,7 @@ impl DecodeOptions {
     /// Used by the sequence iterators to share the core decoding logic.
     pub(crate) fn decode_one<'a, R>(&self, reader: &mut R) -> std::result::Result<Value<'a>, R::Error>
     where
-        R: MyReader,
+        R: MyReader<'a>,
         R::Error: From<Error>,
     {
         self.do_read(reader, self.recursion_limit, self.oom_mitigation)
@@ -400,7 +488,7 @@ impl DecodeOptions {
         oom_mitigation: usize,
     ) -> std::result::Result<Value<'a>, R::Error>
     where
-        R: MyReader,
+        R: MyReader<'a>,
         R::Error: From<Error>,
     {
         let head = Head::read_from(reader)?;
@@ -421,7 +509,7 @@ impl DecodeOptions {
                 if len > self.length_limit {
                     return Err(Error::LengthTooLarge.into());
                 }
-                Value::ByteString(reader.read_vec(len, oom_mitigation)?.into())
+                Value::ByteString(reader.read_cow(len, oom_mitigation)?)
             }
 
             Major::TextString => {
@@ -429,9 +517,11 @@ impl DecodeOptions {
                 if len > self.length_limit {
                     return Err(Error::LengthTooLarge.into());
                 }
-                let bytes = reader.read_vec(len, oom_mitigation)?;
-                let string = String::from_utf8(bytes).map_err(Error::from)?;
-                Value::TextString(string.into())
+                let text = match reader.read_cow(len, oom_mitigation)? {
+                    Cow::Borrowed(bytes) => Cow::Borrowed(std::str::from_utf8(bytes).map_err(Error::from)?),
+                    Cow::Owned(bytes) => Cow::Owned(String::from_utf8(bytes).map_err(Error::from)?),
+                };
+                Value::TextString(text)
             }
 
             Major::Array => {

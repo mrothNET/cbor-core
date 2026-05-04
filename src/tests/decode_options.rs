@@ -7,22 +7,22 @@ use crate::{DecodeOptions, Error, Format, IoError, Value};
 
 #[test]
 fn default_decodes_simple_value() {
-    let v = DecodeOptions::new().decode([0x18, 42]).unwrap();
+    let v = DecodeOptions::new().decode(&[0x18, 42]).unwrap();
     assert_eq!(v.to_u32().unwrap(), 42);
 }
 
 #[test]
 fn default_matches_value_decode() {
     let bytes = [0x82, 0x01, 0x02];
-    let via_options = DecodeOptions::new().decode(bytes).unwrap();
-    let via_value = Value::decode(bytes).unwrap();
+    let via_options = DecodeOptions::new().decode(&bytes).unwrap();
+    let via_value = Value::decode(&bytes).unwrap();
     assert_eq!(via_options, via_value);
 }
 
 #[test]
 fn default_trait_equals_new() {
-    let a = DecodeOptions::default().decode([0x00]).unwrap();
-    let b = DecodeOptions::new().decode([0x00]).unwrap();
+    let a = DecodeOptions::default().decode(&[0x00]).unwrap();
+    let b = DecodeOptions::new().decode(&[0x00]).unwrap();
     assert_eq!(a, b);
 }
 
@@ -31,7 +31,7 @@ fn default_trait_equals_new() {
 #[test]
 fn hex_decode_matches_binary() {
     let hex = DecodeOptions::new().format(Format::Hex).decode("182a").unwrap();
-    let bin = DecodeOptions::new().decode([0x18, 0x2a]).unwrap();
+    let bin = DecodeOptions::new().decode(&[0x18, 0x2a]).unwrap();
     assert_eq!(hex, bin);
 }
 
@@ -68,14 +68,14 @@ fn value_decode_hex_matches_options() {
 fn recursion_limit_zero_rejects_array() {
     let err = DecodeOptions::new()
         .recursion_limit(0)
-        .decode([0x81, 0x00])
+        .decode(&[0x81, 0x00])
         .unwrap_err();
     assert_eq!(err, Error::NestingTooDeep);
 }
 
 #[test]
 fn recursion_limit_one_allows_single_level() {
-    let v = DecodeOptions::new().recursion_limit(1).decode([0x81, 0x00]).unwrap();
+    let v = DecodeOptions::new().recursion_limit(1).decode(&[0x81, 0x00]).unwrap();
     assert_eq!(v.len(), Some(1));
 }
 
@@ -83,7 +83,7 @@ fn recursion_limit_one_allows_single_level() {
 fn recursion_limit_one_rejects_two_levels() {
     let err = DecodeOptions::new()
         .recursion_limit(1)
-        .decode([0x81, 0x81, 0x00])
+        .decode(&[0x81, 0x81, 0x00])
         .unwrap_err();
     assert_eq!(err, Error::NestingTooDeep);
 }
@@ -101,7 +101,7 @@ fn recursion_limit_raised_above_default() {
 fn recursion_limit_applies_to_tags() {
     // Two tags wrapping a value: 0xd9_d9f7 0xd9_d9f7 0xf6
     let bytes = [0xd9, 0xd9, 0xf7, 0xd9, 0xd9, 0xf7, 0xf6];
-    let err = DecodeOptions::new().recursion_limit(1).decode(bytes).unwrap_err();
+    let err = DecodeOptions::new().recursion_limit(1).decode(&bytes).unwrap_err();
     assert_eq!(err, Error::NestingTooDeep);
 }
 
@@ -118,7 +118,7 @@ fn length_limit_rejects_oversized_byte_string() {
     // bstr(5) — 0x45 followed by 5 bytes
     let err = DecodeOptions::new()
         .length_limit(4)
-        .decode([0x45, 1, 2, 3, 4, 5])
+        .decode(&[0x45, 1, 2, 3, 4, 5])
         .unwrap_err();
     assert_eq!(err, Error::LengthTooLarge);
 }
@@ -128,7 +128,7 @@ fn length_limit_rejects_oversized_array() {
     // array(3) — 0x83 0x01 0x02 0x03
     let err = DecodeOptions::new()
         .length_limit(2)
-        .decode([0x83, 0x01, 0x02, 0x03])
+        .decode(&[0x83, 0x01, 0x02, 0x03])
         .unwrap_err();
     assert_eq!(err, Error::LengthTooLarge);
 }
@@ -138,7 +138,7 @@ fn length_limit_rejects_oversized_map() {
     // map(2) — 0xa2 0x00 0x00 0x01 0x00
     let err = DecodeOptions::new()
         .length_limit(1)
-        .decode([0xa2, 0x00, 0x00, 0x01, 0x00])
+        .decode(&[0xa2, 0x00, 0x00, 0x01, 0x00])
         .unwrap_err();
     assert_eq!(err, Error::LengthTooLarge);
 }
@@ -154,7 +154,7 @@ fn length_limit_raised_above_default() {
     // 4-element array, well under any practical limit, with a high cap.
     let v = DecodeOptions::new()
         .length_limit(u64::MAX)
-        .decode([0x84, 0x01, 0x02, 0x03, 0x04])
+        .decode(&[0x84, 0x01, 0x02, 0x03, 0x04])
         .unwrap();
     assert_eq!(v.len(), Some(4));
 }
@@ -165,7 +165,7 @@ fn length_limit_raised_above_default() {
 fn oom_mitigation_zero_still_decodes() {
     let v = DecodeOptions::new()
         .oom_mitigation(0)
-        .decode([0x83, 0x01, 0x02, 0x03])
+        .decode(&[0x83, 0x01, 0x02, 0x03])
         .unwrap();
     assert_eq!(v.len(), Some(3));
 }
@@ -174,7 +174,7 @@ fn oom_mitigation_zero_still_decodes() {
 fn oom_mitigation_does_not_constrain_correctness() {
     // Nested arrays drain the budget but decoding succeeds.
     let bytes = [0x82, 0x82, 0x01, 0x02, 0x82, 0x03, 0x04];
-    let v = DecodeOptions::new().oom_mitigation(8).decode(bytes).unwrap();
+    let v = DecodeOptions::new().oom_mitigation(8).decode(&bytes).unwrap();
     assert_eq!(v.len(), Some(2));
 }
 
@@ -252,15 +252,15 @@ fn builder_chain_on_fresh_value() {
 #[test]
 fn builder_reused_across_decodes() {
     let opts = DecodeOptions::new().recursion_limit(4).length_limit(16);
-    assert!(opts.decode([0x18, 42]).is_ok());
-    assert!(opts.decode([0x81, 0x00]).is_ok());
+    assert!(opts.decode(&[0x18, 42]).is_ok());
+    assert!(opts.decode(&[0x81, 0x00]).is_ok());
 }
 
 // --------------- Trailing data rejection in decode() ---------------
 
 #[test]
 fn decode_binary_rejects_trailing_byte() {
-    let err = DecodeOptions::new().decode([0x00, 0x00]).unwrap_err();
+    let err = DecodeOptions::new().decode(&[0x00, 0x00]).unwrap_err();
     assert_eq!(err, Error::InvalidFormat);
 }
 
@@ -284,6 +284,41 @@ fn decode_diagnostic_accepts_trailing_whitespace_and_comments() {
     let v = DecodeOptions::new()
         .format(Format::Diagnostic)
         .decode("42  # trailing line comment\n  / block / \n")
+        .unwrap();
+    assert_eq!(v.to_u32().unwrap(), 42);
+}
+
+// --------------- Trailing data rejection in decode_owned() ---------------
+
+#[test]
+fn decode_owned_binary_rejects_trailing_byte() {
+    let err = DecodeOptions::new().decode_owned(&[0x00, 0x00][..]).unwrap_err();
+    assert_eq!(err, Error::InvalidFormat);
+}
+
+#[test]
+fn decode_owned_hex_rejects_trailing_digits() {
+    let err = DecodeOptions::new()
+        .format(Format::Hex)
+        .decode_owned("0000")
+        .unwrap_err();
+    assert_eq!(err, Error::InvalidFormat);
+}
+
+#[test]
+fn decode_owned_diagnostic_rejects_trailing_value() {
+    let err = DecodeOptions::new()
+        .format(Format::Diagnostic)
+        .decode_owned("1 2")
+        .unwrap_err();
+    assert_eq!(err, Error::InvalidFormat);
+}
+
+#[test]
+fn decode_owned_diagnostic_accepts_trailing_whitespace_and_comments() {
+    let v = DecodeOptions::new()
+        .format(Format::Diagnostic)
+        .decode_owned("42  # trailing line comment\n  / block / \n")
         .unwrap();
     assert_eq!(v.to_u32().unwrap(), 42);
 }

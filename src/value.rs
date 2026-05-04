@@ -18,7 +18,7 @@ use std::{
 };
 
 use crate::{
-    Array, DataType, DateTime, EpochTime, Error, Float, IntegerBytes, Map, Result, SimpleValue,
+    Array, ByteString, DataType, DateTime, EpochTime, Error, Float, IntegerBytes, Map, Result, SimpleValue, TextString,
     codec::{Head, Major},
     tag,
     util::u128_from_slice,
@@ -93,8 +93,8 @@ use crate::{
 /// | [`Value::null()`] | Null simple value |
 /// | [`Value::simple_value(v)`](Value::simple_value) | Arbitrary simple value |
 /// | [`Value::float(v)`](Value::float) | Float in shortest CBOR form |
-/// | [`Value::byte_string(v)`](Value::byte_string) | Byte string from `impl Into<Vec<u8>>` |
-/// | [`Value::text_string(v)`](Value::text_string) | Text string from `impl Into<String>` |
+/// | [`Value::byte_string(v)`](Value::byte_string) | Byte string from `impl Into<ByteString>` (borrows from `&[u8]`) |
+/// | [`Value::text_string(v)`](Value::text_string) | Text string from `impl Into<TextString>` (borrows from `&str`) |
 /// | [`Value::array(v)`](Value::array) | Array from slice, `Vec`, or fixed-size array |
 /// | [`Value::map(v)`](Value::map) | Map from `BTreeMap`, `HashMap`, slice of pairs, etc. |
 /// | [`Value::date_time(v)`](Value::date_time) | Date/time string (tag 0) |
@@ -144,7 +144,7 @@ use crate::{
 /// |---|---|---|---|
 /// | Produce (owned) | [`encode`](Value::encode) → `Vec<u8>` | [`encode_hex`](Value::encode_hex) → `String` | `format!("{v:?}")` (compact) or `format!("{v:#?}")` (pretty) via [`Debug`](std::fmt::Debug); `format!("{v}")` via [`Display`](std::fmt::Display) |
 /// | Produce (streaming) | [`write_to`](Value::write_to)(`impl Write`) | [`write_hex_to`](Value::write_hex_to)(`impl Write`) | — |
-/// | Consume (owned) | [`decode`](Value::decode)(`impl AsRef<[u8]>`) | [`decode_hex`](Value::decode_hex)(`impl AsRef<[u8]>`) | [`str::parse`](str::parse) via [`FromStr`](std::str::FromStr) |
+/// | Consume (borrowed/owned) | [`decode`](Value::decode)(`&'a T) where T: AsRef<[u8]>`), [`decode_owned`](Value::decode_owned)(`impl AsRef<[u8]>`) | [`decode_hex`](Value::decode_hex)(`impl AsRef<[u8]>`) | [`str::parse`](str::parse) via [`FromStr`](std::str::FromStr) |
 /// | Consume (streaming) | [`read_from`](Value::read_from)(`impl Read`) | [`read_hex_from`](Value::read_hex_from)(`impl Read`) | — |
 ///
 /// `Debug` output follows CBOR::Core diagnostic notation (Section 2.3.6);
@@ -165,7 +165,7 @@ use crate::{
 ///     .length_limit(4096)
 ///     .oom_mitigation(64 * 1024);
 ///
-/// let v = strict.decode([0x18, 42]).unwrap();
+/// let v = strict.decode(&[0x18, 42]).unwrap();
 /// assert_eq!(v.to_u32().unwrap(), 42);
 /// ```
 ///
@@ -838,40 +838,52 @@ impl<'a> Value<'a> {
 
     /// Create a CBOR byte string (major type 2).
     ///
-    /// Accepts anything that converts into `Vec<u8>`:
-    /// - owned `Vec<u8>`, borrowed `&[u8]` and fixed-size `[u8; N]` (copied)
-    /// - `Box<[u8]>`, and `Cow<'_, [u8]>`
+    /// Accepts anything that converts into [`ByteString<'a>`]:
     ///
-    /// Owned inputs are moved without copying.
+    /// - `&'a [u8]` and `&'a [u8; N]` borrow zero-copy from the input.
+    /// - Owned `Vec<u8>` is moved without copying.
+    /// - Fixed-size `[u8; N]` and `Cow<'a, [u8]>` are accepted as well.
     ///
     /// ```
     /// use cbor_core::Value;
     ///
-    /// let v = Value::byte_string("ABC");
+    /// // Borrowed: tied to the slice's lifetime.
+    /// let v = Value::byte_string(b"ABC");
     /// assert_eq!(v.as_bytes(), Ok([65, 66, 67].as_slice()));
+    ///
+    /// // Owned: holds the Vec without reallocating.
+    /// let v = Value::byte_string(vec![1, 2, 3]);
+    /// assert_eq!(v.as_bytes(), Ok([1, 2, 3].as_slice()));
     /// ```
     #[must_use]
-    pub fn byte_string(value: impl Into<Vec<u8>>) -> Self {
-        Self::ByteString(value.into().into())
+    pub fn byte_string(value: impl Into<ByteString<'a>>) -> Self {
+        Value::from(value.into())
     }
 
     /// Create a CBOR text string (major type 3).
     ///
-    /// Accepts anything that converts into `String`:
-    /// - owned `String`, `&str` (copied), `Box<str>`
-    /// - `Cow<'_, str>`, and `char`.
+    /// Accepts anything that converts into [`TextString<'a>`]:
     ///
-    /// Owned inputs are moved without reallocating.
+    /// - `&'a str` (and any `&'a T` with `T: AsRef<str>`) borrows
+    ///   zero-copy from the input.
+    /// - Owned `String` is moved without copying.
+    /// - `char` and `Cow<'a, str>` are accepted as well; `char`
+    ///   allocates a one-character `String`.
     ///
     /// ```
     /// use cbor_core::Value;
     ///
-    /// let v = Value::text_string('A'); // char
-    /// assert_eq!(v.as_str(), Ok("A")); // &str
+    /// // Borrowed: tied to the string slice's lifetime.
+    /// let v = Value::text_string("hello");
+    /// assert_eq!(v.as_str(), Ok("hello"));
+    ///
+    /// // Owned char input.
+    /// let v = Value::text_string('A');
+    /// assert_eq!(v.as_str(), Ok("A"));
     /// ```
     #[must_use]
-    pub fn text_string(value: impl Into<String>) -> Self {
-        Self::TextString(value.into().into())
+    pub fn text_string(value: impl Into<TextString<'a>>) -> Self {
+        Self::from(value.into())
     }
 
     /// Create a CBOR date/time string value (tag 0).
@@ -1002,27 +1014,139 @@ impl<'a> Value<'a> {
     pub fn tag(number: u64, content: impl Into<Value<'a>>) -> Self {
         Self::Tag(number, Box::new(content.into()))
     }
+
+    /// Clone a `Value<'a>` into an independently owned `Value<'b>`.
+    ///
+    /// Like [`into_owned`](Self::into_owned), but takes `&self`:
+    /// every borrowed text or byte string is copied, owned data is
+    /// cloned, and the result borrows nothing from `self`. Use this
+    /// when the original `Value` must remain accessible (for example
+    /// it is held inside a larger structure); use
+    /// [`into_owned`](Self::into_owned) when you can consume `self`
+    /// and avoid the extra clones.
+    ///
+    /// The returned `Value<'b>` can be assigned to any lifetime,
+    /// including `Value<'static>`.
+    ///
+    /// ```
+    /// use cbor_core::Value;
+    ///
+    /// let bytes = b"\x65hello";
+    /// let borrowed = Value::decode(bytes).unwrap();
+    /// let owned: Value<'static> = borrowed.to_owned();
+    /// assert_eq!(owned.as_str().unwrap(), "hello");
+    /// // `borrowed` is still usable here.
+    /// assert_eq!(borrowed.as_str().unwrap(), "hello");
+    /// ```
+    pub fn to_owned<'b>(&self) -> Value<'b> {
+        match self {
+            Self::SimpleValue(simple_value) => Value::SimpleValue(*simple_value),
+            Self::Unsigned(x) => Value::Unsigned(*x),
+            Self::Negative(x) => Value::Negative(*x),
+            Self::Float(float) => Value::Float(*float),
+            Self::ByteString(text) => Value::ByteString(text.clone().into_owned().into()),
+            Self::TextString(bytes) => Value::TextString(bytes.clone().into_owned().into()),
+            Self::Array(values) => Value::Array(values.iter().map(Value::to_owned).collect()),
+            Self::Map(map) => Value::Map(map.iter().map(|(k, v)| (k.to_owned(), v.to_owned())).collect()),
+            Self::Tag(tag, content) => Value::Tag(*tag, Box::new((**content).to_owned())),
+        }
+    }
+
+    /// Detach a `Value<'a>` from any borrow, consuming `self`.
+    ///
+    /// Walks the value recursively. Any borrowed text or byte string
+    /// (`Cow::Borrowed` inside [`TextString`](Self::TextString) or
+    /// [`ByteString`](Self::ByteString)) is copied into an owned
+    /// allocation; already-owned strings, integers, floats, simple
+    /// values, arrays, maps, and tags are moved through unchanged.
+    /// The returned `Value<'b>` can be assigned to any lifetime,
+    /// including `Value<'static>`, and no longer borrows from the
+    /// original input slice.
+    ///
+    /// Use this when a value decoded from a slice needs to outlive
+    /// that slice. If you only have a `&Value<'a>`, use
+    /// [`to_owned`](Self::to_owned) instead.
+    ///
+    /// ```
+    /// use cbor_core::Value;
+    ///
+    /// fn detach(bytes: &[u8]) -> Value<'static> {
+    ///     Value::decode(bytes).unwrap().into_owned()
+    /// }
+    ///
+    /// let v = detach(b"\x65hello");
+    /// assert_eq!(v.as_str().unwrap(), "hello");
+    /// ```
+    pub fn into_owned<'b>(self) -> Value<'b> {
+        match self {
+            Self::SimpleValue(simple_value) => Value::SimpleValue(simple_value),
+            Self::Unsigned(x) => Value::Unsigned(x),
+            Self::Negative(x) => Value::Negative(x),
+            Self::Float(float) => Value::Float(float),
+            Self::ByteString(text) => Value::ByteString(text.into_owned().into()),
+            Self::TextString(bytes) => Value::TextString(bytes.into_owned().into()),
+            Self::Array(values) => Value::Array(values.into_iter().map(Value::into_owned).collect()),
+            Self::Map(map) => Value::Map(map.into_iter().map(|(k, v)| (k.into_owned(), v.into_owned())).collect()),
+            Self::Tag(tag, content) => Value::Tag(tag, Box::new(content.into_owned())), // TODO: Replace with Box::map() once it is in stable
+        }
+    }
 }
 
 /// Decoding and reading
 impl<'a> Value<'a> {
     /// Decode a CBOR data item from binary bytes.
     ///
-    /// Accepts any byte source (`&[u8]`, `&str`, `String`, `Vec<u8>`,
-    /// etc.). The input must contain **exactly one** CBOR item; any
-    /// trailing bytes cause [`Error::InvalidFormat`](crate::Error::InvalidFormat).
-    /// Use [`DecodeOptions::sequence_decoder`](crate::DecodeOptions::sequence_decoder) for
-    /// CBOR sequences.
+    /// Accepts any byte source by reference: `&[u8]`, `&[u8; N]`,
+    /// `&Vec<u8>`, `&str`, `&String`, etc. Decoded text and byte
+    /// strings borrow zero-copy from the input slice, so the returned
+    /// [`Value`] inherits its lifetime: `Value::decode(&bytes)`
+    /// produces `Value<'_>` tied to `bytes`. Reach for
+    /// [`Value::read_from`](Self::read_from) when you need an
+    /// owned `Value<'static>`.
+    ///
+    /// The input must contain **exactly one** CBOR item; any trailing
+    /// bytes cause [`Error::InvalidFormat`](crate::Error::InvalidFormat).
+    /// Use [`DecodeOptions::sequence_decoder`](crate::DecodeOptions::sequence_decoder)
+    /// for CBOR sequences.
     ///
     /// Returns `Err` if the encoding is not canonical.
     ///
     /// ```
     /// use cbor_core::Value;
-    /// let v = Value::decode([0x18, 42]).unwrap();
+    /// let v = Value::decode(&[0x18, 42]).unwrap();
     /// assert_eq!(v.to_u32().unwrap(), 42);
     /// ```
-    pub fn decode(bytes: impl AsRef<[u8]>) -> crate::Result<Self> {
+    pub fn decode<T>(bytes: &'a T) -> crate::Result<Self>
+    where
+        T: AsRef<[u8]> + ?Sized,
+    {
         crate::DecodeOptions::new().decode(bytes)
+    }
+
+    /// Decode a CBOR data item from binary bytes into an owned [`Value`].
+    ///
+    /// Like [`decode`](Self::decode), but the result does not borrow
+    /// from the input: text and byte strings are copied into owned
+    /// allocations. Use this when the input is short-lived (a
+    /// temporary buffer, a `Vec` returned from a function, etc.) and
+    /// the decoded value needs to outlive it. The returned `Value`
+    /// can be assigned to any lifetime, including `Value<'static>`.
+    ///
+    /// Equivalent to `Value::decode(bytes).map(Value::into_owned)`
+    /// but more performant.
+    ///
+    /// ```
+    /// use cbor_core::Value;
+    ///
+    /// fn decode_temp() -> Value<'static> {
+    ///     let buf: Vec<u8> = vec![0x65, b'h', b'e', b'l', b'l', b'o'];
+    ///     Value::decode_owned(&buf).unwrap()
+    /// }
+    ///
+    /// assert_eq!(decode_temp().as_str().unwrap(), "hello");
+    /// ```
+    pub fn decode_owned(bytes: impl AsRef<[u8]>) -> crate::Result<Self> {
+        crate::DecodeOptions::new().decode_owned(bytes)
     }
 
     /// Decode a CBOR data item from hex-encoded bytes.
@@ -1032,6 +1156,10 @@ impl<'a> Value<'a> {
     /// input must contain **exactly one** CBOR item; any trailing hex
     /// digits cause [`Error::InvalidFormat`](crate::Error::InvalidFormat).
     ///
+    /// Hex decoding cannot borrow from the input (each pair of hex
+    /// digits is converted into a single byte), so the returned value
+    /// is always owned and may be stored as `Value<'static>`.
+    ///
     /// Returns `Err` if the encoding is not canonical.
     ///
     /// ```
@@ -1039,8 +1167,8 @@ impl<'a> Value<'a> {
     /// let v = Value::decode_hex("182a").unwrap();
     /// assert_eq!(v.to_u32().unwrap(), 42);
     /// ```
-    pub fn decode_hex(hex: impl AsRef<[u8]>) -> Result<Self> {
-        crate::DecodeOptions::new().format(crate::Format::Hex).decode(hex)
+    pub fn decode_hex(hex: impl AsRef<[u8]>) -> crate::Result<Self> {
+        crate::DecodeOptions::new().format(crate::Format::Hex).decode_owned(hex)
     }
 
     /// Read a single CBOR data item from a binary stream.
@@ -1048,6 +1176,11 @@ impl<'a> Value<'a> {
     /// The reader is advanced only to the end of the item; any further
     /// bytes remain in the stream, so repeated calls pull successive
     /// items of a CBOR sequence.
+    ///
+    /// Bytes are read into an internal buffer, so the result is
+    /// always owned (it can be held as `Value<'static>`). For
+    /// zero-copy decoding from a byte slice, use
+    /// [`decode`](Self::decode) instead.
     ///
     /// ```
     /// use cbor_core::Value;
@@ -1064,7 +1197,8 @@ impl<'a> Value<'a> {
     /// Each byte of CBOR is expected as two hex digits (uppercase or
     /// lowercase). The reader is advanced only to the end of the item;
     /// any further hex digits remain in the stream, so repeated calls
-    /// pull successive items of a CBOR sequence.
+    /// pull successive items of a CBOR sequence. The result is always
+    /// owned.
     ///
     /// ```
     /// use cbor_core::Value;

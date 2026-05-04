@@ -55,7 +55,7 @@ where
     if let Ok(number) = u64_from_slice(trimmed) {
         Value::Unsigned(number)
     } else {
-        Value::tag(tag::POS_BIG_INT, Value::byte_string(trimmed))
+        Value::tag(tag::POS_BIG_INT, trimmed.to_vec())
     }
 }
 
@@ -99,7 +99,7 @@ where
         if let Ok(number) = u64_from_slice(trimmed) {
             Value::Negative(number)
         } else {
-            Value::tag(tag::NEG_BIG_INT, Value::byte_string(trimmed))
+            Value::tag(tag::NEG_BIG_INT, trimmed.to_vec())
         }
     }
 }
@@ -309,7 +309,7 @@ mod tests {
         Uint<L>: Encoding,
     {
         let encoded = Value::from(n).encode();
-        let decoded = Value::decode(encoded).unwrap();
+        let decoded = Value::decode(&encoded).unwrap();
         Uint::try_from(decoded).unwrap()
     }
 
@@ -318,7 +318,7 @@ mod tests {
         Uint<L>: Encoding,
     {
         let encoded = Value::from(n).encode();
-        let decoded = Value::decode(encoded).unwrap();
+        let decoded = Value::decode(&encoded).unwrap();
         Int::try_from(decoded).unwrap()
     }
 

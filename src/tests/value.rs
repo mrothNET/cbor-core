@@ -730,15 +730,15 @@ fn incompatible_type_errors() {
 #[test]
 fn decode_invalid_info_byte() {
     // info = 28 is reserved/invalid
-    assert_eq!(Value::decode([0x1C]), Err(Error::Malformed));
+    assert_eq!(Value::decode(&[0x1C]), Err(Error::Malformed));
 }
 
 #[test]
 fn decode_truncated_input() {
     // Two-byte unsigned, but only header present
-    assert_eq!(Value::decode([0x19, 0x01]), Err(Error::UnexpectedEof));
+    assert_eq!(Value::decode(&[0x19, 0x01]), Err(Error::UnexpectedEof));
     // Empty input
-    assert_eq!(Value::decode([]), Err(Error::UnexpectedEof));
+    assert_eq!(Value::decode(&[]), Err(Error::UnexpectedEof));
 }
 
 // ===== DataType and is_*() predicates =====

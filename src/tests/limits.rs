@@ -154,49 +154,49 @@ fn parse_nested_embedded_bstr_exceeds_limit() {
 fn array_declared_length_too_large() {
     // array(1_000_000_001) — 0x9a 0x3b9aca01
     let bytes = [0x9a, 0x3b, 0x9a, 0xca, 0x01];
-    assert_eq!(Value::decode(bytes), Err(Error::LengthTooLarge));
+    assert_eq!(Value::decode(&bytes), Err(Error::LengthTooLarge));
 }
 
 #[test]
 fn map_declared_length_too_large() {
     // map(1_000_000_001) — 0xba 0x3b9aca01
     let bytes = [0xba, 0x3b, 0x9a, 0xca, 0x01];
-    assert_eq!(Value::decode(bytes), Err(Error::LengthTooLarge));
+    assert_eq!(Value::decode(&bytes), Err(Error::LengthTooLarge));
 }
 
 #[test]
 fn byte_string_declared_length_too_large() {
     // bstr(1_000_000_001) — 0x5a 0x3b9aca01
     let bytes = [0x5a, 0x3b, 0x9a, 0xca, 0x01];
-    assert_eq!(Value::decode(bytes), Err(Error::LengthTooLarge));
+    assert_eq!(Value::decode(&bytes), Err(Error::LengthTooLarge));
 }
 
 #[test]
 fn text_string_declared_length_too_large() {
     // tstr(1_000_000_001) — 0x7a 0x3b9aca01
     let bytes = [0x7a, 0x3b, 0x9a, 0xca, 0x01];
-    assert_eq!(Value::decode(bytes), Err(Error::LengthTooLarge));
+    assert_eq!(Value::decode(&bytes), Err(Error::LengthTooLarge));
 }
 
 #[test]
 fn array_max_u64_length() {
     // array(u64::MAX) — 0x9b followed by 8 × 0xff
     let bytes = [0x9b, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff];
-    assert_eq!(Value::decode(bytes), Err(Error::LengthTooLarge));
+    assert_eq!(Value::decode(&bytes), Err(Error::LengthTooLarge));
 }
 
 #[test]
 fn map_max_u64_length() {
     // map(u64::MAX)
     let bytes = [0xbb, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff];
-    assert_eq!(Value::decode(bytes), Err(Error::LengthTooLarge));
+    assert_eq!(Value::decode(&bytes), Err(Error::LengthTooLarge));
 }
 
 #[test]
 fn byte_string_max_u64_length() {
     // bstr(u64::MAX)
     let bytes = [0x5b, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff];
-    assert_eq!(Value::decode(bytes), Err(Error::LengthTooLarge));
+    assert_eq!(Value::decode(&bytes), Err(Error::LengthTooLarge));
 }
 
 // --------------- Short input (declared length > actual data) ---------------
@@ -205,19 +205,19 @@ fn byte_string_max_u64_length() {
 fn array_declared_large_but_data_short() {
     // array(100) but only one element follows
     let bytes = [0x98, 0x64, 0x00];
-    assert_eq!(Value::decode(bytes), Err(Error::UnexpectedEof));
+    assert_eq!(Value::decode(&bytes), Err(Error::UnexpectedEof));
 }
 
 #[test]
 fn map_declared_large_but_data_short() {
     // map(100) but only one key-value pair follows
     let bytes = [0xb8, 0x64, 0x00, 0x00];
-    assert_eq!(Value::decode(bytes), Err(Error::UnexpectedEof));
+    assert_eq!(Value::decode(&bytes), Err(Error::UnexpectedEof));
 }
 
 #[test]
 fn byte_string_declared_large_but_data_short() {
     // bstr(100) but only 3 bytes follow
     let bytes = [0x58, 0x64, 0xaa, 0xbb, 0xcc];
-    assert_eq!(Value::decode(bytes), Err(Error::UnexpectedEof));
+    assert_eq!(Value::decode(&bytes), Err(Error::UnexpectedEof));
 }

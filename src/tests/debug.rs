@@ -99,14 +99,14 @@ fn float_two() {
 #[test]
 fn float_nan_with_payload_f32() {
     // fa7f800001 — f32 NaN with payload 1
-    let value = Value::decode([0xfa, 0x7f, 0x80, 0x00, 0x01]).unwrap();
+    let value = Value::decode(&[0xfa, 0x7f, 0x80, 0x00, 0x01]).unwrap();
     assert_eq!(format!("{value:?}"), "float'7f800001'");
 }
 
 #[test]
 fn float_nan_with_payload_and_sign() {
     // fbfff0001230000000 — f64 NaN with payload and sign
-    let value = Value::decode([0xfb, 0xff, 0xf0, 0x00, 0x12, 0x30, 0x00, 0x00, 0x00]).unwrap();
+    let value = Value::decode(&[0xfb, 0xff, 0xf0, 0x00, 0x12, 0x30, 0x00, 0x00, 0x00]).unwrap();
     assert_eq!(format!("{value:?}"), "float'fff0001230000000'");
 }
 

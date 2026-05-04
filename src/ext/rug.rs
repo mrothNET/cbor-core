@@ -40,9 +40,9 @@ fn from_rug_integer<'a>(value: &Integer) -> Value<'a> {
             if let Ok(number) = u64_from_slice(trimmed) {
                 Value::Unsigned(number)
             } else if bytes.len() == trimmed.len() {
-                Value::tag(tag::POS_BIG_INT, Value::byte_string(bytes)) // reuse Vec
+                Value::tag(tag::POS_BIG_INT, bytes) // reuse Vec
             } else {
-                Value::tag(tag::POS_BIG_INT, Value::byte_string(trimmed))
+                Value::tag(tag::POS_BIG_INT, trimmed.to_vec())
             }
         }
         Ordering::Less => {
@@ -55,9 +55,9 @@ fn from_rug_integer<'a>(value: &Integer) -> Value<'a> {
             if let Ok(number) = u64_from_slice(trimmed) {
                 Value::Negative(number)
             } else if bytes.len() == trimmed.len() {
-                Value::tag(tag::NEG_BIG_INT, Value::byte_string(bytes))
+                Value::tag(tag::NEG_BIG_INT, bytes) // reuse Vec
             } else {
-                Value::tag(tag::NEG_BIG_INT, Value::byte_string(trimmed))
+                Value::tag(tag::NEG_BIG_INT, trimmed.to_vec())
             }
         }
     }
@@ -110,7 +110,7 @@ mod tests {
 
     fn roundtrip(n: Integer) -> Integer {
         let encoded = Value::from(&n).encode();
-        let decoded = Value::decode(encoded).unwrap();
+        let decoded = Value::decode(&encoded).unwrap();
         Integer::try_from(decoded).unwrap()
     }
 

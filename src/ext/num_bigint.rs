@@ -36,9 +36,9 @@ fn from_big_uint<'a>(value: &BigUint) -> Value<'a> {
     if let Ok(number) = u64_from_slice(trimmed) {
         Value::Unsigned(number)
     } else if bytes.len() == trimmed.len() {
-        Value::tag(tag::POS_BIG_INT, Value::byte_string(bytes)) // reuse Vec
+        Value::tag(tag::POS_BIG_INT, bytes) // reuse Vec
     } else {
-        Value::tag(tag::POS_BIG_INT, Value::byte_string(trimmed)) // implicit new Vec
+        Value::tag(tag::POS_BIG_INT, trimmed.to_vec()) // create new Vec
     }
 }
 
@@ -71,9 +71,9 @@ fn from_big_int<'a>(value: &BigInt) -> Value<'a> {
             if let Ok(number) = u64_from_slice(trimmed) {
                 Value::Negative(number)
             } else if bytes.len() == trimmed.len() {
-                Value::tag(tag::NEG_BIG_INT, Value::byte_string(bytes)) // reuse Vec
+                Value::tag(tag::NEG_BIG_INT, bytes) // reuse Vec
             } else {
-                Value::tag(tag::NEG_BIG_INT, Value::byte_string(trimmed)) // implicit new Vec
+                Value::tag(tag::NEG_BIG_INT, trimmed.to_vec()) // create new Vec
             }
         }
     }
@@ -166,7 +166,7 @@ mod tests {
 
     fn roundtrip_biguint(n: BigUint) -> BigUint {
         let encoded = Value::from(n).encode();
-        let decoded = Value::decode(encoded).unwrap();
+        let decoded = Value::decode(&encoded).unwrap();
         BigUint::try_from(decoded).unwrap()
     }
 

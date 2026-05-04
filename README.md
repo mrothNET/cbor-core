@@ -3,11 +3,12 @@
 A Rust implementation of [CBOR::Core](https://www.ietf.org/archive/id/draft-rundgren-cbor-core-25.html),
 the deterministic subset of CBOR (RFC 8949).
 
-The central type is an owned `Value`. It can be constructed,
-inspected, modified in place, encoded to bytes, and decoded back.
-The API follows CBOR's own shape, so tagged values, simple values,
-and arbitrary map keys stay directly reachable without a detour
-through a schema.
+The central type is `Value`. It can be constructed, inspected,
+modified in place, encoded to bytes, and decoded back. The API
+follows CBOR's own shape, so tagged values, simple values, and
+arbitrary map keys stay directly reachable.
+Decoding from a byte slice is zero-copy: text and byte strings
+in the result borrow from the input.
 
 To map custom Rust types to CBOR instead, enable the `serde` feature
 for `Serialize`/`Deserialize` support.
@@ -30,6 +31,10 @@ big integers (tags 2/3).
 
 Multi-item streams (RFC 8742) decode through `SequenceDecoder` for
 byte slices and `SequenceReader` for `io::Read` sources.
+
+Decoding binary CBOR from a byte slice is zero-copy: text and byte
+strings in the result borrow directly from the input and the returned
+value's lifetime is tied to the slice.
 
 Encoding is deterministic: integers and floats use their shortest
 form, and map keys are sorted in canonical order. The decoder

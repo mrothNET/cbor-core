@@ -92,3 +92,7 @@ required-features = ["serde"]
 [[example]]
 name = "serde_enum_struct"
 required-features = ["serde"]
+
+[[example]]
+name = "serde_borrow"
+required-features = ["serde"]

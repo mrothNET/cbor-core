@@ -16,9 +16,11 @@ use crate::{
 ///
 /// Construct with [`SequenceDecoder::new`] for the crate defaults, or with
 /// [`DecodeOptions::sequence_decoder`] to choose an input format and decoding
-/// limits. Yields `Result<Value>` for each item; `next` returns `None`
-/// when the slice is fully consumed. For input from an `io::Read`
-/// source, use [`SequenceReader`] instead.
+/// limits. Yields `Result<Value<'a>>` for each item, where `'a` is
+/// the lifetime of the input slice; in [`Format::Binary`] each item
+/// borrows text and byte strings directly from the slice. `next`
+/// returns `None` when the slice is fully consumed. For input from an
+/// `io::Read` source, use [`SequenceReader`] instead.
 ///
 /// Sequence semantics depend on the format:
 ///
@@ -73,7 +75,10 @@ impl<'a> SequenceDecoder<'a> {
     /// assert_eq!(d.next().unwrap().unwrap().to_u32().unwrap(), 2);
     /// assert!(d.next().is_none());
     /// ```
-    pub fn new<B: AsRef<[u8]> + ?Sized>(input: &'a B) -> Self {
+    pub fn new<T>(input: &'a T) -> Self
+    where
+        T: AsRef<[u8]> + ?Sized,
+    {
         Self::with_options(DecodeOptions::new(), input.as_ref())
     }
 
@@ -119,15 +124,18 @@ impl<'a> Iterator for SequenceDecoder<'a> {
     }
 }
 
-/// Iterator over a CBOR sequence pulled from an [`io::Read`] source.
+/// Iterator over a CBOR sequence read from an [`io::Read`] source.
 ///
 /// Construct with [`SequenceReader::new`] for the crate defaults, or with
 /// [`DecodeOptions::sequence_reader`] to choose an input format and
-/// decoding limits. Yields `IoResult<Value>` for each item. `next`
-/// returns `None` when the stream ends at an item boundary; a
-/// truncated item returns `Some(Err(IoError::Data(Error::UnexpectedEof)))`.
-/// For in-memory input, use [`SequenceDecoder`] instead: it returns plain
-/// `Result<Value>` without the I/O error arm.
+/// decoding limits. Yields `IoResult<Value<'static>>` for each item:
+/// the bytes are read into an internal buffer, so each item is
+/// owned. `next` returns `None` when the stream ends at an item
+/// boundary; a truncated item returns
+/// `Some(Err(IoError::Data(Error::UnexpectedEof)))`. For in-memory
+/// input, use [`SequenceDecoder`] instead: it borrows from the input
+/// slice and returns plain `Result<Value<'_>>` without the I/O error
+/// arm.
 ///
 /// Sequence semantics depend on the format:
 ///

@@ -5,6 +5,20 @@
 ### Added
 
 - `From<char> for Value` to convert a char into a `Value`.
+- Lifetime parameter on `Value`: text and byte strings are now `Cow<'a, str>` / `Cow<'a, [u8]>`. Most code keeps working unchanged because `Value<'a>` is covariant in `'a`. Conversions from owned inputs (`String`, `Vec<u8>`, integers, etc.) and values read from an `io::Read` stream live as `Value<'static>`; conversions from a `&str` / `&[u8]` reference carry that reference's lifetime. Use `Value<'static>` in struct fields when only owned values are stored.
+- Zero-copy binary decoding from a slice. When `DecodeOptions::decode`, `Value::decode`, or `SequenceDecoder` is fed a `&[u8]`, decoded text and byte strings borrow directly from the input instead of allocating. Hex and `io::Read` input paths still own (the bytes have to be transformed or read into a buffer).
+- `Array<'a>`, `Map<'a>`, and `ValueKey<'a>` carry the same lifetime so that arrays, maps, and lookup keys can hold or reference borrowed strings.
+- `From<std::str::Utf8Error> for Error`
+- `TextString<'a>` and `ByteString<'a>` helper types wrapping `Cow<'a, str>` and `Cow<'a, [u8]>`. They mirror the role of `Array` and `Map`: a single `impl Into<TextString>` / `impl Into<ByteString>` bound on `Value::text_string` / `Value::byte_string` accepts both owned and borrowed inputs while preserving the borrow.
+- `Value::into_owned()` consumes a `Value<'a>` and returns a `Value<'b>` that borrows nothing from the original input; borrowed strings are copied, owned data is moved through.
+- `Value::to_owned()` is the `&self` counterpart: clones into a fresh `Value<'b>` while leaving the source intact.
+- `DecodeOptions::decode_owned()` and `Value::decode_owned()` decodes a binary CBOR slice directly into an owned `Value`, equivalent to `Value::decode(&bytes)?.into_owned()` but skipping the borrowed intermediate.
+
+### Changed
+
+- `Value::decode` and `DecodeOptions::decode` now take `&T` where `T: AsRef<[u8]> + ?Sized` (instead of `impl AsRef<[u8]>`). Callers passing an owned `Vec<u8>` or `String` need to add `&`. `Value::decode_hex` and `Value::read_*` keep their by-value parameter.
+- `DecodeOptions::sequence_decoder` likewise takes `&T` with an explicit lifetime.
+- `Value::text_string` now takes `impl Into<TextString<'a>>` (was `impl Into<String>`); `Value::byte_string` now takes `impl Into<ByteString<'a>>` (was `impl Into<Vec<u8>>`). All previously accepted inputs still work, and `&str` / `&[u8]` / `&[u8; N]` references now borrow zero-copy instead of being copied.
 
 ## 0.8.0 - 2026-04-26
 

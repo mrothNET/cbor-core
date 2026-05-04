@@ -7,15 +7,16 @@
 //! [CBOR::Core](https://www.ietf.org/archive/id/draft-rundgren-cbor-core-25.html)
 //! profile (`draft-rundgren-cbor-core-25`).
 //!
-//! The central type is an owned [`Value`]. It can be constructed,
-//! inspected, modified in place, encoded to bytes, and decoded back.
-//! The API follows CBOR's own shape, so tagged values, simple values,
-//! and arbitrary map keys stay directly reachable without a detour
-//! through a schema.
+//! The central type is [`Value`]. It can be constructed, inspected,
+//! modified in place, encoded to bytes, and decoded back. The API
+//! follows CBOR's own shape, so tagged values, simple values, and
+//! arbitrary map keys stay directly reachable.
+//! [`Value`] carries a lifetime parameter so that decoded text and
+//! byte strings can borrow zero-copy from the input slice.
 //!
 //! # Types
 //!
-//! [`Value`] is the owned representation of any CBOR data item. It handles
+//! [`Value`] is the central representation of any CBOR data item. It handles
 //! construction, inspection, encoding, and decoding, and is what most code
 //! works with directly.
 //!
@@ -130,6 +131,81 @@
 //! Round-tripping `format!("{v:?}").parse::<Value>()` always yields the
 //! original value.
 //!
+//! # Borrowing and ownership
+//!
+//! [`Value`] carries a lifetime parameter so that text and byte
+//! strings can either own their storage or borrow it. The variants
+//! that hold strings are
+//! [`TextString(Cow<'a, str>)`](Value::TextString) and
+//! [`ByteString(Cow<'a, [u8]>)`](Value::ByteString).
+//!
+//! Decoding binary CBOR from a byte slice is zero-copy: each text
+//! and byte string in the result is a `Cow::Borrowed` pointing into
+//! the input slice. The returned value's lifetime is the slice's
+//! lifetime:
+//!
+//! ```
+//! use cbor_core::Value;
+//!
+//! let bytes: &[u8] = b"\x65hello"; // text string "hello"
+//! let v = Value::decode(bytes).unwrap();
+//! assert_eq!(v.as_str().unwrap(), "hello");
+//! // `v` borrows from `bytes`; dropping `bytes` would be a borrow error.
+//! ```
+//!
+//! Hex decoding ([`Value::decode_hex`]) and stream decoding from any
+//! [`io::Read`](std::io::Read) source ([`Value::read_from`],
+//! [`SequenceReader`]) cannot borrow: hex pairs have to be decoded
+//! into bytes, and a stream is read into an internal buffer. Those
+//! paths always produce an owned `Value<'static>`.
+//!
+//! Values built in code follow the same split: passing an owned
+//! `String`, `Vec<u8>`, integer, float, etc. produces an owned
+//! `Value<'static>`, while passing a reference (`&str`, `&[u8]`,
+//! `&[u8; N]`) produces a `Value<'a>` borrowing from that reference.
+//! A `&'static str` literal naturally yields `Value<'static>`. The
+//! [`array!`](crate::array) and [`map!`](crate::map) macros and the
+//! `From`/`TryFrom` conversions follow whatever the element type
+//! does.
+//!
+//! `Value` is covariant in its lifetime, so a `Value<'static>` can
+//! be passed wherever a shorter `Value<'a>` is expected. To store a
+//! decoded or constructed `Value` in a struct field where a lifetime
+//! parameter would be inconvenient, name it `Value<'static>`:
+//!
+//! ```
+//! use cbor_core::Value;
+//!
+//! struct Config {
+//!     metadata: Value<'static>,
+//! }
+//!
+//! impl Config {
+//!     fn new() -> Self {
+//!         // `Value::read_from` and owned-input conversions like
+//!         // `Value::from(42)` or `Value::from(String::from("..."))`
+//!         // both yield values that can be stored as `Value<'static>`.
+//!         Self { metadata: Value::from(42) }
+//!     }
+//! }
+//! ```
+//!
+//! When a borrowed value needs to outlive its source slice, detach
+//! it explicitly. Three methods produce a `Value` that borrows
+//! nothing from the original input:
+//!
+//! * [`Value::into_owned`] consumes a [`Value`] and copies any
+//!   borrowed strings into owned allocations. Cheapest when you
+//!   can give up ownership of the original.
+//! * [`Value::to_owned`] does the same from `&Value`, leaving the
+//!   original intact at the cost of cloning all owned data too.
+//! * [`Value::decode_owned`] decodes directly into an owned
+//!   [`Value`], skipping the borrowed intermediate. Useful when
+//!   the input buffer is local to the decode call.
+//!
+//! All three produce a `Value` that can be assigned to any lifetime,
+//! including `Value<'static>`.
+//!
 //! # Encoding rules
 //!
 //! Encoding is deterministic: integers and floats use their shortest
@@ -224,6 +300,7 @@
 //! | `rug` | `From`/`TryFrom` between `Value` and `rug::Integer` |
 
 mod array;
+mod bytes;
 mod codec;
 mod data_type;
 mod date_time;
@@ -244,12 +321,14 @@ mod map;
 mod parse;
 mod simple_value;
 mod tag;
+mod text;
 mod util;
 mod value;
 mod value_key;
 mod view;
 
 pub use array::Array;
+pub use bytes::ByteString;
 pub use data_type::DataType;
 pub use date_time::DateTime;
 pub use decode_options::DecodeOptions;
@@ -261,6 +340,7 @@ pub use float::Float;
 pub use format::{EncodeFormat, Format};
 pub use map::Map;
 pub use simple_value::SimpleValue;
+pub use text::TextString;
 pub use value::Value;
 pub use value_key::ValueKey;
 

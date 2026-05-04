@@ -27,14 +27,14 @@ impl<'a> FromStr for Value<'a> {
 // lookahead. Bytes pulled for peeking are held in `buf` until consumed,
 // so the stream is never read past the last byte the parser actually
 // inspects on a successful match.
-pub(crate) struct Parser<R: MyReader> {
+pub(crate) struct Parser<R> {
     reader: R,
     buf: [u8; 16],
     buf_len: usize,
     depth: u16,
 }
 
-impl<R: MyReader> Parser<R> {
+impl<'r, R: MyReader<'r>> Parser<R> {
     pub(crate) fn new(inner: R, recursion_limit: u16) -> Self {
         Self {
             reader: inner,
@@ -689,7 +689,7 @@ fn be_bytes_to_value<'a>(bytes: &[u8], negative: bool) -> Result<Value<'a>, Erro
         if bytes.len() <= 8 {
             Ok(Value::Unsigned(u64_from_slice(bytes)?))
         } else {
-            Ok(Value::tag(tag::POS_BIG_INT, Value::byte_string(bytes)))
+            Ok(Value::tag(tag::POS_BIG_INT, bytes.to_vec()))
         }
     } else {
         let mut sub = bytes.to_vec();
@@ -707,7 +707,7 @@ fn be_bytes_to_value<'a>(bytes: &[u8], negative: bool) -> Result<Value<'a>, Erro
         if sub.len() <= 8 {
             Ok(Value::Negative(u64_from_slice(sub)?))
         } else {
-            Ok(Value::tag(tag::NEG_BIG_INT, Value::byte_string(sub)))
+            Ok(Value::tag(tag::NEG_BIG_INT, sub.to_vec()))
         }
     }
 }

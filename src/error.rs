@@ -1,4 +1,4 @@
-use std::{fmt, io, string::FromUtf8Error};
+use std::{fmt, io};
 
 use crate::DataType;
 
@@ -114,8 +114,14 @@ impl std::error::Error for Error {}
 /// Convenience alias used throughout this crate.
 pub type Result<T> = std::result::Result<T, Error>;
 
-impl From<FromUtf8Error> for Error {
-    fn from(_error: FromUtf8Error) -> Self {
+impl From<std::string::FromUtf8Error> for Error {
+    fn from(_error: std::string::FromUtf8Error) -> Self {
+        Self::InvalidUtf8
+    }
+}
+
+impl From<std::str::Utf8Error> for Error {
+    fn from(_error: std::str::Utf8Error) -> Self {
         Self::InvalidUtf8
     }
 }

@@ -1,4 +1,4 @@
-use std::io;
+use std::{borrow::Cow, io};
 
 use crate::util::u8_from_hex_digit;
 
@@ -6,17 +6,17 @@ fn decode_byte(pair: &[u8; 2]) -> Result<u8, crate::Error> {
     Ok(u8_from_hex_digit(pair[0])? << 4 | u8_from_hex_digit(pair[1])?)
 }
 
-pub(crate) trait MyReader {
+pub(crate) trait MyReader<'r> {
     type Error: From<crate::Error> + crate::error::WithEof;
 
     fn read_bytes<const N: usize>(&mut self) -> Result<[u8; N], Self::Error>;
-    fn read_vec(&mut self, len: u64, oom_mitigation: usize) -> Result<Vec<u8>, Self::Error>;
+    fn read_cow(&mut self, len: u64, oom_mitigation: usize) -> Result<Cow<'r, [u8]>, Self::Error>;
 }
 
 #[repr(transparent)]
 pub(crate) struct SliceReader<'a>(pub(crate) &'a [u8]);
 
-impl<'a> MyReader for SliceReader<'a> {
+impl<'a> MyReader<'a> for SliceReader<'a> {
     type Error = crate::Error;
 
     fn read_bytes<const N: usize>(&mut self) -> Result<[u8; N], Self::Error> {
@@ -25,19 +25,19 @@ impl<'a> MyReader for SliceReader<'a> {
         Ok(*bytes)
     }
 
-    fn read_vec(&mut self, len: u64, _oom_mitigation: usize) -> Result<Vec<u8>, Self::Error> {
+    fn read_cow(&mut self, len: u64, _oom_mitigation: usize) -> Result<Cow<'a, [u8]>, Self::Error> {
         let len = usize::try_from(len).or(Err(crate::Error::LengthTooLarge))?;
-        let slice = self.0.split_off(..len).ok_or(crate::Error::UnexpectedEof)?;
+        let bytes = self.0.split_off(..len).ok_or(crate::Error::UnexpectedEof)?;
 
         // No OOM mitigation necessary: split_off() was successful
-        Ok(slice.to_vec())
+        Ok(bytes.into())
     }
 }
 
 #[repr(transparent)]
 pub(crate) struct HexSliceReader<'a>(pub(crate) &'a [u8]);
 
-impl<'a> MyReader for HexSliceReader<'a> {
+impl<'a, 'r> MyReader<'r> for HexSliceReader<'a> {
     type Error = crate::Error;
 
     fn read_bytes<const N: usize>(&mut self) -> Result<[u8; N], Self::Error> {
@@ -51,7 +51,7 @@ impl<'a> MyReader for HexSliceReader<'a> {
         Ok(buf)
     }
 
-    fn read_vec(&mut self, len: u64, _oom_mitigation: usize) -> Result<Vec<u8>, Self::Error> {
+    fn read_cow(&mut self, len: u64, _oom_mitigation: usize) -> Result<Cow<'r, [u8]>, Self::Error> {
         let len = usize::try_from(len).or(Err(crate::Error::LengthTooLarge))?;
         let hex_len = len.checked_mul(2).ok_or(crate::Error::LengthTooLarge)?;
         let hex = self.0.split_off(..hex_len).ok_or(crate::Error::UnexpectedEof)?;
@@ -64,11 +64,11 @@ impl<'a> MyReader for HexSliceReader<'a> {
         }
 
         debug_assert_eq!(vec.len(), len);
-        Ok(vec)
+        Ok(vec.into())
     }
 }
 
-impl<R: io::Read> MyReader for R {
+impl<'r, R: io::Read> MyReader<'r> for R {
     type Error = crate::IoError;
 
     fn read_bytes<const N: usize>(&mut self) -> Result<[u8; N], Self::Error> {
@@ -77,7 +77,7 @@ impl<R: io::Read> MyReader for R {
         Ok(buf)
     }
 
-    fn read_vec(&mut self, len: u64, oom_mitigation: usize) -> Result<Vec<u8>, Self::Error> {
+    fn read_cow(&mut self, len: u64, oom_mitigation: usize) -> Result<Cow<'r, [u8]>, Self::Error> {
         use io::Read;
 
         let len_usize = usize::try_from(len).or(Err(crate::Error::LengthTooLarge))?;
@@ -85,7 +85,7 @@ impl<R: io::Read> MyReader for R {
         let bytes_read = self.take(len).read_to_end(&mut buf)?;
 
         if bytes_read == len_usize {
-            Ok(buf)
+            Ok(buf.into())
         } else {
             crate::Error::UnexpectedEof.into()
         }
@@ -143,7 +143,7 @@ impl<R: io::Read> io::Read for PeekReader<R> {
 
 pub(crate) struct HexReader<R>(pub(crate) R);
 
-impl<R: io::Read> MyReader for HexReader<R> {
+impl<'r, R: io::Read> MyReader<'r> for HexReader<R> {
     type Error = crate::IoError;
 
     fn read_bytes<const N: usize>(&mut self) -> Result<[u8; N], Self::Error> {
@@ -159,7 +159,7 @@ impl<R: io::Read> MyReader for HexReader<R> {
         Ok(buf)
     }
 
-    fn read_vec(&mut self, len: u64, oom_mitigation: usize) -> Result<Vec<u8>, Self::Error> {
+    fn read_cow(&mut self, len: u64, oom_mitigation: usize) -> Result<Cow<'r, [u8]>, Self::Error> {
         let len_usize = usize::try_from(len).or(Err(crate::Error::LengthTooLarge))?;
         let mut vec = Vec::with_capacity(len_usize.min(oom_mitigation));
 
@@ -179,6 +179,6 @@ impl<R: io::Read> MyReader for HexReader<R> {
         }
 
         debug_assert_eq!(vec.len(), len_usize);
-        Ok(vec)
+        Ok(vec.into())
     }
 }

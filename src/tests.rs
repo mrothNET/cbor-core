@@ -1,3 +1,4 @@
+mod borrowing;
 mod collections;
 mod debug;
 mod decode_options;
