@@ -3,6 +3,21 @@
 A deterministic CBOR::Core encoder and decoder for Rust, tracking
 `draft-rundgren-cbor-core-25`.
 
+## 0.9.1
+
+- The decoder can now be configured to read input that does not
+  follow the deterministic encoding rules. Each kind of deviation
+  is opt-in, and what gets accepted is normalized while decoding,
+  so the result is the same value the canonical encoder would
+  produce and re-encoding it yields compliant bytes. The diagnostic
+  notation parser follows the same policy.
+- Indefinite-length byte strings, text strings, arrays, and maps
+  from the wider CBOR specification are decoded under the same
+  opt-in, with the diagnostic-notation spellings recognised too.
+- A small fix on the boundary between big integers and ordinary
+  integers: an oversized big integer payload that fits in a regular
+  unsigned word is now correctly rejected as non-canonical.
+
 ## 0.9.0
 
 - Decoding binary CBOR from a byte slice no longer copies the text
