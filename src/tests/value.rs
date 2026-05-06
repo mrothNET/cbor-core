@@ -1,6 +1,20 @@
 use std::{collections::BTreeMap, time::UNIX_EPOCH};
 
 use crate::{DataType, Error, SimpleValue, Value, array, map};
+
+// ===== Catch unintentional size changes =====
+
+#[test]
+fn size_of_value() {
+    use std::mem::size_of;
+
+    #[cfg(target_pointer_width = "32")]
+    assert_eq!(size_of::<Value>(), 16);
+
+    #[cfg(target_pointer_width = "64")]
+    assert_eq!(size_of::<Value>(), 32);
+}
+
 // ===== Construction & type checks =====
 
 #[test]
@@ -1130,10 +1144,7 @@ fn to_system_time_untagged() {
 fn to_system_time_untagged_text_string() {
     use std::time::Duration;
     let v = Value::from("2000-01-01T00:00:00Z");
-    assert_eq!(
-        v.to_system_time(),
-        Ok(UNIX_EPOCH + Duration::from_secs(946_684_800))
-    );
+    assert_eq!(v.to_system_time(), Ok(UNIX_EPOCH + Duration::from_secs(946_684_800)));
 }
 
 #[test]
