@@ -389,22 +389,31 @@ impl Float {
         Self(Inner::F16(bits))
     }
 
-    pub(crate) const fn from_bits_u32(bits: u32) -> Result<Self> {
-        let float = Self(Inner::F32(bits));
-        if matches!(Inner::new(float.to_f64()), Inner::F32(_)) {
-            Ok(float)
-        } else {
-            Err(Error::NonDeterministic)
-        }
+    pub(crate) const fn from_bits_u32(bits: u32) -> Self {
+        Self(Inner::F32(bits))
     }
 
-    pub(crate) const fn from_bits_u64(bits: u64) -> Result<Self> {
-        let float = Self(Inner::F64(bits));
-        if matches!(Inner::new(float.to_f64()), Inner::F64(_)) {
-            Ok(float)
-        } else {
-            Err(Error::NonDeterministic)
-        }
+    pub(crate) const fn from_bits_u64(bits: u64) -> Self {
+        Self(Inner::F64(bits))
+    }
+
+    /// Return `true` if this float is stored in its shortest CBOR form.
+    ///
+    /// CBOR::Core requires every float to be encoded at the narrowest
+    /// of f16, f32, or f64 that preserves the value bit for bit
+    /// (including NaN payloads).
+    #[must_use]
+    pub(crate) const fn is_deterministic(self) -> bool {
+        matches!(
+            (self.0, Inner::new(self.to_f64())),
+            (Inner::F16(_), Inner::F16(_)) | (Inner::F32(_), Inner::F32(_)) | (Inner::F64(_), Inner::F64(_))
+        )
+    }
+
+    /// Return a copy reduced to the shortest CBOR form that preserves
+    /// the value bit for bit, including NaN payloads.
+    pub(crate) const fn shortest(self) -> Self {
+        Self(Inner::new(self.to_f64()))
     }
 
     /// Widen to `f64`, preserving the exact bit pattern.

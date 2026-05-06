@@ -6,7 +6,7 @@
 use std::{borrow::Cow, collections::BTreeMap, str::FromStr};
 
 use crate::{
-    Error, Float, SimpleValue, Value,
+    Error, Float, SimpleValue, Strictness, Value,
     error::WithEof,
     float::Inner,
     io::{MyReader, SliceReader},
@@ -18,7 +18,7 @@ impl<'a> FromStr for Value<'a> {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Error> {
-        let mut parser = Parser::new(SliceReader(s.as_bytes()), limits::RECURSION_LIMIT);
+        let mut parser = Parser::new(SliceReader(s.as_bytes()), limits::RECURSION_LIMIT, Strictness::STRICT);
         parser.parse_complete()
     }
 }
@@ -32,15 +32,17 @@ pub(crate) struct Parser<R> {
     buf: [u8; 16],
     buf_len: usize,
     depth: u16,
+    strictness: Strictness,
 }
 
 impl<'r, R: MyReader<'r>> Parser<R> {
-    pub(crate) fn new(inner: R, recursion_limit: u16) -> Self {
+    pub(crate) fn new(inner: R, recursion_limit: u16, strictness: Strictness) -> Self {
         Self {
             reader: inner,
             buf: [0; _],
             buf_len: 0,
             depth: recursion_limit,
+            strictness,
         }
     }
 
@@ -257,6 +259,7 @@ impl<'r, R: MyReader<'r>> Parser<R> {
             Ok(Value::Map(map))
         } else {
             self.enter()?;
+            let forbid_duplicate = !self.strictness.allow_duplicate_map_keys;
             let result = loop {
                 let key = self.parse_value()?;
                 self.skip_whitespace()?;
@@ -264,7 +267,7 @@ impl<'r, R: MyReader<'r>> Parser<R> {
                     break Err(error);
                 }
                 let value = self.parse_value()?;
-                if map.insert(key, value).is_some() {
+                if map.insert(key, value).is_some() && forbid_duplicate {
                     break Err(Error::NonDeterministic.into());
                 }
                 self.skip_whitespace()?;
@@ -443,11 +446,18 @@ impl<'r, R: MyReader<'r>> Parser<R> {
             let digit = u8_from_hex_digit(byte)? as u64;
             bits = (bits << 4) | digit;
         }
-        match hex.len() {
-            4 => Ok(Value::Float(Float::from_bits_u16(bits as u16))),
-            8 => Ok(Value::Float(Float::from_bits_u32(bits as u32)?)),
-            16 => Ok(Value::Float(Float::from_bits_u64(bits)?)),
-            _ => Err(Error::InvalidFormat.into()),
+        let float = match hex.len() {
+            4 => Float::from_bits_u16(bits as u16),
+            8 => Float::from_bits_u32(bits as u32),
+            16 => Float::from_bits_u64(bits),
+            _ => return Err(Error::InvalidFormat.into()),
+        };
+        if float.is_deterministic() {
+            Ok(Value::Float(float))
+        } else if self.strictness.allow_non_shortest_floats {
+            Ok(Value::Float(float.shortest()))
+        } else {
+            Err(Error::NonDeterministic.into())
         }
     }
 

@@ -175,6 +175,12 @@ use crate::{
 /// assert_eq!(v.to_u32().unwrap(), 42);
 /// ```
 ///
+/// To accept input from a producer that does not enforce
+/// CBOR::Core's deterministic encoding rules, pair `DecodeOptions`
+/// with [`Strictness`](crate::Strictness). Tolerated deviations are
+/// normalized while decoding, so the resulting `Value` is canonical
+/// and re-encoding it produces compliant bytes.
+///
 /// # Accessors
 ///
 /// Accessor methods extract or borrow the inner data of each variant.

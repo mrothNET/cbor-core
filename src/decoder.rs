@@ -83,7 +83,7 @@ impl<'a> SequenceDecoder<'a> {
     }
 
     pub(crate) fn with_options(opts: DecodeOptions, input: &'a [u8]) -> Self {
-        let inner = match opts.format_value() {
+        let inner = match opts.format {
             Format::Binary => SequenceDecoderInner::Binary {
                 reader: SliceReader(input),
                 opts,
@@ -93,7 +93,7 @@ impl<'a> SequenceDecoder<'a> {
                 opts,
             },
             Format::Diagnostic => SequenceDecoderInner::Diagnostic {
-                parser: Parser::new(SliceReader(input), opts.recursion_limit_value()),
+                parser: Parser::new(SliceReader(input), opts.recursion_limit, opts.strictness),
             },
         };
         Self { inner }
@@ -195,7 +195,7 @@ impl<R: io::Read> SequenceReader<R> {
     }
 
     pub(crate) fn with_options(opts: DecodeOptions, reader: R) -> Self {
-        let inner = match opts.format_value() {
+        let inner = match opts.format {
             Format::Binary => SequenceReaderInner::Binary {
                 reader: PeekReader::new(reader),
                 opts,
@@ -205,7 +205,7 @@ impl<R: io::Read> SequenceReader<R> {
                 opts,
             },
             Format::Diagnostic => SequenceReaderInner::Diagnostic {
-                parser: Parser::new(reader, opts.recursion_limit_value()),
+                parser: Parser::new(reader, opts.recursion_limit, opts.strictness),
             },
         };
         Self { inner }

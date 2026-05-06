@@ -41,6 +41,10 @@ form, and map keys are sorted in canonical order. The decoder
 rejects input that deviates. NaN payloads, including signaling NaNs,
 survive round-trips bit-for-bit.
 
+For input that does not follow these rules, the
+decoder can be configured to accept and normalize
+non-deterministic encodings.
+
 ## Diagnostic notation
 
 `Value` implements both directions of CBOR::Core diagnostic notation

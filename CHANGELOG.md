@@ -5,6 +5,11 @@
 ### Added
 
 - `Value::from_str_slice(&'a str)` and `Value::from_byte_slice(&'a [u8])`: `const` constructors for borrowing text and byte strings.
+- `Strictness` type and `DecodeOptions::strictness` builder for accepting non-deterministic input. Each `allow_*` field controls one category of deviation. Presets `Strictness::STRICT` (the default) and `Strictness::LENIENT` cover the common cases. Tolerated deviations are normalized while decoding. The diagnostic-notation parser honors the same policy.
+
+### Fixed
+
+- The decoder previously accepted an 8-byte tag 2 / tag 3 big integer payload even though such a value fits into a `u64` and must be encoded as a normal integer. The boundary is now correctly enforced (canonical big integers have at least 9 payload bytes).
 
 ## 0.9.0 - 2026-05-05
 

@@ -1,11 +1,13 @@
 use std::{borrow::Cow, collections::BTreeMap};
 
 use crate::{
-    DataType, Error, Float, Format, IoResult, Result, SequenceDecoder, SequenceReader, SimpleValue, Value,
+    Error, Float, Format, IoResult, Result, SequenceDecoder, SequenceReader, SimpleValue, Strictness, Value,
     codec::{Argument, Head, Major},
     io::{HexReader, HexSliceReader, MyReader, SliceReader},
     limits,
     parse::Parser,
+    tag::{NEG_BIG_INT, POS_BIG_INT},
+    util::{trim_leading_zeros, u64_from_slice},
 };
 
 /// Configuration for CBOR decoding.
@@ -34,6 +36,7 @@ use crate::{
 /// | [`recursion_limit`](Self::recursion_limit) | 200 | Maximum nesting depth of arrays, maps, and tags. |
 /// | [`length_limit`](Self::length_limit) | 1,000,000,000 | Maximum declared element count of a single array, map, byte string, or text string. |
 /// | [`oom_mitigation`](Self::oom_mitigation) | 100,000,000 | Byte budget for speculative pre-allocation. |
+/// | [`strictness`](Self::strictness) | [`Strictness::STRICT`] | Which non-deterministic encodings the decoder accepts and normalizes. |
 ///
 /// ## `recursion_limit`
 ///
@@ -104,10 +107,11 @@ use crate::{
 /// ```
 #[derive(Debug, Clone)]
 pub struct DecodeOptions {
-    format: Format,
-    recursion_limit: u16,
-    length_limit: u64,
-    oom_mitigation: usize,
+    pub(crate) format: Format,
+    pub(crate) recursion_limit: u16,
+    pub(crate) length_limit: u64,
+    pub(crate) oom_mitigation: usize,
+    pub(crate) strictness: Strictness,
 }
 
 impl Default for DecodeOptions {
@@ -133,6 +137,7 @@ impl DecodeOptions {
             recursion_limit: limits::RECURSION_LIMIT,
             length_limit: limits::LENGTH_LIMIT,
             oom_mitigation: limits::OOM_MITIGATION,
+            strictness: Strictness::STRICT,
         }
     }
 
@@ -221,6 +226,32 @@ impl DecodeOptions {
         self
     }
 
+    /// Configure which non-deterministic encodings the decoder will
+    /// accept. Default: [`Strictness::STRICT`], which rejects every
+    /// deviation with [`Error::NonDeterministic`].
+    ///
+    /// Pass [`Strictness::LENIENT`] to accept all known deviations, or
+    /// build a custom mix of `allow_*` fields. Tolerated input is
+    /// normalized while decoding, so the resulting [`Value`] is
+    /// canonical and re-encoding it produces CBOR::Core compliant
+    /// bytes.
+    ///
+    /// ```
+    /// use cbor_core::{DecodeOptions, Strictness, Value};
+    ///
+    /// // 255 wrongly encoded with a two byte argument; normalized on read.
+    /// let v = DecodeOptions::new()
+    ///     .strictness(Strictness::LENIENT)
+    ///     .decode(&[0x19, 0x00, 0xff])
+    ///     .unwrap();
+    /// assert_eq!(v, Value::from(255));
+    /// assert_eq!(v.encode(), vec![0x18, 0xff]);
+    /// ```
+    pub const fn strictness(mut self, strictness: Strictness) -> Self {
+        self.strictness = strictness;
+        self
+    }
+
     /// Decode exactly one CBOR data item from an in-memory buffer.
     ///
     /// Takes the input by reference: `&[u8]`, `&[u8; N]`, `&Vec<u8>`,
@@ -279,7 +310,7 @@ impl DecodeOptions {
                 Ok(value)
             }
             Format::Diagnostic => {
-                let mut parser = Parser::new(SliceReader(bytes), self.recursion_limit);
+                let mut parser = Parser::new(SliceReader(bytes), self.recursion_limit, self.strictness);
                 parser.parse_complete()
             }
         }
@@ -344,7 +375,7 @@ impl DecodeOptions {
             }
 
             Format::Diagnostic => {
-                let mut parser = Parser::new(SliceReader(bytes), self.recursion_limit);
+                let mut parser = Parser::new(SliceReader(bytes), self.recursion_limit, self.strictness);
                 parser.parse_complete()
             }
         }
@@ -403,7 +434,7 @@ impl DecodeOptions {
                 self.do_read(&mut reader, self.recursion_limit, self.oom_mitigation)
             }
             Format::Diagnostic => {
-                let mut parser = Parser::new(reader, self.recursion_limit);
+                let mut parser = Parser::new(reader, self.recursion_limit, self.strictness);
                 parser.parse_stream_item()
             }
         }
@@ -471,16 +502,6 @@ impl DecodeOptions {
         self.do_read(reader, self.recursion_limit, self.oom_mitigation)
     }
 
-    /// Expose the parser's recursion limit for sequence iterators.
-    pub(crate) fn recursion_limit_value(&self) -> u16 {
-        self.recursion_limit
-    }
-
-    /// Expose the selected format for sequence iterators.
-    pub(crate) fn format_value(&self) -> Format {
-        self.format
-    }
-
     fn do_read<'a, R>(
         &self,
         reader: &mut R,
@@ -496,7 +517,7 @@ impl DecodeOptions {
         let is_float = head.initial_byte.major() == Major::SimpleOrFloat
             && matches!(head.argument, Argument::U16(_) | Argument::U32(_) | Argument::U64(_));
 
-        if !is_float && !head.argument.is_deterministic() {
+        if !is_float && !head.argument.is_deterministic() && !self.strictness.allow_non_shortest_integers {
             return Err(Error::NonDeterministic.into());
         }
 
@@ -560,24 +581,33 @@ impl DecodeOptions {
                 };
 
                 let mut map = BTreeMap::new();
-                let mut prev = None;
 
-                for _ in 0..value {
-                    let key = self.do_read(reader, recursion_limit, oom_mitigation)?;
-                    let value = self.do_read(reader, recursion_limit, oom_mitigation)?;
-
-                    if let Some((prev_key, prev_value)) = prev.take() {
-                        if prev_key >= key {
+                if self.strictness.allow_unsorted_map_keys {
+                    // Lenient: rely on BTreeMap to sort. Surface
+                    // duplicates only when not allowed; otherwise the
+                    // last occurrence wins (BTreeMap::insert overwrites).
+                    let forbid_duplicate = !self.strictness.allow_duplicate_map_keys;
+                    for _ in 0..value {
+                        let key = self.do_read(reader, recursion_limit, oom_mitigation)?;
+                        let val = self.do_read(reader, recursion_limit, oom_mitigation)?;
+                        if map.insert(key, val).is_some() && forbid_duplicate {
                             return Err(Error::NonDeterministic.into());
                         }
-                        map.insert(prev_key, prev_value);
                     }
-
-                    prev = Some((key, value));
-                }
-
-                if let Some((key, value)) = prev.take() {
-                    map.insert(key, value);
+                } else {
+                    // Strict: each key must be greater than every key
+                    // already inserted. The current largest key lives
+                    // in the map's last entry.
+                    for _ in 0..value {
+                        let key = self.do_read(reader, recursion_limit, oom_mitigation)?;
+                        let val = self.do_read(reader, recursion_limit, oom_mitigation)?;
+                        if let Some(last) = map.last_entry()
+                            && *last.key() >= key
+                        {
+                            return Err(Error::NonDeterministic.into());
+                        }
+                        map.insert(key, val);
+                    }
                 }
 
                 Value::Map(map)
@@ -589,19 +619,25 @@ impl DecodeOptions {
                 };
 
                 let tag_number = head.value();
-                let tag_content = Box::new(self.do_read(reader, recursion_limit, oom_mitigation)?);
+                let tag_content = self.do_read(reader, recursion_limit, oom_mitigation)?;
 
-                let this = Value::Tag(tag_number, tag_content);
-
-                if this.data_type() == DataType::BigInt {
-                    let bytes = this.as_bytes().unwrap();
-                    let valid = bytes.len() >= 8 && bytes[0] != 0;
-                    if !valid {
-                        return Err(Error::NonDeterministic.into());
+                // Big integer canonicalization (tag 2 / tag 3): the
+                // payload must be a byte string longer than 8 bytes
+                // (otherwise the value fits in u64) with no leading
+                // zero byte.
+                match tag_content {
+                    Value::ByteString(bytes) if matches!(tag_number, POS_BIG_INT | NEG_BIG_INT) => {
+                        let canonical = bytes.len() > 8 && bytes[0] != 0;
+                        if canonical {
+                            Value::Tag(tag_number, Box::new(Value::ByteString(bytes)))
+                        } else if self.strictness.allow_oversized_bigints {
+                            normalize_bigint(tag_number, bytes)
+                        } else {
+                            return Err(Error::NonDeterministic.into());
+                        }
                     }
+                    other => Value::Tag(tag_number, Box::new(other)),
                 }
-
-                this
             }
 
             Major::SimpleOrFloat => match head.argument {
@@ -609,13 +645,66 @@ impl DecodeOptions {
                 Argument::U8(n) if n >= 32 => Value::SimpleValue(SimpleValue(n)),
 
                 Argument::U16(bits) => Value::Float(Float::from_bits_u16(bits)),
-                Argument::U32(bits) => Value::Float(Float::from_bits_u32(bits)?),
-                Argument::U64(bits) => Value::Float(Float::from_bits_u64(bits)?),
+                Argument::U32(bits) => self.checked_float(Float::from_bits_u32(bits))?,
+                Argument::U64(bits) => self.checked_float(Float::from_bits_u64(bits))?,
 
                 _ => return Err(Error::Malformed.into()),
             },
         };
 
         Ok(this)
+    }
+
+    fn checked_float<'a>(&self, float: Float) -> Result<Value<'a>> {
+        if float.is_deterministic() {
+            Ok(Value::Float(float))
+        } else if self.strictness.allow_non_shortest_floats {
+            Ok(Value::Float(float.shortest()))
+        } else {
+            Err(Error::NonDeterministic)
+        }
+    }
+}
+
+/// Normalize a non-canonical big integer payload.
+///
+/// Strips leading zero bytes and downcasts to
+/// [`Value::Unsigned`] / [`Value::Negative`] when the magnitude fits
+/// in a `u64`. Otherwise returns a tag 2 / tag 3 with a stripped
+/// payload, preserving the [`Cow`] borrow when the input was borrowed.
+fn normalize_bigint<'a>(tag_number: u64, bytes: Cow<'a, [u8]>) -> Value<'a> {
+    fn integer<'b>(tag_number: u64, n: u64) -> Value<'b> {
+        match tag_number {
+            POS_BIG_INT => Value::Unsigned(n),
+            NEG_BIG_INT => Value::Negative(n),
+            _other => unreachable!("normalize_bigint: invalid tag"),
+        }
+    }
+
+    match bytes {
+        Cow::Borrowed(bytes) => {
+            let trimmed = trim_leading_zeros(bytes);
+
+            if let Ok(n) = u64_from_slice(trimmed) {
+                integer(tag_number, n)
+            } else {
+                let bytes = trimmed.into();
+                Value::Tag(tag_number, Box::new(Value::ByteString(bytes)))
+            }
+        }
+        Cow::Owned(bytes) => {
+            let trimmed = trim_leading_zeros(&bytes);
+
+            if let Ok(n) = u64_from_slice(trimmed) {
+                integer(tag_number, n)
+            } else {
+                let bytes = if trimmed.len() == bytes.len() {
+                    bytes.into()
+                } else {
+                    trimmed.to_vec().into()
+                };
+                Value::Tag(tag_number, Box::new(Value::ByteString(bytes)))
+            }
+        }
     }
 }
