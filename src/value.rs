@@ -118,13 +118,19 @@ use crate::{
 /// | [`Value::from_f32(v)`](Value::from_f32) | Float from `f32` |
 /// | [`Value::from_f64(v)`](Value::from_f64) | Float from `f64` |
 /// | [`Value::from_payload(v)`](Value::from_payload) | Non-finite float from payload |
+/// | [`Value::from_str_slice(s)`](Value::from_str_slice) | Borrowing text string from `&str` |
+/// | [`Value::from_byte_slice(b)`](Value::from_byte_slice) | Borrowing byte string from `&[u8]` |
 ///
 /// Narrower integer widths (`u8`..`u32`, `i8`..`i32`) are not provided
 /// separately: `as u64` / `as i64` is lossless and yields the same
 /// `Value`. `u128` and `i128` have no `const` constructor because
 /// out-of-range values require the big-integer path, which allocates a
-/// tagged byte string. Byte strings, text strings, arrays, maps, and
-/// tags are heap-backed and likewise cannot be built in `const` context.
+/// tagged byte string. The text- and byte-string constructors are
+/// `const` only in their borrowing form (typically over `&'static`
+/// literals); owned `String` and `Vec<u8>` inputs need
+/// [`text_string`](Value::text_string) / [`byte_string`](Value::byte_string).
+/// Arrays, maps, and tags are heap-backed and cannot be built in
+/// `const` context at all.
 ///
 /// # Encoding and decoding
 ///
@@ -823,6 +829,52 @@ impl<'a> Value<'a> {
     #[must_use]
     pub const fn from_payload(payload: u64) -> Self {
         Self::Float(Float::with_payload(payload))
+    }
+
+    /// Create a borrowing [`Value::TextString`] from a string slice,
+    /// usable in `const` context.
+    ///
+    /// `const` counterpart of `Value::from(s)` and
+    /// [`Value::text_string(s)`](Self::text_string) for `&str` input.
+    /// The resulting value borrows from `s`; its lifetime is tied to
+    /// the input slice, which makes the constructor especially
+    /// suitable for `const` items pointing at string literals
+    /// (`&'static str`).
+    ///
+    /// Named `from_str_slice` rather than `from_str` to avoid shadowing
+    /// the [`FromStr`](std::str::FromStr) implementation, which parses
+    /// diagnostic notation and is semantically very different.
+    ///
+    /// ```
+    /// use cbor_core::Value;
+    ///
+    /// const HELLO: Value = Value::from_str_slice("hello");
+    /// assert_eq!(HELLO.as_str(), Ok("hello"));
+    /// ```
+    #[must_use]
+    pub const fn from_str_slice(s: &'a str) -> Self {
+        Self::TextString(Cow::Borrowed(s))
+    }
+
+    /// Create a borrowing [`Value::ByteString`] from a byte slice,
+    /// usable in `const` context.
+    ///
+    /// `const` counterpart of `Value::from(b)` and
+    /// [`Value::byte_string(b)`](Self::byte_string) for `&[u8]` input.
+    /// The resulting value borrows from `b`; its lifetime is tied to
+    /// the input slice, which makes the constructor especially
+    /// suitable for `const` items pointing at byte-array literals
+    /// (`&'static [u8]`).
+    ///
+    /// ```
+    /// use cbor_core::Value;
+    ///
+    /// const BYTES: Value = Value::from_byte_slice(&[1, 2, 3]);
+    /// assert_eq!(BYTES.as_bytes(), Ok([1, 2, 3].as_slice()));
+    /// ```
+    #[must_use]
+    pub const fn from_byte_slice(b: &'a [u8]) -> Self {
+        Self::ByteString(Cow::Borrowed(b))
     }
 
     /// Create a CBOR value, inferring the variant from the input type.

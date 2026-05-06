@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `Value::from_str_slice(&'a str)` and `Value::from_byte_slice(&'a [u8])`: `const` constructors for borrowing text and byte strings.
+
 ## 0.9.0 - 2026-05-05
 
 ### Added

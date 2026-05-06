@@ -10,6 +10,8 @@ const SIMPLE_VALUE: Value = Value::simple_value(99);
 const INTEGER: Value = Value::from_i64(-123);
 const FLOAT: Value = Value::from_f32(2.75);
 const FLOAT_PAYLOAD: Value = Value::from_payload(123);
+const TEXT: Value = Value::from_str_slice("Hello");
+const BYTES: Value = Value::from_byte_slice(&[1, 2, 3]);
 
 fn main() {
     println!("null:          {NULL:?}");
@@ -18,4 +20,6 @@ fn main() {
     println!("integer:       {INTEGER:?}");
     println!("float:         {FLOAT:?}");
     println!("float payload: {FLOAT_PAYLOAD:?}");
+    println!("text:          {TEXT:?}");
+    println!("bytes:         {BYTES:?}");
 }
