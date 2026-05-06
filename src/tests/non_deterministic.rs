@@ -285,3 +285,294 @@ fn float_is_deterministic_for_canonical_constructors() {
     assert!(Float::with_payload(0).is_deterministic());
     assert!(Float::with_payload(0x7fffff).is_deterministic());
 }
+
+// =====================================================================
+// Indefinite-length encodings
+// =====================================================================
+
+// --- byte strings ---
+
+#[test]
+fn indefinite_bytes_strict_rejects() {
+    // (_ h'01', h'0203') canonical: h'010203'
+    assert_eq!(
+        Value::decode(&[0x5f, 0x41, 0x01, 0x42, 0x02, 0x03, 0xff]),
+        Err(Error::NonDeterministic),
+    );
+}
+
+#[test]
+fn indefinite_bytes_lenient_normalizes() {
+    let v = lenient().decode(&[0x5f, 0x41, 0x01, 0x42, 0x02, 0x03, 0xff]).unwrap();
+    assert_eq!(v, Value::from(&b"\x01\x02\x03"[..]));
+    assert_eq!(v.encode(), vec![0x43, 0x01, 0x02, 0x03]);
+}
+
+#[test]
+fn indefinite_bytes_empty_lenient() {
+    // (_ ) -> h''
+    let v = lenient().decode(&[0x5f, 0xff]).unwrap();
+    assert_eq!(v, Value::from(b""));
+    assert_eq!(v.encode(), vec![0x40]);
+}
+
+#[test]
+fn indefinite_bytes_mixed_major_chunk_is_malformed() {
+    // 0x5f 0x41 0x01 0x61 'a' 0xff -- second chunk is text, not bytes.
+    assert_eq!(
+        lenient().decode(&[0x5f, 0x41, 0x01, 0x61, b'a', 0xff]),
+        Err(Error::Malformed),
+    );
+}
+
+#[test]
+fn indefinite_bytes_nested_indefinite_chunk_is_malformed() {
+    // 0x5f 0x5f ... -- a chunk that is itself indefinite is forbidden.
+    assert_eq!(lenient().decode(&[0x5f, 0x5f, 0xff, 0xff]), Err(Error::Malformed),);
+}
+
+// --- text strings ---
+
+#[test]
+fn indefinite_text_strict_rejects() {
+    // (_ "ab", "cd")
+    assert_eq!(Value::decode(b"\x7f\x62ab\x62cd\xff"), Err(Error::NonDeterministic),);
+}
+
+#[test]
+fn indefinite_text_lenient_normalizes() {
+    let v = lenient().decode(b"\x7f\x62ab\x62cd\xff").unwrap();
+    assert_eq!(v, Value::from("abcd"));
+    assert_eq!(v.encode(), b"\x64abcd");
+}
+
+#[test]
+fn indefinite_text_chunk_invalid_utf8_rejected() {
+    // First chunk is a single 0xc3 byte, which is the start of a
+    // two-byte UTF-8 sequence and is not valid on its own.
+    assert_eq!(
+        lenient().decode(&[0x7f, 0x61, 0xc3, 0x61, 0xa9, 0xff]),
+        Err(Error::InvalidUtf8),
+    );
+}
+
+// --- arrays ---
+
+#[test]
+fn indefinite_array_strict_rejects() {
+    // (_ 1, 2, 3)
+    assert_eq!(
+        Value::decode(&[0x9f, 0x01, 0x02, 0x03, 0xff]),
+        Err(Error::NonDeterministic),
+    );
+}
+
+#[test]
+fn indefinite_array_lenient_normalizes() {
+    let v = lenient().decode(&[0x9f, 0x01, 0x02, 0x03, 0xff]).unwrap();
+    assert_eq!(v, Value::from([Value::from(1), Value::from(2), Value::from(3)]));
+    assert_eq!(v.encode(), vec![0x83, 0x01, 0x02, 0x03]);
+}
+
+#[test]
+fn indefinite_array_empty_lenient() {
+    let v = lenient().decode(&[0x9f, 0xff]).unwrap();
+    assert_eq!(v, Value::from(Vec::<Value>::new()));
+    assert_eq!(v.encode(), vec![0x80]);
+}
+
+#[test]
+fn indefinite_array_nested_in_definite_lenient() {
+    // [(_ 1, 2)]
+    let v = lenient().decode(&[0x81, 0x9f, 0x01, 0x02, 0xff]).unwrap();
+    assert_eq!(v.encode(), vec![0x81, 0x82, 0x01, 0x02]);
+}
+
+// --- maps ---
+
+#[test]
+fn indefinite_map_strict_rejects() {
+    // (_ "a": 1, "b": 2)
+    assert_eq!(
+        Value::decode(b"\xbf\x61a\x01\x61b\x02\xff"),
+        Err(Error::NonDeterministic),
+    );
+}
+
+#[test]
+fn indefinite_map_lenient_normalizes() {
+    let v = lenient().decode(b"\xbf\x61a\x01\x61b\x02\xff").unwrap();
+    assert_eq!(v.encode(), b"\xa2\x61a\x01\x61b\x02");
+}
+
+#[test]
+fn indefinite_map_unsorted_keys_strict_rejects() {
+    // Even with indefinite-length allowed, key order is enforced when
+    // allow_unsorted_map_keys is off.
+    let opts = DecodeOptions::new().strictness(Strictness {
+        allow_indefinite_length: true,
+        ..Strictness::STRICT
+    });
+    assert_eq!(opts.decode(b"\xbf\x61b\x02\x61a\x01\xff"), Err(Error::NonDeterministic),);
+}
+
+#[test]
+fn indefinite_map_odd_count_is_malformed() {
+    // (_ "a": 1, "b") -- break where the value of "b" should be.
+    assert_eq!(lenient().decode(b"\xbf\x61a\x01\x61b\xff"), Err(Error::Malformed),);
+}
+
+#[test]
+fn indefinite_map_empty_lenient() {
+    let v = lenient().decode(&[0xbf, 0xff]).unwrap();
+    assert_eq!(v.encode(), vec![0xa0]);
+}
+
+// --- top-level break ---
+
+#[test]
+fn break_at_top_level_is_malformed() {
+    assert_eq!(Value::decode(&[0xff]), Err(Error::Malformed));
+    assert_eq!(lenient().decode(&[0xff]), Err(Error::Malformed));
+}
+
+// =====================================================================
+// Indefinite-length notation in diagnostic input (RFC 8949 §8)
+// =====================================================================
+
+fn lenient_diag() -> DecodeOptions {
+    DecodeOptions::new()
+        .format(Format::Diagnostic)
+        .strictness(Strictness::LENIENT)
+}
+
+fn strict_diag() -> DecodeOptions {
+    DecodeOptions::new().format(Format::Diagnostic)
+}
+
+#[test]
+fn diag_indefinite_array_strict_rejects() {
+    assert_eq!(
+        strict_diag().decode("[_ 1, 2, 3]"),
+        Err(Error::NonDeterministic),
+    );
+}
+
+#[test]
+fn diag_indefinite_array_lenient_normalizes() {
+    let v = lenient_diag().decode("[_ 1, 2, 3]").unwrap();
+    assert_eq!(v.encode(), vec![0x83, 0x01, 0x02, 0x03]);
+}
+
+#[test]
+fn diag_indefinite_array_empty_lenient() {
+    let v = lenient_diag().decode("[_]").unwrap();
+    assert_eq!(v.encode(), vec![0x80]);
+}
+
+#[test]
+fn diag_indefinite_map_strict_rejects() {
+    assert_eq!(
+        strict_diag().decode(r#"{_ "a": 1, "b": 2}"#),
+        Err(Error::NonDeterministic),
+    );
+}
+
+#[test]
+fn diag_indefinite_map_lenient_normalizes() {
+    let v = lenient_diag().decode(r#"{_ "b": 2, "a": 1}"#).unwrap();
+    assert_eq!(v.encode(), b"\xa2\x61a\x01\x61b\x02");
+}
+
+#[test]
+fn diag_chunked_text_strict_rejects() {
+    assert_eq!(
+        strict_diag().decode(r#"(_ "ab", "cd")"#),
+        Err(Error::NonDeterministic),
+    );
+}
+
+#[test]
+fn diag_chunked_text_lenient_normalizes() {
+    let v = lenient_diag().decode(r#"(_ "ab", "cd")"#).unwrap();
+    assert_eq!(v, Value::from("abcd"));
+    assert_eq!(v.encode(), b"\x64abcd");
+}
+
+#[test]
+fn diag_chunked_bytes_lenient_normalizes() {
+    let v = lenient_diag().decode("(_ h'01', h'0203')").unwrap();
+    assert_eq!(v, Value::from(&b"\x01\x02\x03"[..]));
+    assert_eq!(v.encode(), vec![0x43, 0x01, 0x02, 0x03]);
+}
+
+#[test]
+fn diag_chunked_string_mixed_types_rejected() {
+    assert!(matches!(
+        lenient_diag().decode(r#"(_ "ab", h'01')"#),
+        Err(Error::InvalidFormat),
+    ));
+}
+
+#[test]
+fn diag_chunked_string_empty_rejected() {
+    // `(_ )` is ambiguous between byte and text strings.
+    assert!(matches!(
+        lenient_diag().decode("(_ )"),
+        Err(Error::InvalidFormat),
+    ));
+}
+
+#[test]
+fn diag_indefinite_marker_outside_container_rejected() {
+    // `_` is only meaningful inside `[`, `{`, or `(`.
+    assert!(matches!(
+        lenient_diag().decode("_"),
+        Err(Error::InvalidFormat),
+    ));
+}
+
+// --- nested indefinite chunks (RFC 8949 §3.2.2 forbids them) ---
+
+#[test]
+fn diag_chunked_text_nested_indefinite_rejected() {
+    // The middle chunk is itself a chunked string.
+    assert!(matches!(
+        lenient_diag().decode(r#"(_ "ab", (_ "cd", "ef"), "gh")"#),
+        Err(Error::InvalidFormat),
+    ));
+}
+
+#[test]
+fn diag_chunked_bytes_nested_indefinite_rejected() {
+    assert!(matches!(
+        lenient_diag().decode("(_ h'01', (_ h'02', h'03'), h'04')"),
+        Err(Error::InvalidFormat),
+    ));
+}
+
+#[test]
+fn diag_chunked_first_chunk_indefinite_rejected() {
+    // The very first chunk is also constrained.
+    assert!(matches!(
+        lenient_diag().decode(r#"(_ (_ "ab", "cd"), "ef")"#),
+        Err(Error::InvalidFormat),
+    ));
+}
+
+#[test]
+fn diag_chunked_array_chunk_rejected() {
+    // A non-string chunk: arrays are not byte or text strings.
+    assert!(matches!(
+        lenient_diag().decode(r#"(_ "ab", [1, 2])"#),
+        Err(Error::InvalidFormat),
+    ));
+}
+
+#[test]
+fn diag_chunked_number_chunk_rejected() {
+    assert!(matches!(
+        lenient_diag().decode("(_ h'01', 42)"),
+        Err(Error::InvalidFormat),
+    ));
+}

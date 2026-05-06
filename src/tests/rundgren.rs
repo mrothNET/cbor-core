@@ -802,7 +802,7 @@ fn invalid_indefinite_length() {
     // indefinite length object
     assert_eq!(
         Value::decode(&[0x5f, 0x41, 0x01, 0x42, 0x02, 0x03, 0xff]),
-        Err(Error::Malformed)
+        Err(Error::NonDeterministic)
     );
 }
 

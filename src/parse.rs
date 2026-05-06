@@ -203,6 +203,7 @@ impl<'r, R: MyReader<'r>> Parser<R> {
         match byte {
             b'[' => self.parse_array(),
             b'{' => self.parse_map(),
+            b'(' => self.parse_chunked_string(),
             b'"' => self.parse_text_string(),
             b'\'' => self.parse_single_quoted_bstr(),
             b'<' => self.parse_embedded_bstr(),
@@ -230,6 +231,7 @@ impl<'r, R: MyReader<'r>> Parser<R> {
     fn parse_array<'a>(&mut self) -> Result<Value<'a>, R::Error> {
         self.expect(b'[')?;
         self.skip_whitespace()?;
+        self.consume_indefinite_marker()?;
         let mut items = Vec::new();
         if self.eat(b']')? {
             Ok(Value::Array(items))
@@ -254,6 +256,7 @@ impl<'r, R: MyReader<'r>> Parser<R> {
     fn parse_map<'a>(&mut self) -> Result<Value<'a>, R::Error> {
         self.expect(b'{')?;
         self.skip_whitespace()?;
+        self.consume_indefinite_marker()?;
         let mut map: BTreeMap<Value, Value> = BTreeMap::new();
         if self.eat(b'}')? {
             Ok(Value::Map(map))
@@ -282,6 +285,89 @@ impl<'r, R: MyReader<'r>> Parser<R> {
             self.leave();
             result
         }
+    }
+
+    /// If the next non-whitespace byte is `_`, consume it as the
+    /// indefinite-length marker (RFC 8949 §8). Reject in strict mode.
+    /// Used by [`parse_array`](Self::parse_array) and
+    /// [`parse_map`](Self::parse_map); the resulting [`Value`] is the
+    /// same canonical form a definite-length container would produce.
+    fn consume_indefinite_marker(&mut self) -> Result<(), R::Error> {
+        if self.eat(b'_')? {
+            if !self.strictness.allow_indefinite_length {
+                return Err(Error::NonDeterministic.into());
+            }
+            self.skip_whitespace()?;
+        }
+        Ok(())
+    }
+
+    /// Parse `(_ chunk, chunk, ...)` -- an indefinite-length byte or
+    /// text string written as a sequence of definite-length chunks.
+    /// The chunk type (bytes or text) is taken from the first chunk
+    /// and all later chunks must match.
+    fn parse_chunked_string<'a>(&mut self) -> Result<Value<'a>, R::Error> {
+        self.expect(b'(')?;
+        self.skip_whitespace()?;
+        self.expect(b'_')?;
+        if !self.strictness.allow_indefinite_length {
+            return Err(Error::NonDeterministic.into());
+        }
+
+        self.enter()?;
+        let result = self.parse_chunked_string_body();
+        self.leave();
+        result
+    }
+
+    fn parse_chunked_string_body<'a>(&mut self) -> Result<Value<'a>, R::Error> {
+        // The empty form `(_ )` is ambiguous between byte and text
+        // strings, so it is rejected. CBOR encodes the two as different
+        // major types; diagnostic notation has no separate marker.
+        self.skip_whitespace()?;
+        if self.eat(b')')? {
+            return Err(Error::InvalidFormat.into());
+        }
+
+        enum Acc {
+            Bytes(Vec<u8>),
+            Text(String),
+        }
+        let mut acc = match self.parse_chunk()? {
+            Value::ByteString(c) => Acc::Bytes(c.into_owned()),
+            Value::TextString(c) => Acc::Text(c.into_owned()),
+            _ => return Err(Error::InvalidFormat.into()),
+        };
+
+        loop {
+            self.skip_whitespace()?;
+            if self.eat(b')')? {
+                return Ok(match acc {
+                    Acc::Bytes(b) => Value::ByteString(b.into()),
+                    Acc::Text(t) => Value::TextString(t.into()),
+                });
+            }
+            self.expect(b',')?;
+            match (&mut acc, self.parse_chunk()?) {
+                (Acc::Bytes(buf), Value::ByteString(c)) => buf.extend_from_slice(&c),
+                (Acc::Text(buf), Value::TextString(c)) => buf.push_str(&c),
+                _ => return Err(Error::InvalidFormat.into()),
+            }
+        }
+    }
+
+    /// Parse a single chunk of an indefinite-length string.
+    ///
+    /// Per RFC 8949 §3.2.2, the chunks of an indefinite-length string
+    /// must themselves be definite-length strings. A nested
+    /// indefinite-length form (`(_ ...)`) is therefore rejected as
+    /// invalid even in lenient mode.
+    fn parse_chunk<'a>(&mut self) -> Result<Value<'a>, R::Error> {
+        self.skip_whitespace()?;
+        if self.peek()? == Some(b'(') {
+            return Err(Error::InvalidFormat.into());
+        }
+        self.parse_value()
     }
 
     fn parse_number_or_tag<'a>(&mut self) -> Result<Value<'a>, R::Error> {

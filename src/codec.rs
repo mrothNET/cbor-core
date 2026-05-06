@@ -127,24 +127,6 @@ impl Head {
         }
     }
 
-    pub(crate) fn read_from<'r, R>(reader: &mut R) -> Result<Head, R::Error>
-    where
-        R: crate::io::MyReader<'r>,
-    {
-        let initial_byte = InitialByte(reader.read_bytes::<1>()?[0]);
-
-        let argument = match initial_byte.info() {
-            0..=23 => Argument::None,
-            24 => Argument::U8(u8::from_be_bytes(reader.read_bytes()?)),
-            25 => Argument::U16(u16::from_be_bytes(reader.read_bytes()?)),
-            26 => Argument::U32(u32::from_be_bytes(reader.read_bytes()?)),
-            27 => Argument::U64(u64::from_be_bytes(reader.read_bytes()?)),
-            _ => return Err(crate::Error::Malformed.into()),
-        };
-
-        Ok(Head { initial_byte, argument })
-    }
-
     pub(crate) fn write_to(&self, writer: &mut impl io::Write) -> io::Result<()> {
         writer.write_all(&[self.initial_byte.0])?;
 
@@ -154,6 +136,62 @@ impl Head {
             Argument::U16(n) => writer.write_all(&n.to_be_bytes()),
             Argument::U32(n) => writer.write_all(&n.to_be_bytes()),
             Argument::U64(n) => writer.write_all(&n.to_be_bytes()),
+        }
+    }
+}
+
+/// Result of reading the next CBOR head from a stream.
+///
+/// In addition to a normal definite-length [`Head`], CBOR has two
+/// variable-length forms identified by `info == 31`:
+///
+/// * Indefinite-length string / array / map (major 2..=5).
+/// * Break code `0xff` (major 7), which terminates an indefinite
+///   container.
+///
+/// Both are CBOR::Core violations, but the decoder needs to recognize
+/// them so it can reject them with [`Error::NonDeterministic`] in
+/// strict mode and decode them in lenient mode.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum HeadOrStop {
+    /// A normal definite-length head.
+    Definite(Head),
+    /// `info == 31` for major 2..=5: an indefinite-length container.
+    Indefinite(Major),
+    /// `0xff`: the break code that terminates an indefinite container.
+    Break,
+}
+
+impl HeadOrStop {
+    pub(crate) fn read_from<'r, R>(reader: &mut R) -> Result<Self, R::Error>
+    where
+        R: crate::io::MyReader<'r>,
+    {
+        let initial_byte = InitialByte(reader.read_bytes::<1>()?[0]);
+        let info = initial_byte.info();
+
+        if info == 31 {
+            match initial_byte.major() {
+                Major::ByteString | Major::TextString | Major::Array | Major::Map => {
+                    let major = initial_byte.major();
+                    Ok(Self::Indefinite(major))
+                }
+
+                Major::SimpleOrFloat => Ok(Self::Break),
+
+                _ => Err(crate::Error::Malformed.into()),
+            }
+        } else {
+            let argument = match info {
+                0..=23 => Argument::None,
+                24 => Argument::U8(u8::from_be_bytes(reader.read_bytes()?)),
+                25 => Argument::U16(u16::from_be_bytes(reader.read_bytes()?)),
+                26 => Argument::U32(u32::from_be_bytes(reader.read_bytes()?)),
+                27 => Argument::U64(u64::from_be_bytes(reader.read_bytes()?)),
+                _ => return Err(crate::Error::Malformed.into()),
+            };
+
+            Ok(Self::Definite(Head { initial_byte, argument }))
         }
     }
 }

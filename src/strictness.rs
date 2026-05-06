@@ -75,6 +75,18 @@ pub struct Strictness {
     /// occurrence wins, matching
     /// [`Map::from_pairs`](crate::Map::from_pairs).
     pub allow_duplicate_map_keys: bool,
+
+    /// Accept indefinite-length encodings (RFC 8949 §3.2.2) for byte
+    /// strings, text strings, arrays, and maps. The chunks of an
+    /// indefinite-length string are concatenated; an indefinite-length
+    /// array or map is read until the break code. The resulting
+    /// [`Value`](crate::Value) is the same that a definite-length
+    /// encoding would produce, so re-encoding emits canonical bytes.
+    ///
+    /// In [`Format::Diagnostic`](crate::Format::Diagnostic) input, the
+    /// flag also enables the matching RFC 8949 §8 spellings:
+    /// `[_ ...]`, `{_ ...}`, and `(_ chunk, ...)`.
+    pub allow_indefinite_length: bool,
 }
 
 impl Strictness {
@@ -86,6 +98,7 @@ impl Strictness {
         allow_oversized_bigints: false,
         allow_unsorted_map_keys: false,
         allow_duplicate_map_keys: false,
+        allow_indefinite_length: false,
     };
 
     /// Accept every non-deterministic encoding the decoder knows how to
@@ -97,6 +110,7 @@ impl Strictness {
         allow_oversized_bigints: true,
         allow_unsorted_map_keys: true,
         allow_duplicate_map_keys: true,
+        allow_indefinite_length: true,
     };
 }
 

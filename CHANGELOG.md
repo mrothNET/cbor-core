@@ -5,7 +5,11 @@
 ### Added
 
 - `Value::from_str_slice(&'a str)` and `Value::from_byte_slice(&'a [u8])`: `const` constructors for borrowing text and byte strings.
-- `Strictness` type and `DecodeOptions::strictness` builder for accepting non-deterministic input. Each `allow_*` field controls one category of deviation. Presets `Strictness::STRICT` (the default) and `Strictness::LENIENT` cover the common cases. Tolerated deviations are normalized while decoding. The diagnostic-notation parser honors the same policy.
+- `Strictness` type and `DecodeOptions::strictness` builder to opt in to decoding non-deterministic or indefinite-length input. Presets `Strictness::STRICT` (the default) and `Strictness::LENIENT`; tolerated deviations are normalized while decoding so that re-encoding produces canonical bytes. The diagnostic-notation parser honors the same policy.
+
+### Changed
+
+- The strict decoder now reports an indefinite-length encoding as `Error::NonDeterministic` instead of `Error::Malformed`. This aligns it with the rest of the determinism checks gated by `Strictness`. Other ill-formed uses of `info == 31` (major 0, 1, 6, or a stray break code at top level) remain `Error::Malformed`.
 
 ### Fixed
 

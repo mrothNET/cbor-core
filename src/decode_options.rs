@@ -2,7 +2,7 @@ use std::{borrow::Cow, collections::BTreeMap};
 
 use crate::{
     Error, Float, Format, IoResult, Result, SequenceDecoder, SequenceReader, SimpleValue, Strictness, Value,
-    codec::{Argument, Head, Major},
+    codec::{Argument, Head, HeadOrStop, Major},
     io::{HexReader, HexSliceReader, MyReader, SliceReader},
     limits,
     parse::Parser,
@@ -512,8 +512,56 @@ impl DecodeOptions {
         R: MyReader<'a>,
         R::Error: From<Error>,
     {
-        let head = Head::read_from(reader)?;
+        match self.read_value_or_break(reader, recursion_limit, oom_mitigation)? {
+            Some(value) => Ok(value),
+            // A break code where a value was expected (top level, array
+            // item position, map key position, tag content) is malformed.
+            None => Err(Error::Malformed.into()),
+        }
+    }
 
+    /// Read the next item, returning `Ok(None)` when a break code stops
+    /// the input. Used by indefinite-length container loops, which need
+    /// to terminate on the break.
+    fn read_value_or_break<'a, R>(
+        &self,
+        reader: &mut R,
+        recursion_limit: u16,
+        oom_mitigation: usize,
+    ) -> std::result::Result<Option<Value<'a>>, R::Error>
+    where
+        R: MyReader<'a>,
+        R::Error: From<Error>,
+    {
+        match HeadOrStop::read_from(reader)? {
+            HeadOrStop::Definite(head) => self
+                .process_head(head, reader, recursion_limit, oom_mitigation)
+                .map(Some),
+
+            HeadOrStop::Indefinite(major) => {
+                if self.strictness.allow_indefinite_length {
+                    self.process_indefinite(major, reader, recursion_limit, oom_mitigation)
+                        .map(Some)
+                } else {
+                    Err(Error::NonDeterministic.into())
+                }
+            }
+
+            HeadOrStop::Break => Ok(None),
+        }
+    }
+
+    fn process_head<'a, R>(
+        &self,
+        head: Head,
+        reader: &mut R,
+        recursion_limit: u16,
+        oom_mitigation: usize,
+    ) -> std::result::Result<Value<'a>, R::Error>
+    where
+        R: MyReader<'a>,
+        R::Error: From<Error>,
+    {
         let is_float = head.initial_byte.major() == Major::SimpleOrFloat
             && matches!(head.argument, Argument::U16(_) | Argument::U32(_) | Argument::U64(_));
 
@@ -581,33 +629,10 @@ impl DecodeOptions {
                 };
 
                 let mut map = BTreeMap::new();
-
-                if self.strictness.allow_unsorted_map_keys {
-                    // Lenient: rely on BTreeMap to sort. Surface
-                    // duplicates only when not allowed; otherwise the
-                    // last occurrence wins (BTreeMap::insert overwrites).
-                    let forbid_duplicate = !self.strictness.allow_duplicate_map_keys;
-                    for _ in 0..value {
-                        let key = self.do_read(reader, recursion_limit, oom_mitigation)?;
-                        let val = self.do_read(reader, recursion_limit, oom_mitigation)?;
-                        if map.insert(key, val).is_some() && forbid_duplicate {
-                            return Err(Error::NonDeterministic.into());
-                        }
-                    }
-                } else {
-                    // Strict: each key must be greater than every key
-                    // already inserted. The current largest key lives
-                    // in the map's last entry.
-                    for _ in 0..value {
-                        let key = self.do_read(reader, recursion_limit, oom_mitigation)?;
-                        let val = self.do_read(reader, recursion_limit, oom_mitigation)?;
-                        if let Some(last) = map.last_entry()
-                            && *last.key() >= key
-                        {
-                            return Err(Error::NonDeterministic.into());
-                        }
-                        map.insert(key, val);
-                    }
+                for _ in 0..value {
+                    let key = self.do_read(reader, recursion_limit, oom_mitigation)?;
+                    let val = self.do_read(reader, recursion_limit, oom_mitigation)?;
+                    self.map_insert(&mut map, key, val)?;
                 }
 
                 Value::Map(map)
@@ -662,6 +687,190 @@ impl DecodeOptions {
             Ok(Value::Float(float.shortest()))
         } else {
             Err(Error::NonDeterministic)
+        }
+    }
+
+    /// Insert a key/value pair into a map under the active determinism
+    /// policy. Used by both definite and indefinite-length map decoders.
+    fn map_insert<'a>(&self, map: &mut BTreeMap<Value<'a>, Value<'a>>, key: Value<'a>, val: Value<'a>) -> Result<()> {
+        if !self.strictness.allow_unsorted_map_keys
+            && let Some(last) = map.last_entry()
+            && *last.key() >= key
+        {
+            Err(Error::NonDeterministic)
+        } else if map.insert(key, val).is_some() && !self.strictness.allow_duplicate_map_keys {
+            Err(Error::NonDeterministic)
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Decode an indefinite-length container of the given major type.
+    /// The break code that terminates the container is consumed.
+    fn process_indefinite<'a, R>(
+        &self,
+        major: Major,
+        reader: &mut R,
+        recursion_limit: u16,
+        oom_mitigation: usize,
+    ) -> std::result::Result<Value<'a>, R::Error>
+    where
+        R: MyReader<'a>,
+        R::Error: From<Error>,
+    {
+        match major {
+            Major::ByteString => self.read_indefinite_bytes(reader, oom_mitigation),
+            Major::TextString => self.read_indefinite_text(reader, oom_mitigation),
+            Major::Array => self.read_indefinite_array(reader, recursion_limit, oom_mitigation),
+            Major::Map => self.read_indefinite_map(reader, recursion_limit, oom_mitigation),
+            _ => unreachable!("process_indefinite: invalid major"),
+        }
+    }
+
+    /// Read a `(_ chunk*)` byte string. Each chunk is itself a
+    /// definite-length byte string; an indefinite-length chunk or a
+    /// chunk of a different major type is malformed even in lenient
+    /// mode.
+    fn read_indefinite_bytes<'a, R>(
+        &self,
+        reader: &mut R,
+        oom_mitigation: usize,
+    ) -> std::result::Result<Value<'a>, R::Error>
+    where
+        R: MyReader<'a>,
+        R::Error: From<Error>,
+    {
+        let mut buf = Vec::new();
+        let mut total: u64 = 0;
+
+        loop {
+            match HeadOrStop::read_from(reader)? {
+                HeadOrStop::Break => break,
+
+                HeadOrStop::Definite(head) if head.initial_byte.major() == Major::ByteString => {
+                    if !head.argument.is_deterministic() && !self.strictness.allow_non_shortest_integers {
+                        return Err(Error::NonDeterministic.into());
+                    }
+
+                    let chunk_len = head.value();
+
+                    total = total.checked_add(chunk_len).ok_or(Error::LengthTooLarge)?;
+                    if total > self.length_limit {
+                        return Err(Error::LengthTooLarge.into());
+                    }
+
+                    let chunk = reader.read_cow(chunk_len, oom_mitigation)?;
+                    buf.extend_from_slice(&chunk);
+                }
+
+                _ => return Err(Error::Malformed.into()),
+            }
+        }
+
+        Ok(Value::ByteString(Cow::Owned(buf)))
+    }
+
+    /// Read a `(_ chunk*)` text string. Each chunk is independently
+    /// validated as UTF-8 (per RFC 8949 §3.2.2).
+    fn read_indefinite_text<'a, R>(
+        &self,
+        reader: &mut R,
+        oom_mitigation: usize,
+    ) -> std::result::Result<Value<'a>, R::Error>
+    where
+        R: MyReader<'a>,
+        R::Error: From<Error>,
+    {
+        let mut buf = String::new();
+        let mut total: u64 = 0;
+
+        loop {
+            match HeadOrStop::read_from(reader)? {
+                HeadOrStop::Break => break,
+
+                HeadOrStop::Definite(head) if head.initial_byte.major() == Major::TextString => {
+                    if !head.argument.is_deterministic() && !self.strictness.allow_non_shortest_integers {
+                        return Err(Error::NonDeterministic.into());
+                    }
+
+                    let chunk_len = head.value();
+
+                    total = total.checked_add(chunk_len).ok_or(Error::LengthTooLarge)?;
+                    if total > self.length_limit {
+                        return Err(Error::LengthTooLarge.into());
+                    }
+
+                    let chunk = reader.read_cow(chunk_len, oom_mitigation)?;
+                    buf.push_str(std::str::from_utf8(&chunk).map_err(Error::from)?);
+                }
+
+                _ => return Err(Error::Malformed.into()),
+            }
+        }
+
+        Ok(Value::TextString(Cow::Owned(buf)))
+    }
+
+    fn read_indefinite_array<'a, R>(
+        &self,
+        reader: &mut R,
+        recursion_limit: u16,
+        oom_mitigation: usize,
+    ) -> std::result::Result<Value<'a>, R::Error>
+    where
+        R: MyReader<'a>,
+        R::Error: From<Error>,
+    {
+        let Some(recursion_limit) = recursion_limit.checked_sub(1) else {
+            return Err(Error::NestingTooDeep.into());
+        };
+
+        let mut vec = Vec::new();
+
+        for _ in 0..self.length_limit {
+            match self.read_value_or_break(reader, recursion_limit, oom_mitigation)? {
+                Some(item) => vec.push(item),
+                None => return Ok(Value::Array(vec)),
+            };
+        }
+
+        match HeadOrStop::read_from(reader)? {
+            HeadOrStop::Definite(_) => Err(Error::LengthTooLarge.into()),
+            HeadOrStop::Indefinite(_) => Err(Error::Malformed.into()),
+            HeadOrStop::Break => Ok(Value::Array(vec)),
+        }
+    }
+
+    fn read_indefinite_map<'a, R>(
+        &self,
+        reader: &mut R,
+        recursion_limit: u16,
+        oom_mitigation: usize,
+    ) -> std::result::Result<Value<'a>, R::Error>
+    where
+        R: MyReader<'a>,
+        R::Error: From<Error>,
+    {
+        let Some(recursion_limit) = recursion_limit.checked_sub(1) else {
+            return Err(Error::NestingTooDeep.into());
+        };
+
+        let mut map = BTreeMap::new();
+
+        for _ in 0..self.length_limit {
+            match self.read_value_or_break(reader, recursion_limit, oom_mitigation)? {
+                Some(key) => {
+                    let value = self.do_read(reader, recursion_limit, oom_mitigation)?;
+                    self.map_insert(&mut map, key, value)?;
+                }
+                None => return Ok(Value::Map(map)),
+            };
+        }
+
+        match HeadOrStop::read_from(reader)? {
+            HeadOrStop::Definite(_) => Err(Error::LengthTooLarge.into()),
+            HeadOrStop::Indefinite(_) => Err(Error::Malformed.into()),
+            HeadOrStop::Break => Ok(Value::Map(map)),
         }
     }
 }
