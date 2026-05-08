@@ -47,14 +47,14 @@ fn int_neg_u64_max() {
 #[test]
 fn bigint_smallest_positive() {
     // 18446744073709551616 = u64::MAX + 1, encoded as tag(2, bstr)
-    let value = Value::from(u64::MAX as u128 + 1);
+    let value = Value::from(u128::from(u64::MAX) + 1);
     assert_eq!(format!("{value:?}"), "18446744073709551616");
 }
 
 #[test]
 fn bigint_smallest_negative() {
     // -18446744073709551617 = -(u64::MAX + 1) - 1, encoded as tag(3, bstr)
-    let value = Value::from(-(u64::MAX as i128) - 2);
+    let value = Value::from(-i128::from(u64::MAX) - 2);
     assert_eq!(format!("{value:?}"), "-18446744073709551617");
 }
 

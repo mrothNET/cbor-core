@@ -141,7 +141,7 @@ fn int_neg_u64_max_plus_1() {
 #[test]
 fn bigint_pos_smallest() {
     check(
-        &Value::from(u64::MAX as u128 + 1),
+        &Value::from(u128::from(u64::MAX) + 1),
         "c249010000000000000000",
         "18446744073709551616",
     );
@@ -150,7 +150,7 @@ fn bigint_pos_smallest() {
 #[test]
 fn bigint_neg_smallest() {
     check(
-        &Value::from(-(u64::MAX as i128) - 2),
+        &Value::from(-i128::from(u64::MAX) - 2),
         "c349010000000000000000",
         "-18446744073709551617",
     );

@@ -123,7 +123,7 @@ impl fmt::Display for Timestamp {
         if offset != 0 {
             let hours = offset / 60;
             let mins = (offset % 60).abs();
-            write!(f, "{hours:+03}:{mins:02}",)
+            write!(f, "{hours:+03}:{mins:02}")
         } else {
             f.write_str("Z")
         }

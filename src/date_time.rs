@@ -50,7 +50,7 @@ const LEAP_SECOND_DATES: [(u16, u8, u8); 27] = [
 /// leap second dates.
 ///
 /// However, trying to convert a date/time value containing a
-/// leap second to SystemTime will fail with `Err(InvalidEncoding)`.
+/// leap second to `SystemTime` will fail with `Err(InvalidEncoding)`.
 ///
 /// Implements `TryFrom<SystemTime>` and `TryFrom<&str>`, so that
 /// [`Value::date_time`] can accept both through a single
@@ -58,7 +58,7 @@ const LEAP_SECOND_DATES: [(u16, u8, u8); 27] = [
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct DateTime(String);
 
-impl<'a> From<DateTime> for Value<'a> {
+impl From<DateTime> for Value<'_> {
     fn from(value: DateTime) -> Self {
         Self::tag(tag::DATE_TIME, value.0)
     }

@@ -18,7 +18,7 @@ fn chrono_utc(secs: i64, nanos: u32) -> ChronoDateTime<ChronoUtc> {
 }
 
 fn time_utc(secs: i64, nanos: u32) -> UtcDateTime {
-    UtcDateTime::from_unix_timestamp_nanos(secs as i128 * 1_000_000_000 + nanos as i128).unwrap()
+    UtcDateTime::from_unix_timestamp_nanos(i128::from(secs) * 1_000_000_000 + i128::from(nanos)).unwrap()
 }
 
 fn jiff_ts(secs: i64, nanos: u32) -> JiffTimestamp {

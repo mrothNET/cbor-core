@@ -47,14 +47,22 @@ fn assert_signed_interop(val: i128) {
 
 #[test]
 fn unsigned_interop() {
-    for val in [0_u128, 1, 42, u64::MAX as u128, u64::MAX as u128 + 1, u128::MAX] {
+    for val in [0, 1, 42, u128::from(u64::MAX), u128::from(u64::MAX) + 1, u128::MAX] {
         assert_unsigned_interop(val);
     }
 }
 
 #[test]
 fn signed_interop() {
-    for val in [0_i128, 1, -1, i64::MIN as i128, i64::MAX as i128, i128::MIN, i128::MAX] {
+    for val in [
+        0,
+        1,
+        -1,
+        i128::from(i64::MIN),
+        i128::from(i64::MAX),
+        i128::MIN,
+        i128::MAX,
+    ] {
         assert_signed_interop(val);
     }
 }

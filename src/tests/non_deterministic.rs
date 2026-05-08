@@ -283,7 +283,7 @@ fn float_is_deterministic_for_canonical_constructors() {
     assert!(Float::new(f64::NAN).is_deterministic());
     assert!(Float::new(f64::INFINITY).is_deterministic());
     assert!(Float::with_payload(0).is_deterministic());
-    assert!(Float::with_payload(0x7fffff).is_deterministic());
+    assert!(Float::with_payload(0x7f_ffff).is_deterministic());
 }
 
 // =====================================================================
@@ -452,10 +452,7 @@ fn strict_diag() -> DecodeOptions {
 
 #[test]
 fn diag_indefinite_array_strict_rejects() {
-    assert_eq!(
-        strict_diag().decode("[_ 1, 2, 3]"),
-        Err(Error::NonDeterministic),
-    );
+    assert_eq!(strict_diag().decode("[_ 1, 2, 3]"), Err(Error::NonDeterministic),);
 }
 
 #[test]
@@ -486,10 +483,7 @@ fn diag_indefinite_map_lenient_normalizes() {
 
 #[test]
 fn diag_chunked_text_strict_rejects() {
-    assert_eq!(
-        strict_diag().decode(r#"(_ "ab", "cd")"#),
-        Err(Error::NonDeterministic),
-    );
+    assert_eq!(strict_diag().decode(r#"(_ "ab", "cd")"#), Err(Error::NonDeterministic),);
 }
 
 #[test]
@@ -517,19 +511,13 @@ fn diag_chunked_string_mixed_types_rejected() {
 #[test]
 fn diag_chunked_string_empty_rejected() {
     // `(_ )` is ambiguous between byte and text strings.
-    assert!(matches!(
-        lenient_diag().decode("(_ )"),
-        Err(Error::InvalidFormat),
-    ));
+    assert!(matches!(lenient_diag().decode("(_ )"), Err(Error::InvalidFormat),));
 }
 
 #[test]
 fn diag_indefinite_marker_outside_container_rejected() {
     // `_` is only meaningful inside `[`, `{`, or `(`.
-    assert!(matches!(
-        lenient_diag().decode("_"),
-        Err(Error::InvalidFormat),
-    ));
+    assert!(matches!(lenient_diag().decode("_"), Err(Error::InvalidFormat),));
 }
 
 // --- nested indefinite chunks (RFC 8949 §3.2.2 forbids them) ---

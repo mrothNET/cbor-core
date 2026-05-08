@@ -59,7 +59,7 @@ enum Inner<'a> {
     Other(Cow<'a, Value<'a>>),
 }
 
-impl<'a> ValueKey<'a> {
+impl ValueKey<'_> {
     pub(crate) fn to_usize(&self) -> Option<usize> {
         if let Inner::Other(value) = &self.0 {
             value.to_usize().ok()

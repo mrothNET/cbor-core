@@ -1,18 +1,18 @@
-use super::*;
+use crate::{Error, Float, Result, Value};
 
-impl<'a> From<Float> for Value<'a> {
+impl From<Float> for Value<'_> {
     fn from(value: Float) -> Self {
         Self::Float(value)
     }
 }
 
-impl<'a> From<f32> for Value<'a> {
+impl From<f32> for Value<'_> {
     fn from(value: f32) -> Self {
         Self::from_f32(value)
     }
 }
 
-impl<'a> From<f64> for Value<'a> {
+impl From<f64> for Value<'_> {
     fn from(value: f64) -> Self {
         Self::from_f64(value)
     }

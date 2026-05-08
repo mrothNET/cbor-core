@@ -518,23 +518,23 @@ impl From<f32> for Float {
 
 // --- From integer types (lossless conversion to f64, like std) ---
 
-macro_rules! try_from {
+macro_rules! float_from {
     ($type:ty) => {
         impl From<$type> for Float {
             fn from(value: $type) -> Self {
-                Self::from(value as f64)
+                Self::from(f64::from(value))
             }
         }
     };
 }
 
-try_from!(u8);
-try_from!(u16);
-try_from!(u32);
+float_from!(u8);
+float_from!(u16);
+float_from!(u32);
 
-try_from!(i8);
-try_from!(i16);
-try_from!(i32);
+float_from!(i8);
+float_from!(i16);
+float_from!(i32);
 
 impl From<bool> for Float {
     fn from(value: bool) -> Self {

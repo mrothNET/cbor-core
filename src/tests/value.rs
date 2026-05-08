@@ -76,7 +76,7 @@ fn u128_fits_in_u64() {
 
 #[test]
 fn u128_bigint() {
-    let big: u128 = u64::MAX as u128 + 1;
+    let big: u128 = u128::from(u64::MAX) + 1;
     let v = Value::from(big);
     assert!(v.data_type() == DataType::BigInt);
     assert_eq!(v.to_u128(), Ok(big));
@@ -309,8 +309,8 @@ fn index_by_various_key_types() {
 fn index_by_bigint_key_finds_tagged_byte_string() {
     // u128/i128 values that overflow u64 encode as Tag(2|3, ByteString).
     // Index lookup must build an equivalent key and match the stored entry.
-    let big_pos = u64::MAX as u128 + 1;
-    let big_neg = -(i64::MIN as i128) - 2;
+    let big_pos = u128::from(u64::MAX) + 1;
+    let big_neg = -i128::from(i64::MIN) - 2;
 
     let m = map! {
         big_pos => "pos_big",
@@ -484,7 +484,7 @@ fn custom_tag_on_big_int_reads_as_integer() {
     // A big positive integer (tag 2 over byte string) wrapped in a custom tag.
     // The integer accessors should see through the custom tag and still
     // recognise the big integer.
-    let big: u128 = u64::MAX as u128 + 1;
+    let big: u128 = u128::from(u64::MAX) + 1;
     let big_int = Value::from(big);
     let v = Value::tag(100, big_int);
     assert_eq!(v.to_u128(), Ok(big));
@@ -493,7 +493,7 @@ fn custom_tag_on_big_int_reads_as_integer() {
 
 #[test]
 fn custom_tag_on_big_neg_int_reads_as_integer() {
-    let big_neg: i128 = -(u64::MAX as i128) - 2;
+    let big_neg: i128 = -i128::from(u64::MAX) - 2;
     let big_int = Value::from(big_neg);
     let v = Value::tag(100, big_int);
     assert_eq!(v.to_i128(), Ok(big_neg));
@@ -504,7 +504,7 @@ fn custom_tag_on_big_neg_int_reads_as_integer() {
 fn custom_tag_on_big_int_as_bytes_returns_payload() {
     // as_bytes() on a big integer (even when custom-tagged) should return
     // the raw big integer byte string, since tags are transparent.
-    let big: u128 = u64::MAX as u128 + 1;
+    let big: u128 = u128::from(u64::MAX) + 1;
     let big_int = Value::from(big);
     let v = Value::tag(100, big_int);
     // The inner value is Tag(2, ByteString(...)), so as_bytes sees through both tags.
@@ -513,7 +513,7 @@ fn custom_tag_on_big_int_as_bytes_returns_payload() {
 
 #[test]
 fn double_custom_tag_on_big_int() {
-    let big: u128 = u64::MAX as u128 + 42;
+    let big: u128 = u128::from(u64::MAX) + 42;
     let big_int = Value::from(big);
     let v = Value::tag(100, Value::tag(200, big_int));
     assert_eq!(v.to_u128(), Ok(big));

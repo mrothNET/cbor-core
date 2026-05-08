@@ -33,13 +33,13 @@ pub(crate) struct Head {
 }
 
 impl Major {
-    pub(crate) fn bits(&self) -> u8 {
-        (*self as u8) << 5
+    pub(crate) fn bits(self) -> u8 {
+        (self as u8) << 5
     }
 }
 
 impl InitialByte {
-    pub(crate) fn major(&self) -> Major {
+    pub(crate) fn major(self) -> Major {
         match self.0 >> 5 {
             0 => Major::Unsigned,
             1 => Major::Negative,
@@ -53,7 +53,7 @@ impl InitialByte {
         }
     }
 
-    pub(crate) fn info(&self) -> u8 {
+    pub(crate) fn info(self) -> u8 {
         self.0 & 0x1f
     }
 }

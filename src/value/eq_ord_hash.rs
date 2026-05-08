@@ -1,28 +1,34 @@
-use crate::view::{ValueView, cmp_view};
+use std::{
+    cmp,
+    hash::{Hash, Hasher},
+};
 
-use super::*;
+use crate::{
+    Value,
+    view::{ValueView, cmp_view},
+};
 
-impl<'a> PartialEq for Value<'a> {
+impl PartialEq for Value<'_> {
     fn eq(&self, other: &Self) -> bool {
         cmp_view(self, other).is_eq()
     }
 }
 
-impl<'a> Eq for Value<'a> {}
+impl Eq for Value<'_> {}
 
-impl<'a> Ord for Value<'a> {
+impl Ord for Value<'_> {
     fn cmp(&self, other: &Self) -> cmp::Ordering {
         cmp_view(self, other)
     }
 }
 
-impl<'a> PartialOrd for Value<'a> {
+impl PartialOrd for Value<'_> {
     fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl<'a> Hash for Value<'a> {
+impl Hash for Value<'_> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.head().hash(state);
         self.payload().hash(state);

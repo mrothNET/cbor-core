@@ -2,7 +2,7 @@ use std::{borrow::Cow, io};
 
 use crate::util::u8_from_hex_digit;
 
-fn decode_byte(pair: &[u8; 2]) -> Result<u8, crate::Error> {
+fn decode_byte(pair: [u8; 2]) -> Result<u8, crate::Error> {
     Ok(u8_from_hex_digit(pair[0])? << 4 | u8_from_hex_digit(pair[1])?)
 }
 
@@ -37,7 +37,7 @@ impl<'a> MyReader<'a> for SliceReader<'a> {
 #[repr(transparent)]
 pub(crate) struct HexSliceReader<'a>(pub(crate) &'a [u8]);
 
-impl<'a, 'r> MyReader<'r> for HexSliceReader<'a> {
+impl<'r> MyReader<'r> for HexSliceReader<'_> {
     type Error = crate::Error;
 
     fn read_bytes<const N: usize>(&mut self) -> Result<[u8; N], Self::Error> {
@@ -45,7 +45,7 @@ impl<'a, 'r> MyReader<'r> for HexSliceReader<'a> {
         let mut buf = [0_u8; N];
 
         for (byte, pair) in buf.iter_mut().zip(hex.as_chunks::<2>().0) {
-            *byte = decode_byte(pair)?;
+            *byte = decode_byte(*pair)?;
         }
 
         Ok(buf)
@@ -60,7 +60,7 @@ impl<'a, 'r> MyReader<'r> for HexSliceReader<'a> {
         let mut vec = Vec::with_capacity(len);
 
         for pair in hex.as_chunks::<2>().0 {
-            vec.push(decode_byte(pair)?);
+            vec.push(decode_byte(*pair)?);
         }
 
         debug_assert_eq!(vec.len(), len);
@@ -153,7 +153,7 @@ impl<'r, R: io::Read> MyReader<'r> for HexReader<R> {
         let mut buf = [0_u8; N];
 
         for (byte, pair) in buf.each_mut().into_iter().zip(hex.iter()) {
-            *byte = decode_byte(pair)?;
+            *byte = decode_byte(*pair)?;
         }
 
         Ok(buf)
@@ -172,7 +172,7 @@ impl<'r, R: io::Read> MyReader<'r> for HexReader<R> {
             self.0.read_exact(&mut buf[..hex_len])?;
 
             for pair in buf[..hex_len].as_chunks::<2>().0 {
-                vec.push(decode_byte(pair)?);
+                vec.push(decode_byte(*pair)?);
             }
 
             remaining -= chunk;

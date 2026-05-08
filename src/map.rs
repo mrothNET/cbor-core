@@ -260,8 +260,8 @@ impl<'a, K: Into<Value<'a>>, V: Into<Value<'a>>> From<Box<[(K, V)]>> for Map<'a>
     }
 }
 
-impl<'a> From<()> for Map<'a> {
-    fn from(_: ()) -> Self {
+impl From<()> for Map<'_> {
+    fn from((): ()) -> Self {
         Self(BTreeMap::new())
     }
 }

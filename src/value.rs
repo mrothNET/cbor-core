@@ -11,9 +11,7 @@ mod string;
 
 use std::{
     borrow::Cow,
-    cmp,
     collections::BTreeMap,
-    hash::{Hash, Hasher},
     time::{Duration, SystemTime},
 };
 
@@ -657,14 +655,14 @@ pub enum Value<'a> {
     Tag(u64, Box<Value<'a>>),
 }
 
-impl<'a> Default for Value<'a> {
+impl Default for Value<'_> {
     fn default() -> Self {
         Self::null()
     }
 }
 
-impl<'a> From<()> for Value<'a> {
-    fn from(_: ()) -> Self {
+impl From<()> for Value<'_> {
+    fn from((): ()) -> Self {
         Value::null()
     }
 }

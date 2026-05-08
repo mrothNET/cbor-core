@@ -1,6 +1,8 @@
-use super::*;
+use std::borrow::Cow;
 
-impl<'a> From<char> for Value<'a> {
+use crate::{Error, Result, Value};
+
+impl From<char> for Value<'_> {
     fn from(value: char) -> Self {
         Self::TextString(value.to_string().into())
     }
@@ -12,7 +14,7 @@ impl<'a> From<&'a str> for Value<'a> {
     }
 }
 
-impl<'a> From<String> for Value<'a> {
+impl From<String> for Value<'_> {
     fn from(value: String) -> Self {
         Self::TextString(value.into())
     }
@@ -24,7 +26,7 @@ impl<'a> From<&'a String> for Value<'a> {
     }
 }
 
-impl<'a> From<Box<str>> for Value<'a> {
+impl From<Box<str>> for Value<'_> {
     fn from(value: Box<str>) -> Self {
         Self::TextString(String::from(value).into())
     }

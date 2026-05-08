@@ -1,6 +1,8 @@
-use super::*;
+use std::borrow::Cow;
 
-impl<'a> From<Vec<u8>> for Value<'a> {
+use crate::{Error, Result, Value};
+
+impl From<Vec<u8>> for Value<'_> {
     fn from(value: Vec<u8>) -> Self {
         Self::ByteString(value.into())
     }
@@ -12,7 +14,7 @@ impl<'a> From<&'a [u8]> for Value<'a> {
     }
 }
 
-impl<'a, const N: usize> From<[u8; N]> for Value<'a> {
+impl<const N: usize> From<[u8; N]> for Value<'_> {
     fn from(value: [u8; N]) -> Self {
         Self::ByteString(value.to_vec().into())
     }
@@ -24,7 +26,7 @@ impl<'a, const N: usize> From<&'a [u8; N]> for Value<'a> {
     }
 }
 
-impl<'a> From<Box<[u8]>> for Value<'a> {
+impl From<Box<[u8]>> for Value<'_> {
     fn from(value: Box<[u8]>) -> Self {
         Self::ByteString(Vec::from(value).into())
     }

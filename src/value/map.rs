@@ -1,4 +1,6 @@
-use super::*;
+use std::collections::BTreeMap;
+
+use crate::{Error, Map, Result, Value};
 
 impl<'a> From<Map<'a>> for Value<'a> {
     fn from(value: Map<'a>) -> Self {

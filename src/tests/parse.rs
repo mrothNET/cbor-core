@@ -37,13 +37,13 @@ fn int_neg_u64_boundary() {
 
 #[test]
 fn bigint_positive() {
-    let expected = Value::from(u64::MAX as u128 + 1);
+    let expected = Value::from(u128::from(u64::MAX) + 1);
     assert_eq!(parse("18446744073709551616"), expected);
 }
 
 #[test]
 fn bigint_negative() {
-    let expected = Value::from(-(u64::MAX as i128) - 2);
+    let expected = Value::from(-i128::from(u64::MAX) - 2);
     assert_eq!(parse("-18446744073709551617"), expected);
 }
 
@@ -181,8 +181,8 @@ fn bstr_b64() {
 #[test]
 fn bstr_b64_url_safe() {
     // Bytes with +/- variants
-    let v = parse("b64'-_8='");
-    assert_eq!(v, Value::ByteString(vec![0xfb, 0xff].into()));
+    let value = parse("b64'-_8='");
+    assert_eq!(value, Value::byte_string([0xfb, 0xff]));
 }
 
 #[test]
@@ -192,21 +192,14 @@ fn bstr_single_quoted_text() {
 
 #[test]
 fn bstr_embedded() {
-    let v = parse("<< 1, 2, 3 >>");
-    let expected = array![1, 2, 3].encode(); // not right — need raw cbor sequence
-    // << ... >> is a CBOR sequence wrapped in bstr (not array)
-    let _ = expected;
-    let bytes = match v {
-        Value::ByteString(b) => b,
-        _ => panic!("expected byte string"),
-    };
+    let value = parse("<< 1, 2, 3 >>");
     // Sequence of 1, 2, 3 each encoded canonically
-    assert_eq!(bytes, vec![0x01, 0x02, 0x03]);
+    assert_eq!(value, Value::byte_string([0x01, 0x02, 0x03]));
 }
 
 #[test]
 fn bstr_embedded_empty() {
-    assert_eq!(parse("<<>>"), Value::ByteString(Vec::new().into()));
+    assert_eq!(parse("<<>>"), Value::byte_string([]));
 }
 
 // --- Booleans, null, simple ---
@@ -304,9 +297,9 @@ fn round_trip_random_i128() {
     };
 
     for _ in 0..10_000 {
-        let hi = next() as u128;
-        let lo = next() as u128;
-        let random = ((hi << 64) | lo) as i128;
+        let hi = i128::from(next());
+        let lo = i128::from(next());
+        let random = (hi << 64) | lo;
 
         let value = Value::from(random);
         let text = format!("{value:?}");

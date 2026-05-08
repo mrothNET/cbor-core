@@ -6,7 +6,7 @@ pub(crate) enum IntegerBytes<'a> {
 }
 
 #[allow(dead_code)]
-impl<'a> IntegerBytes<'a> {
+impl IntegerBytes<'_> {
     pub(crate) fn is_unsigned(&self) -> bool {
         matches!(self, Self::UnsignedOwned(_) | Self::UnsignedBorrowed(_))
     }

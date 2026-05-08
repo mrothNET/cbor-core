@@ -156,6 +156,7 @@ impl DecodeOptions {
     /// let v = DecodeOptions::new().format(Format::Diagnostic).decode("42").unwrap();
     /// assert_eq!(v.to_u32().unwrap(), 42);
     /// ```
+    #[must_use]
     pub const fn format(mut self, format: Format) -> Self {
         self.format = format;
         self
@@ -176,6 +177,7 @@ impl DecodeOptions {
     ///     .unwrap_err();
     /// assert_eq!(err, Error::NestingTooDeep);
     /// ```
+    #[must_use]
     pub const fn recursion_limit(mut self, limit: u16) -> Self {
         self.recursion_limit = limit;
         self
@@ -198,6 +200,7 @@ impl DecodeOptions {
     ///     .unwrap_err();
     /// assert_eq!(err, Error::LengthTooLarge);
     /// ```
+    #[must_use]
     pub const fn length_limit(mut self, limit: u64) -> Self {
         self.length_limit = limit;
         self
@@ -221,6 +224,7 @@ impl DecodeOptions {
     ///     .unwrap();
     /// assert_eq!(v.len(), Some(2));
     /// ```
+    #[must_use]
     pub const fn oom_mitigation(mut self, bytes: usize) -> Self {
         self.oom_mitigation = bytes;
         self
@@ -247,6 +251,7 @@ impl DecodeOptions {
     /// assert_eq!(v, Value::from(255));
     /// assert_eq!(v.encode(), vec![0x18, 0xff]);
     /// ```
+    #[must_use]
     pub const fn strictness(mut self, strictness: Strictness) -> Self {
         self.strictness = strictness;
         self
@@ -831,7 +836,7 @@ impl DecodeOptions {
             match self.read_value_or_break(reader, recursion_limit, oom_mitigation)? {
                 Some(item) => vec.push(item),
                 None => return Ok(Value::Array(vec)),
-            };
+            }
         }
 
         match HeadOrStop::read_from(reader)? {
@@ -864,7 +869,7 @@ impl DecodeOptions {
                     self.map_insert(&mut map, key, value)?;
                 }
                 None => return Ok(Value::Map(map)),
-            };
+            }
         }
 
         match HeadOrStop::read_from(reader)? {
@@ -881,7 +886,7 @@ impl DecodeOptions {
 /// [`Value::Unsigned`] / [`Value::Negative`] when the magnitude fits
 /// in a `u64`. Otherwise returns a tag 2 / tag 3 with a stripped
 /// payload, preserving the [`Cow`] borrow when the input was borrowed.
-fn normalize_bigint<'a>(tag_number: u64, bytes: Cow<'a, [u8]>) -> Value<'a> {
+fn normalize_bigint(tag_number: u64, bytes: Cow<'_, [u8]>) -> Value<'_> {
     fn integer<'b>(tag_number: u64, n: u64) -> Value<'b> {
         match tag_number {
             POS_BIG_INT => Value::Unsigned(n),

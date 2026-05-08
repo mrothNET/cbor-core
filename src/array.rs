@@ -1,3 +1,5 @@
+use std::convert::Into;
+
 use crate::Value;
 
 /// Conversion helper for [`Value::array`].
@@ -114,24 +116,24 @@ impl<'a, T: Into<Value<'a>> + Copy> From<&[T]> for Array<'a> {
 
 impl<'a, const N: usize, T: Into<Value<'a>>> From<[T; N]> for Array<'a> {
     fn from(array: [T; N]) -> Self {
-        Self(array.into_iter().map(|x| x.into()).collect())
+        Self(array.into_iter().map(Into::into).collect())
     }
 }
 
 impl<'a, T: Into<Value<'a>>> From<Vec<T>> for Array<'a> {
     fn from(vec: Vec<T>) -> Self {
-        Self(vec.into_iter().map(|x| x.into()).collect())
+        Self(vec.into_iter().map(Into::into).collect())
     }
 }
 
 impl<'a, T: Into<Value<'a>>> From<Box<[T]>> for Array<'a> {
     fn from(boxed: Box<[T]>) -> Self {
-        Self(Vec::from(boxed).into_iter().map(|x| x.into()).collect())
+        Self(Vec::from(boxed).into_iter().map(Into::into).collect())
     }
 }
 
-impl<'a> From<()> for Array<'a> {
-    fn from(_: ()) -> Self {
+impl From<()> for Array<'_> {
+    fn from((): ()) -> Self {
         Self(Vec::new())
     }
 }

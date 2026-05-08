@@ -16,10 +16,10 @@ try_from_uint!(u16);
 try_from_uint!(u32);
 try_from_uint!(u64);
 
-impl<'a> From<u128> for Value<'a> {
+impl From<u128> for Value<'_> {
     fn from(value: u128) -> Self {
-        if value <= u64::MAX as u128 {
-            Self::Unsigned(value as u64)
+        if let Ok(value) = u64::try_from(value) {
+            Self::Unsigned(value)
         } else {
             let bytes: Vec<u8> = value.to_be_bytes().into_iter().skip_while(|&byte| byte == 0).collect();
             debug_assert!(bytes.len() > 8);
@@ -28,7 +28,7 @@ impl<'a> From<u128> for Value<'a> {
     }
 }
 
-impl<'a> From<usize> for Value<'a> {
+impl From<usize> for Value<'_> {
     fn from(value: usize) -> Self {
         Self::Unsigned(value.try_into().unwrap())
     }
@@ -55,15 +55,15 @@ try_from_sint!(i16);
 try_from_sint!(i32);
 try_from_sint!(i64);
 
-impl<'a> From<i128> for Value<'a> {
+impl From<i128> for Value<'_> {
     fn from(value: i128) -> Self {
-        if value >= 0 {
-            Self::from(value as u128)
+        if let Ok(value) = u128::try_from(value) {
+            Self::from(value)
         } else {
-            let complement = (!value) as u128;
+            let complement = !value;
 
-            if complement <= u64::MAX as u128 {
-                Self::Negative(complement as u64)
+            if let Ok(complement) = u64::try_from(complement) {
+                Self::Negative(complement)
             } else {
                 let bytes: Vec<u8> = complement
                     .to_be_bytes()
@@ -77,7 +77,7 @@ impl<'a> From<i128> for Value<'a> {
     }
 }
 
-impl<'a> From<isize> for Value<'a> {
+impl From<isize> for Value<'_> {
     fn from(value: isize) -> Self {
         Self::from(i64::try_from(value).unwrap())
     }

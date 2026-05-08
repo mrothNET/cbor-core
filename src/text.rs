@@ -29,15 +29,17 @@ use crate::Value;
 #[derive(Debug, Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TextString<'a>(Cow<'a, str>);
 
-impl<'a> TextString<'a> {
+impl TextString<'_> {
     /// Create an empty text string.
     ///
     /// The result is `Cow::Borrowed("")` and lives for any lifetime.
+    #[must_use]
     pub const fn new() -> Self {
         Self(Cow::Borrowed(""))
     }
 
     /// Borrow the contents as a `&str`.
+    #[must_use]
     pub fn as_str(&self) -> &str {
         self.0.as_ref()
     }
@@ -54,6 +56,7 @@ impl<'a> TextString<'a> {
     /// A borrowed `TextString<'a>` is copied into an owned `String`;
     /// an already-owned one is returned unchanged. The result can
     /// be assigned to any lifetime, in particular `TextString<'static>`.
+    #[must_use]
     pub fn into_owned<'b>(self) -> TextString<'b> {
         match self.0 {
             Cow::Borrowed(text) => TextString(text.to_string().into()),
@@ -62,7 +65,7 @@ impl<'a> TextString<'a> {
     }
 }
 
-impl<'a> From<char> for TextString<'a> {
+impl From<char> for TextString<'_> {
     fn from(value: char) -> Self {
         Self(value.to_string().into())
     }
@@ -77,7 +80,7 @@ where
     }
 }
 
-impl<'a> From<String> for TextString<'a> {
+impl From<String> for TextString<'_> {
     fn from(value: String) -> Self {
         Self(value.into())
     }

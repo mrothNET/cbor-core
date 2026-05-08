@@ -77,6 +77,7 @@ impl DataType {
     /// assert_eq!(Value::from(42).data_type().name(), "Int");
     /// assert_eq!(Value::from("hi").data_type().name(), "Text");
     /// ```
+    #[must_use]
     pub fn name(&self) -> &'static str {
         match self {
             DataType::Null => "Null",
