@@ -3,6 +3,16 @@
 A deterministic CBOR::Core encoder and decoder for Rust, tracking
 `draft-rundgren-cbor-core-25`.
 
+## 0.9.2
+
+- The value type now accepts the date/time, text string, and
+  byte string helpers by reference, borrowing their inner data
+  instead of copying it.
+- Lookup keys for maps and arrays now accept the same range of
+  inputs as the value constructors do, including owned strings,
+  vectors, arrays, maps, and characters. References continue
+  to borrow.
+
 ## 0.9.1
 
 - The decoder can now be configured to read input that does not
