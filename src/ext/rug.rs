@@ -2,7 +2,7 @@ use rug::Integer;
 use rug::integer::Order;
 
 use crate::{
-    Error, Result, Value,
+    Error, Result, Value, ValueKey,
     integer::IntegerBytes,
     tag,
     util::{trim_leading_zeros, u64_from_slice},
@@ -23,8 +23,20 @@ impl<'a> From<Integer> for Value<'a> {
 }
 
 impl<'a> From<&Integer> for Value<'a> {
+    /// Encodes a `rug::Integer` as a CBOR integer.
+    ///
+    /// This conversion does not borrow the argument: a big integer is
+    /// always re-encoded into fresh CBOR bytes, so the resulting `Value`
+    /// owns its data and keeps no reference to the source. Taking `&`
+    /// rather than an owned value only saves the caller a clone.
     fn from(value: &Integer) -> Self {
         from_rug_integer(value)
+    }
+}
+
+impl<'a> From<Integer> for ValueKey<'a> {
+    fn from(value: Integer) -> Self {
+        Value::from(value).into()
     }
 }
 

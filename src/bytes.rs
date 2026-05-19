@@ -97,3 +97,10 @@ impl<'a> From<ByteString<'a>> for Value<'a> {
         Value::ByteString(value.0)
     }
 }
+
+/// Borrows the bytes rather than copying them.
+impl<'a> From<&'a ByteString<'a>> for Value<'a> {
+    fn from(value: &'a ByteString<'a>) -> Self {
+        Value::ByteString(Cow::Borrowed(value.as_bytes()))
+    }
+}

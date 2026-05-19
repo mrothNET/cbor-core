@@ -47,9 +47,9 @@ impl<'a> TryFrom<Value<'a>> for f16 {
     }
 }
 
-impl From<f16> for ValueKey<'_> {
+impl<'a> From<f16> for ValueKey<'a> {
     fn from(value: f16) -> Self {
-        Float::from(value).into()
+        Value::from(value).into()
     }
 }
 

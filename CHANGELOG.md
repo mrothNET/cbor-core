@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `From<&DateTime>`, `From<&TextString>`, and `From<&ByteString>` for `Value`, each borrowing the inner data instead of copying it.
+- `ValueKey` now converts from the same inputs that build a `Value`, including owned `String`, `Vec<u8>`, `Array`, `Map`, and `char`. References (`&str`, `&[u8]`, `&Value`, `&[Value]`, `&BTreeMap`, and so on) keep borrowing; only tag-valued keys (`&DateTime`) need the small allocation a CBOR tag requires.
+
 ## 0.9.1 - 2026-05-07
 
 ### Added
@@ -59,7 +66,7 @@
 
 ### Changed
 
-- `SequenceWriter::new` now accepts `impl Into<EncodeFormat>` instead of `Format` and rops the `const fn` marker.
+- `SequenceWriter::new` now accepts `impl Into<EncodeFormat>` instead of `Format` and drops the `const fn` marker.
 - `cbor2diag` example emits pretty-printed diagnostic notation.
 
 

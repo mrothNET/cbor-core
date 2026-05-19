@@ -1,7 +1,7 @@
 use std::{borrow::Cow, collections::BTreeMap};
 
 use crate::{
-    Array, Float, Map, SimpleValue, Value,
+    Array, ByteString, DateTime, EpochTime, Float, Map, SimpleValue, TextString, Value,
     codec::{Head, Major},
     view::{Payload, ValueView},
 };
@@ -9,20 +9,24 @@ use crate::{
 /// A key for looking up elements in [`Value`] arrays and maps.
 ///
 /// `ValueKey` is the parameter type of [`Value::get`], [`Value::get_mut`],
-/// [`Value::remove`], and the [`Index`]/[`IndexMut`] implementations on
-/// [`Value`]. You rarely name it directly: every type that implements
-/// `Into<ValueKey>` can be passed in, including:
+/// [`Value::remove`], [`Value::contains`], and the [`Index`]/[`IndexMut`]
+/// implementations on [`Value`]. You rarely name it directly: it converts
+/// from the same inputs that build a [`Value`], so the same arguments work
+/// for both.
 ///
-/// - integers, floats, `bool`, `SimpleValue`, `()`
-/// - `&str`, `&String`
-/// - `&[u8]`
-/// - `&Value`
-/// - `&[Value]`, `&Vec<Value>`, `&[Value; N]`, `&Array` (array-valued keys)
-/// - `&Map`, `&BTreeMap<Value, Value>` (map-valued keys)
+/// Where building a [`Value`] from a reference would copy, `ValueKey`
+/// borrows instead, so a lookup allocates nothing:
 ///
-/// Lookups are zero-copy for the borrowed forms: passing `&str`, `&[u8]`,
-/// `&[Value]`, or `&BTreeMap<Value, Value>` does not allocate a full
-/// [`Value`] to compare against map keys.
+/// - `&str`, `&String`, `&[u8]`, `&[u8; N]` borrow the string data.
+/// - `&Value` borrows the value.
+/// - `&[Value]`, `&Vec<Value>`, `&[Value; N]`, `&Array` borrow an
+///   array-valued key; `&Map` and `&BTreeMap<Value, Value>` borrow a
+///   map-valued key, bypassing the full-[`Value`] allocation a composite
+///   key would otherwise need.
+///
+/// Integers, floats, `bool`, `SimpleValue`, `()`, `char`, and owned inputs
+/// (an owned `Value`, `String`, `Vec<u8>`, `Array`, `Map`, and so on) are
+/// taken by value.
 ///
 /// # Examples
 ///
@@ -52,8 +56,6 @@ pub struct ValueKey<'a>(Inner<'a>);
 
 #[derive(Debug)]
 enum Inner<'a> {
-    Bytes(&'a [u8]),
-    Text(&'a str),
     Array(&'a [Value<'a>]),
     Map(&'a BTreeMap<Value<'a>, Value<'a>>),
     Other(Cow<'a, Value<'a>>),
@@ -105,24 +107,6 @@ impl<'a> From<&'a BTreeMap<Value<'a>, Value<'a>>> for ValueKey<'a> {
     }
 }
 
-impl<'a> From<&'a str> for ValueKey<'a> {
-    fn from(value: &'a str) -> Self {
-        Self(Inner::Text(value))
-    }
-}
-
-impl<'a> From<&'a String> for ValueKey<'a> {
-    fn from(value: &'a String) -> Self {
-        Self(Inner::Text(value))
-    }
-}
-
-impl<'a> From<&'a [u8]> for ValueKey<'a> {
-    fn from(value: &'a [u8]) -> Self {
-        Self(Inner::Bytes(value))
-    }
-}
-
 impl<'a, T> From<&'a Vec<T>> for ValueKey<'a>
 where
     ValueKey<'a>: From<&'a [T]>,
@@ -141,28 +125,48 @@ where
     }
 }
 
-macro_rules! impl_from_copy {
+impl<'a, const N: usize> From<[u8; N]> for ValueKey<'a> {
+    fn from(value: [u8; N]) -> Self {
+        Self(Inner::Other(Cow::Owned(Value::from(value))))
+    }
+}
+
+impl<'a, const N: usize> From<[Value<'a>; N]> for ValueKey<'a> {
+    fn from(value: [Value<'a>; N]) -> Self {
+        Self(Inner::Other(Cow::Owned(Value::from(value))))
+    }
+}
+
+/// Conversions that build a [`Value`] and store it as an owned key.
+///
+/// The owned [`Cow`] wrapper does not imply an allocation: for a reference
+/// (`&str`, `&[u8]`, ...) the [`Value`] it holds borrows the data, and for
+/// an owned input the data is moved through. Only conversions whose
+/// [`Value`] counterpart allocates do.
+macro_rules! impl_from {
     ($($type:ty),* $(,)?) => { $(
         impl<'a> From<$type> for ValueKey<'a> {
-            fn from(value: $type) -> ValueKey<'a> {
+            fn from(value: $type) -> Self {
                 Self(Inner::Other(Cow::Owned(Value::from(value))))
             }
         }
     )* }
 }
 
-impl_from_copy!(bool, SimpleValue, ());
-
-impl_from_copy!(u8, u16, u32, u64, u128, usize);
-impl_from_copy!(i8, i16, i32, i64, i128, isize);
-
-impl_from_copy!(f32, f64, Float);
+impl_from!(bool, SimpleValue, (), char);
+impl_from!(u8, u16, u32, u64, u128, usize);
+impl_from!(i8, i16, i32, i64, i128, isize);
+impl_from!(f32, f64, Float);
+impl_from!(DateTime, &'a DateTime, EpochTime);
+impl_from!(TextString<'a>, &'a TextString<'a>, ByteString<'a>, &'a ByteString<'a>);
+impl_from!(&'a str, &'a String, String, Box<str>, Cow<'a, str>);
+impl_from!(&'a [u8], Vec<u8>, Box<[u8]>, Cow<'a, [u8]>);
+impl_from!(Array<'a>, Map<'a>);
+impl_from!(Vec<Value<'a>>, Box<[Value<'a>]>, BTreeMap<Value<'a>, Value<'a>>);
 
 impl ValueView for ValueKey<'_> {
     fn head(&self) -> Head {
         match &self.0 {
-            Inner::Bytes(bytes) => Head::from_usize(Major::ByteString, bytes.len()),
-            Inner::Text(text) => Head::from_usize(Major::TextString, text.len()),
             Inner::Array(arr) => Head::from_usize(Major::Array, arr.len()),
             Inner::Map(map) => Head::from_usize(Major::Map, map.len()),
             Inner::Other(value) => value.head(),
@@ -171,8 +175,6 @@ impl ValueView for ValueKey<'_> {
 
     fn payload(&self) -> Payload<'_> {
         match &self.0 {
-            Inner::Bytes(bytes) => Payload::Bytes(bytes),
-            Inner::Text(text) => Payload::Text(text),
             Inner::Array(arr) => Payload::Array(arr),
             Inner::Map(map) => Payload::Map(map),
             Inner::Other(value) => value.payload(),

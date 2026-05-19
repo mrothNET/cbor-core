@@ -64,6 +64,17 @@ impl From<DateTime> for Value<'_> {
     }
 }
 
+/// Borrows the timestamp text rather than cloning it.
+///
+/// The resulting `Value::Tag` still requires a small allocation
+/// for the boxed tag content; only the timestamp string itself
+/// is borrowed.
+impl<'a> From<&'a DateTime> for Value<'a> {
+    fn from(value: &'a DateTime) -> Self {
+        Self::tag(tag::DATE_TIME, value.0.as_str())
+    }
+}
+
 impl TryFrom<SystemTime> for DateTime {
     type Error = Error;
 

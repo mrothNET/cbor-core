@@ -1,7 +1,7 @@
 use crypto_bigint::{Choice, Encoding, Int, NonZero, Uint};
 
 use crate::{
-    Error, Result, Value,
+    Error, Result, Value, ValueKey,
     integer::IntegerBytes,
     tag,
     util::{trim_leading_zeros, u64_from_slice},
@@ -40,6 +40,12 @@ impl<'a, const LIMBS: usize> From<&Uint<LIMBS>> for Value<'a>
 where
     Uint<LIMBS>: Encoding,
 {
+    /// Encodes a `crypto_bigint::Uint` as a CBOR integer.
+    ///
+    /// This conversion does not borrow the argument: a big integer is
+    /// always re-encoded into fresh CBOR bytes, so the resulting `Value`
+    /// owns its data and keeps no reference to the source. Taking `&`
+    /// rather than an owned value only saves the caller a clone.
     fn from(value: &Uint<LIMBS>) -> Self {
         from_crypto_uint(value)
     }
@@ -77,6 +83,12 @@ impl<'a, const LIMBS: usize> From<&Int<LIMBS>> for Value<'a>
 where
     Uint<LIMBS>: Encoding,
 {
+    /// Encodes a `crypto_bigint::Int` as a CBOR integer.
+    ///
+    /// This conversion does not borrow the argument: a big integer is
+    /// always re-encoded into fresh CBOR bytes, so the resulting `Value`
+    /// owns its data and keeps no reference to the source. Taking `&`
+    /// rather than an owned value only saves the caller a clone.
     fn from(value: &Int<LIMBS>) -> Self {
         from_crypto_int(value)
     }
@@ -268,6 +280,12 @@ impl<'a, const LIMBS: usize> From<&NonZero<Uint<LIMBS>>> for Value<'a>
 where
     Uint<LIMBS>: Encoding,
 {
+    /// Encodes a non-zero `crypto_bigint::Uint` as a CBOR integer.
+    ///
+    /// This conversion does not borrow the argument: a big integer is
+    /// always re-encoded into fresh CBOR bytes, so the resulting `Value`
+    /// owns its data and keeps no reference to the source. Taking `&`
+    /// rather than an owned value only saves the caller a clone.
     fn from(value: &NonZero<Uint<LIMBS>>) -> Self {
         from_crypto_uint(value)
     }
@@ -286,10 +304,35 @@ impl<'a, const LIMBS: usize> From<&NonZero<Int<LIMBS>>> for Value<'a>
 where
     Uint<LIMBS>: Encoding,
 {
+    /// Encodes a non-zero `crypto_bigint::Int` as a CBOR integer.
+    ///
+    /// This conversion does not borrow the argument: a big integer is
+    /// always re-encoded into fresh CBOR bytes, so the resulting `Value`
+    /// owns its data and keeps no reference to the source. Taking `&`
+    /// rather than an owned value only saves the caller a clone.
     fn from(value: &NonZero<Int<LIMBS>>) -> Self {
         from_crypto_int(value)
     }
 }
+
+// ---------------------------------------------------------------------------
+// crypto_bigint → ValueKey
+// ---------------------------------------------------------------------------
+
+macro_rules! impl_value_key {
+    ($($type:ty),* $(,)?) => { $(
+        impl<'a, const LIMBS: usize> From<$type> for ValueKey<'a>
+        where
+            Uint<LIMBS>: Encoding,
+        {
+            fn from(value: $type) -> Self {
+                Value::from(value).into()
+            }
+        }
+    )* }
+}
+
+impl_value_key!(Uint<LIMBS>, Int<LIMBS>, NonZero<Uint<LIMBS>>, NonZero<Int<LIMBS>>);
 
 // ---------------------------------------------------------------------------
 // Tests

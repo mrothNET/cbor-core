@@ -1,7 +1,7 @@
 use num_bigint::{BigInt, BigUint, Sign};
 
 use crate::{
-    Error, Result, Value, tag,
+    Error, Result, Value, ValueKey, tag,
     util::{trim_leading_zeros, u64_from_slice},
 };
 
@@ -22,8 +22,10 @@ impl<'a> From<BigUint> for Value<'a> {
 impl<'a> From<&BigUint> for Value<'a> {
     /// Encodes a `BigUint` as a CBOR integer.
     ///
-    /// Values that fit in a `u64` are encoded as a plain unsigned integer.
-    /// Larger values are encoded as a tag-2 big integer
+    /// This conversion does not borrow the argument: a big integer is
+    /// always re-encoded into fresh CBOR bytes, so the resulting `Value`
+    /// owns its data and keeps no reference to the source. Taking `&`
+    /// rather than an owned value only saves the caller a clone.
     fn from(value: &BigUint) -> Self {
         from_big_uint(value)
     }
@@ -55,6 +57,11 @@ impl<'a> From<BigInt> for Value<'a> {
 
 impl<'a> From<&BigInt> for Value<'a> {
     /// Encodes a `BigInt` as a CBOR integer.
+    ///
+    /// This conversion does not borrow the argument: a big integer is
+    /// always re-encoded into fresh CBOR bytes, so the resulting `Value`
+    /// owns its data and keeps no reference to the source. Taking `&`
+    /// rather than an owned value only saves the caller a clone.
     fn from(value: &BigInt) -> Self {
         from_big_int(value)
     }
@@ -76,6 +83,22 @@ fn from_big_int<'a>(value: &BigInt) -> Value<'a> {
                 Value::tag(tag::NEG_BIG_INT, trimmed.to_vec()) // create new Vec
             }
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// num-bigint → ValueKey
+// ---------------------------------------------------------------------------
+
+impl<'a> From<BigUint> for ValueKey<'a> {
+    fn from(value: BigUint) -> Self {
+        Value::from(value).into()
+    }
+}
+
+impl<'a> From<BigInt> for ValueKey<'a> {
+    fn from(value: BigInt) -> Self {
+        Value::from(value).into()
     }
 }
 

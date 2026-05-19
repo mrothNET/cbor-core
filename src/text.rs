@@ -97,3 +97,10 @@ impl<'a> From<TextString<'a>> for Value<'a> {
         Self::TextString(value.0)
     }
 }
+
+/// Borrows the text rather than copying it.
+impl<'a> From<&'a TextString<'a>> for Value<'a> {
+    fn from(value: &'a TextString<'a>) -> Self {
+        Self::TextString(Cow::Borrowed(value.as_str()))
+    }
+}
