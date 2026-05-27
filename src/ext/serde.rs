@@ -362,6 +362,10 @@ impl<'a> ser::Serializer for ValueSerializer<'a> {
     type SerializeStruct = MapBuilder<'a>;
     type SerializeStructVariant = StructVariantBuilder<'a>;
 
+    fn is_human_readable(&self) -> bool {
+        false
+    }
+
     serialize!(serialize_bool, bool);
 
     serialize!(serialize_i8, i8);
@@ -630,6 +634,10 @@ macro_rules! deserialize {
 
 impl<'de, 'a> de::Deserializer<'de> for ValueDeserializer<'de, 'a> {
     type Error = SerdeError;
+
+    fn is_human_readable(&self) -> bool {
+        false
+    }
 
     fn deserialize_any<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, SerdeError> {
         let this = self.0.peeled();
@@ -1302,6 +1310,38 @@ mod tests {
         // The public String field is directly readable.
         assert!(!err.0.is_empty());
         assert_eq!(err.to_string(), err.0);
+    }
+
+    // --- is_human_readable is false ---
+
+    #[test]
+    fn serializer_is_not_human_readable() {
+        // A type that reports back the serializer's human-readable flag.
+        struct ProbeFlag;
+        impl Serialize for ProbeFlag {
+            fn serialize<S: ser::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+                let human_readable = serializer.is_human_readable();
+                serializer.serialize_bool(human_readable)
+            }
+        }
+
+        let v = Value::serialized(&ProbeFlag).unwrap();
+        assert!(!v.to_bool().unwrap());
+    }
+
+    #[test]
+    fn deserializer_is_not_human_readable() {
+        // A type that captures the deserializer's human-readable flag.
+        #[derive(Debug)]
+        struct ProbeFlag(bool);
+        impl<'de> Deserialize<'de> for ProbeFlag {
+            fn deserialize<D: de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+                Ok(ProbeFlag(deserializer.is_human_readable()))
+            }
+        }
+
+        let probe: ProbeFlag = Value::null().deserialized().unwrap();
+        assert!(!probe.0);
     }
 
     // --- Deserialize Value from JSON (proves Deserialize impl works) ---

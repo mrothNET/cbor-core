@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- The serde `Serializer` and `Deserializer` behind `Value::serialized` / `Value::deserialized` now report `is_human_readable() == false`. Types that adapt their representation to the format now use their compact binary form instead of a text form. This can change the encoded bytes for such types compared to earlier releases.
+
 ## 0.9.2 - 2026-05-20
 
 ### Added
