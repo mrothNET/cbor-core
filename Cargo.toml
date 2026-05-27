@@ -96,3 +96,7 @@ required-features = ["serde"]
 [[example]]
 name = "serde_borrow"
 required-features = ["serde"]
+
+[[example]]
+name = "serde_bytes"
+required-features = ["serde"]
