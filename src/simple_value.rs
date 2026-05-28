@@ -33,8 +33,12 @@ impl SimpleValue {
         value.try_into().unwrap()
     }
 
-    /// Create a simple value from a raw number. Returns `Err` for
-    /// reserved values 24-31.
+    /// Create a simple value from a raw number.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidSimpleValue`] for values in the reserved
+    /// range 24-31.
     pub const fn from_u8(value: u8) -> Result<Self> {
         let valid_range = value <= 23 || value >= 32;
         if valid_range {
@@ -62,7 +66,12 @@ impl SimpleValue {
         }
     }
 
-    /// Convert to `bool`. Returns `Err` for non-boolean simple values.
+    /// Convert to `bool`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidSimpleValue`] for non-boolean simple
+    /// values (anything other than [`Self::FALSE`] or [`Self::TRUE`]).
     pub const fn to_bool(&self) -> Result<bool> {
         match *self {
             Self::FALSE => Ok(false),

@@ -122,6 +122,10 @@ impl<W: Write> SequenceWriter<W> {
     /// and [`EncodeFormat::Hex`] items are written back-to-back with no
     /// separator.
     ///
+    /// # Errors
+    ///
+    /// Returns any [`io::Error`] reported by the underlying writer.
+    ///
     /// ```
     /// use cbor_core::{SequenceWriter, Value, EncodeFormat};
     ///
@@ -156,6 +160,11 @@ impl<W: Write> SequenceWriter<W> {
     /// [`write_item`](Self::write_item) in a loop, but keeps the call
     /// site concise.
     ///
+    /// # Errors
+    ///
+    /// Stops at and returns the first [`io::Error`] reported by the
+    /// underlying writer.
+    ///
     /// ```
     /// use cbor_core::{SequenceWriter, Value, EncodeFormat};
     ///
@@ -184,7 +193,12 @@ impl<W: Write> SequenceWriter<W> {
     ///
     /// The iterator yields borrowed references, which is the natural
     /// shape of `&BTreeMap<Value, Value>::iter()`, so a map held in a
-    /// `Value` can be streamed directly:
+    /// `Value` can be streamed directly.
+    ///
+    /// # Errors
+    ///
+    /// Stops at and returns the first [`io::Error`] reported by the
+    /// underlying writer.
     ///
     /// ```
     /// use cbor_core::{SequenceWriter, Value, EncodeFormat, map};

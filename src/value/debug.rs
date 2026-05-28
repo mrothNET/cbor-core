@@ -1,4 +1,4 @@
-//! --- CBOR::Core diagnostic notation (Section 2.3.6) ---
+//! CBOR::Core diagnostic notation (Section 2.3.6).
 //!
 //! `Debug` outputs diagnostic notation. The `#` (alternate/pretty) flag
 //! enables multi-line output for arrays and maps with indentation.

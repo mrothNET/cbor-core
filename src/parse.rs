@@ -302,7 +302,7 @@ impl<'r, R: MyReader<'r>> Parser<R> {
         Ok(())
     }
 
-    /// Parse `(_ chunk, chunk, ...)` -- an indefinite-length byte or
+    /// Parse `(_ chunk, chunk, ...)`: an indefinite-length byte or
     /// text string written as a sequence of definite-length chunks.
     /// The chunk type (bytes or text) is taken from the first chunk
     /// and all later chunks must match.

@@ -166,6 +166,11 @@ impl From<crate::Error> for SerdeError {
 impl<'a> Value<'a> {
     /// Serialize any [`Serialize`] value into a CBOR [`Value`].
     ///
+    /// # Errors
+    ///
+    /// Returns any [`SerdeError`] raised by `value`'s
+    /// [`Serialize`] implementation.
+    ///
     /// ```
     /// use cbor_core::Value;
     /// use serde::Serialize;
@@ -183,6 +188,12 @@ impl<'a> Value<'a> {
     }
 
     /// Deserialize this [`Value`] into any [`Deserialize`] type.
+    ///
+    /// # Errors
+    ///
+    /// Returns any [`SerdeError`] raised by `T`'s
+    /// [`Deserialize`] implementation, including type mismatches
+    /// between this `Value`'s shape and the target type.
     ///
     /// ```
     /// use cbor_core::{Value, map};

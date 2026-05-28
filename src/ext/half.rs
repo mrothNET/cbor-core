@@ -5,7 +5,9 @@ use crate::{Error, Float, Result, Value, ValueKey, float::Inner};
 impl Float {
     /// Convert to `half::f16`.
     ///
-    /// Returns `Err(Precision)` for f32 or f64-width values.
+    /// # Errors
+    ///
+    /// Returns [`Error::Precision`] for f32 or f64-width values.
     pub const fn to_f16(self) -> Result<f16> {
         match self.0 {
             Inner::F16(bits) => Ok(f16::from_bits(bits)),
@@ -24,7 +26,10 @@ impl From<f16> for Float {
 impl<'a> Value<'a> {
     /// Convert to `half::f16`.
     ///
-    /// Returns `Err(Precision)` for f32 or f64-width values.
+    /// # Errors
+    ///
+    /// * [`Error::Precision`] for f32 or f64-width values.
+    /// * [`Error::IncompatibleType`] for non-float values.
     pub fn to_f16(&self) -> Result<f16> {
         match self {
             Self::Float(float) => float.to_f16(),

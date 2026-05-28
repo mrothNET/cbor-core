@@ -5,7 +5,9 @@
 
 //! Deterministic CBOR encoder and decoder following the
 //! [CBOR::Core](https://www.ietf.org/archive/id/draft-rundgren-cbor-core-25.html)
-//! profile (`draft-rundgren-cbor-core-25`).
+//! profile (`draft-rundgren-cbor-core-25`). Encoding produces the
+//! canonical form; the decoder rejects input that deviates, with opt-in
+//! normalization for non-canonical sources.
 //!
 //! The central type is [`Value`]. It can be constructed, inspected,
 //! modified in place, encoded to bytes, and decoded back. The API
@@ -16,9 +18,7 @@
 //!
 //! # Types
 //!
-//! [`Value`] is the central representation of any CBOR data item. It handles
-//! construction, inspection, encoding, and decoding, and is what most code
-//! works with directly.
+//! Auxiliary types, grouped by role:
 //!
 //! * [`Array`], [`Map`], [`Float`], [`DateTime`], [`EpochTime`], and
 //!   [`SimpleValue`] appear in `From`/`Into` bounds for `Value` and are
@@ -61,9 +61,7 @@
 //! # Diagnostic notation
 //!
 //! [`Value`] implements [`FromStr`](std::str::FromStr), so any CBOR value can
-//! be written as text and parsed with `str::parse`. This is often the
-//! shortest way to build a literal value in a test, a fixture, or an
-//! example, and it avoids manual `Value::from` chains for nested data.
+//! be written as text and parsed with `str::parse`.
 //!
 //! The grammar is Section 2.3.6 of the CBOR::Core draft. Examples:
 //!
@@ -118,13 +116,18 @@
 //! assert_eq!(cert["cnf"]["crv"].as_str().unwrap(), "Ed25519");
 //! ```
 //!
-//! Supported grammar elements: integers (decimal, `0x`, `0o`, `0b`, with
-//! `_` separators), arbitrary-precision integers, floats (decimal,
-//! scientific, `NaN`, `Infinity`, `float'<hex>'`), text strings with
-//! JSON-style escapes and surrogate pairs, byte strings (`h'...'`,
-//! `b64'...'`, `'...'`, `<<...>>`), arrays, maps, tagged values `N(...)`,
-//! `simple(N)`, `true`, `false`, `null`, single-line `# ...` comments, and
-//! block `/ ... /` comments.
+//! Supported grammar elements:
+//!
+//! * arbitrary-precision integers in any base (`0x`, `0o`, `0b`, decimal),
+//!   with `_` separators
+//! * floats: decimal, scientific, `NaN`, `Infinity`, or `float'<hex>'` for
+//!   explicit bit patterns
+//! * text strings with JSON-style escapes and surrogate pairs
+//! * byte strings: `h'...'`, `b64'...'`, `'...'`, or `<<...>>` for embedded
+//!   CBOR
+//! * arrays, maps, tagged values (`N(...)`), simple values (`simple(N)`,
+//!   `true`, `false`, `null`)
+//! * comments: single-line `# ...` and block `/ ... /`
 //!
 //! The parser accepts non-canonical input (for example unsorted maps and
 //! non-shortest numbers), normalizes it, and produces a canonical [`Value`].
@@ -163,7 +166,7 @@
 //! `String`, `Vec<u8>`, integer, float, etc. produces an owned
 //! `Value<'static>`, while passing a reference (`&str`, `&[u8]`,
 //! `&[u8; N]`) produces a `Value<'a>` borrowing from that reference.
-//! A `&'static str` literal naturally yields `Value<'static>`. The
+//! A `&'static str` literal yields `Value<'static>`. The
 //! [`array!`](crate::array) and [`map!`](crate::map) macros and the
 //! `From`/`TryFrom` conversions follow whatever the element type
 //! does.
@@ -210,7 +213,9 @@
 //!
 //! Encoding is deterministic: integers and floats use their shortest
 //! form, and map keys are sorted in canonical order. The decoder
-//! rejects input that deviates.
+//! rejects input that deviates. Pair [`DecodeOptions`] with
+//! [`Strictness`] to accept and normalize input that does not follow
+//! these rules.
 //!
 //! NaN payloads, including signaling NaNs, survive round-trips
 //! bit-for-bit. Float-width conversions go through bit patterns to
@@ -288,16 +293,16 @@
 //!
 //! # Optional features
 //!
-//! | Feature | Adds |
+//! | Feature name | Enables |
 //! |---|---|
 //! | `serde` | `Serialize`/`Deserialize` for `Value`, [`Value::serialized`], [`Value::deserialized`] |
 //! | `chrono` | Conversions between `chrono::DateTime` and `DateTime`/`EpochTime`/`Value` |
-//! | `time` | Conversions between `time::UtcDateTime`/`OffsetDateTime` and `DateTime`/`EpochTime`/`Value` |
-//! | `jiff` | Conversions between `jiff::Timestamp`/`Zoned` and `DateTime`/`EpochTime`/`Value` |
-//! | `half` | `From`/`TryFrom` between `Float`/`Value` and `half::f16` |
-//! | `num-bigint` | `From`/`TryFrom` between `Value` and `num_bigint::BigInt`/`BigUint` |
-//! | `crypto-bigint` | `From`/`TryFrom` between `Value` and `crypto_bigint::Uint`/`Int`/`NonZero` |
-//! | `rug` | `From`/`TryFrom` between `Value` and `rug::Integer` |
+//! | `time` | Conversions between `time::UtcDateTime`/`time::OffsetDateTime` and `DateTime`/`EpochTime`/`Value` |
+//! | `jiff` | Conversions between `jiff::Timestamp`/`jiff::Zoned` and `DateTime`/`EpochTime`/`Value` |
+//! | `half` | `From`/`TryFrom` conversions between `Float`/`Value` and `half::f16` |
+//! | `num-bigint` | `From`/`TryFrom` conversions between `Value` and `num_bigint::BigInt`/`BigUint` |
+//! | `crypto-bigint` | `From`/`TryFrom` conversions between `Value` and `crypto_bigint::Uint`/`Int`/`NonZero` |
+//! | `rug` | `From`/`TryFrom` conversions between `Value` and `rug::Integer` |
 
 mod array;
 mod bytes;

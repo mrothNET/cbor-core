@@ -44,13 +44,12 @@ const LEAP_SECOND_DATES: [(u16, u8, u8); 27] = [
 /// timestamps include only the necessary digits (1-9, no trailing
 /// zeros).
 ///
-/// CBOR::Core references section 5.6 of RFC3339, which allows
-/// leap seconds (second == 60). So we accept leap seconds and
-/// validate, if the date is one of the currently known 27
-/// leap second dates.
+/// CBOR::Core references section 5.6 of RFC 3339, which allows
+/// leap seconds (second == 60). They are accepted only on the
+/// 27 currently known leap second dates.
 ///
 /// However, trying to convert a date/time value containing a
-/// leap second to `SystemTime` will fail with `Err(InvalidEncoding)`.
+/// leap second to `SystemTime` will fail with `Err(InvalidValue)`.
 ///
 /// Implements `TryFrom<SystemTime>` and `TryFrom<&str>`, so that
 /// [`Value::date_time`] can accept both through a single

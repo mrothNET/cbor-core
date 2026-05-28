@@ -1,4 +1,4 @@
-//! Formatting and parsing of UTC timestamps in RFC 3339 format (an ISO 8601 profile) .
+//! Formatting and parsing of UTC timestamps in RFC 3339 format (an ISO 8601 profile).
 
 use std::fmt;
 use std::str::FromStr;
@@ -12,7 +12,7 @@ use crate::Error;
 /// in the proleptic Gregorian calendar.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct Timestamp {
-    /// Year 0 - 9999 (even the proleptic Gregorian calendar starts at year 1)
+    /// Year 0 – 9999 (even the proleptic Gregorian calendar starts at year 1)
     pub year: u16,
     /// Month (1 – 12).
     pub month: u8,

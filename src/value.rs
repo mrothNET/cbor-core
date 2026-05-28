@@ -27,7 +27,9 @@ use crate::{
 ///
 /// `Value` covers all CBOR major types: integers, floats, byte and text
 /// strings, arrays, maps, tagged values, and simple values (null, booleans).
-/// It encodes deterministically and decodes only canonical input.
+/// It encodes deterministically and, by default, decodes only canonical
+/// input. Non-canonical input can be normalized through
+/// [`Strictness`](crate::Strictness).
 ///
 /// # Creating values
 ///
@@ -158,7 +160,7 @@ use crate::{
 /// The four decoding methods above forward to a default
 /// [`DecodeOptions`](crate::DecodeOptions). Use that type directly to
 /// switch between binary and hex at runtime, or to adjust the recursion
-/// limit, the declared-length cap, or the OOM-mitigation budget — for
+/// limit, the declared-length cap, or the OOM-mitigation budget. For
 /// example, to tighten limits on input from an untrusted source:
 ///
 /// ```
@@ -255,7 +257,7 @@ use crate::{
 /// float can widen to `f64`. [`to_f32`](Self::to_f32) fails with
 /// [`Err(Precision)`](Error::Precision) if the value is stored as `f64`.
 /// A float internally stored as `f16` can always be converted to either
-/// an `f32` or `f64` for obvious reasons.
+/// an `f32` or `f64`.
 ///
 /// | Method | Returns |
 /// |---|---|
@@ -321,7 +323,7 @@ use crate::{
 /// to modify them in place. For element access by index, see
 /// [`get`](Self::get), [`get_mut`](Self::get_mut), [`remove`](Self::remove),
 /// and the [`Index`](std::ops::Index)/[`IndexMut`](std::ops::IndexMut)
-/// implementations — see the [Indexing](#indexing) section below.
+/// implementations. See the [Indexing](#indexing) section below.
 ///
 /// | Method | Returns |
 /// |---|---|
@@ -348,7 +350,7 @@ use crate::{
 /// order. Use [`as_map`](Self::as_map) for direct access to the
 /// underlying `BTreeMap`, or [`get`](Self::get), [`get_mut`](Self::get_mut),
 /// [`remove`](Self::remove), and the [`Index`](std::ops::Index)/
-/// [`IndexMut`](std::ops::IndexMut) implementations for key lookups — see the
+/// [`IndexMut`](std::ops::IndexMut) implementations for key lookups. See the
 /// [Indexing](#indexing) section below.
 ///
 /// | Method | Returns |
@@ -372,8 +374,7 @@ use crate::{
 /// ## Indexing
 ///
 /// Arrays and maps share a uniform interface for element access,
-/// summarized below. Entries with a shaded "Panics" cell never panic
-/// under any inputs.
+/// summarized below.
 ///
 /// | Method | Returns | Non-collection receiver | Invalid / missing key |
 /// |---|---|---|---|
@@ -388,12 +389,12 @@ use crate::{
 ///
 /// The methods split into two flavors:
 ///
-/// - **Soft** — [`len`](Self::len), [`contains`](Self::contains),
-///   [`get`](Self::get), and [`get_mut`](Self::get_mut): never panic.
-///   They return `Option`/`bool` and treat a wrong-type receiver the
-///   same as a missing key.
-/// - **Hard** — [`insert`](Self::insert), [`remove`](Self::remove),
-///   [`append`](Self::append), and the `[]` operators: panic when the
+/// - **Soft** ([`len`](Self::len), [`contains`](Self::contains),
+///   [`get`](Self::get), [`get_mut`](Self::get_mut)): never panic. They
+///   return `Option`/`bool` and treat a wrong-type receiver the same as
+///   a missing key.
+/// - **Hard** ([`insert`](Self::insert), [`remove`](Self::remove),
+///   [`append`](Self::append), and the `[]` operators): panic when the
 ///   receiver is not an array or map, when an array index is not a
 ///   valid `usize` (negative, non-integer key), or when the index is
 ///   out of range. This mirrors [`Vec`] and
@@ -406,7 +407,7 @@ use crate::{
 /// [`insert`](Self::insert) takes `Into<Value>` for the key, since a
 /// map insert has to own the key anyway.
 ///
-/// All methods see through tags transparently — operating on a
+/// All methods see through tags transparently: operating on a
 /// [`Tag`](Self::Tag) dispatches to the innermost tagged content.
 ///
 /// ### Arrays
@@ -436,7 +437,7 @@ use crate::{
 /// The key is any CBOR-convertible value:
 ///
 /// - [`insert`](Self::insert) returns the previous value if the key
-///   was already present, otherwise `None` — matching
+///   was already present, otherwise `None`, matching
 ///   [`BTreeMap::insert`](std::collections::BTreeMap::insert).
 /// - [`remove`](Self::remove) returns the removed value, or `None` if
 ///   the key was absent. It never panics on a missing key (maps have
@@ -847,7 +848,7 @@ impl<'a> Value<'a> {
     ///
     /// Named `from_str_slice` rather than `from_str` to avoid shadowing
     /// the [`FromStr`](std::str::FromStr) implementation, which parses
-    /// diagnostic notation and is semantically very different.
+    /// diagnostic notation and is semantically different.
     ///
     /// ```
     /// use cbor_core::Value;
@@ -1180,12 +1181,18 @@ impl<'a> Value<'a> {
     /// [`Value::read_from`](Self::read_from) when you need an
     /// owned `Value<'static>`.
     ///
-    /// The input must contain **exactly one** CBOR item; any trailing
-    /// bytes cause [`Error::InvalidFormat`](crate::Error::InvalidFormat).
-    /// Use [`DecodeOptions::sequence_decoder`](crate::DecodeOptions::sequence_decoder)
+    /// The input must contain **exactly one** CBOR item. Use
+    /// [`DecodeOptions::sequence_decoder`](crate::DecodeOptions::sequence_decoder)
     /// for CBOR sequences.
     ///
-    /// Returns `Err` if the encoding is not canonical.
+    /// # Errors
+    ///
+    /// Same as [`DecodeOptions::decode`](crate::DecodeOptions::decode):
+    /// returns [`Error::InvalidFormat`](crate::Error::InvalidFormat) for
+    /// trailing bytes or non-canonical encodings,
+    /// [`Error::UnexpectedEof`](crate::Error::UnexpectedEof) for empty
+    /// or truncated input, and other [`Error`](crate::Error) variants
+    /// for malformed or oversized input.
     ///
     /// ```
     /// use cbor_core::Value;
@@ -1211,6 +1218,10 @@ impl<'a> Value<'a> {
     /// Equivalent to `Value::decode(bytes).map(Value::into_owned)`
     /// but more performant.
     ///
+    /// # Errors
+    ///
+    /// Same as [`decode`](Self::decode).
+    ///
     /// ```
     /// use cbor_core::Value;
     ///
@@ -1229,14 +1240,17 @@ impl<'a> Value<'a> {
     ///
     /// Accepts any byte source (`&[u8]`, `&str`, `String`, `Vec<u8>`,
     /// etc.). Both uppercase and lowercase hex digits are accepted. The
-    /// input must contain **exactly one** CBOR item; any trailing hex
-    /// digits cause [`Error::InvalidFormat`](crate::Error::InvalidFormat).
+    /// input must contain **exactly one** CBOR item.
     ///
     /// Hex decoding cannot borrow from the input (each pair of hex
     /// digits is converted into a single byte), so the returned value
     /// is always owned and may be stored as `Value<'static>`.
     ///
-    /// Returns `Err` if the encoding is not canonical.
+    /// # Errors
+    ///
+    /// Same as [`decode`](Self::decode), plus
+    /// [`Error::InvalidFormat`](crate::Error::InvalidFormat) for
+    /// non-hex input or trailing hex digits.
     ///
     /// ```
     /// use cbor_core::Value;
@@ -1258,6 +1272,15 @@ impl<'a> Value<'a> {
     /// zero-copy decoding from a byte slice, use
     /// [`decode`](Self::decode) instead.
     ///
+    /// # Errors
+    ///
+    /// Same as
+    /// [`DecodeOptions::read_from`](crate::DecodeOptions::read_from):
+    /// [`IoError::Io`](crate::IoError::Io) wrapping reader failures,
+    /// or [`IoError::Data`](crate::IoError::Data) wrapping any decoder
+    /// [`Error`](crate::Error) for malformed, non-canonical, or
+    /// oversized input.
+    ///
     /// ```
     /// use cbor_core::Value;
     /// let mut bytes: &[u8] = &[0x18, 42];
@@ -1275,6 +1298,12 @@ impl<'a> Value<'a> {
     /// any further hex digits remain in the stream, so repeated calls
     /// pull successive items of a CBOR sequence. The result is always
     /// owned.
+    ///
+    /// # Errors
+    ///
+    /// Same as [`read_from`](Self::read_from), with an additional
+    /// [`Error::InvalidFormat`](crate::Error::InvalidFormat) for
+    /// non-hex input.
     ///
     /// ```
     /// use cbor_core::Value;
@@ -1327,6 +1356,10 @@ impl<'a> Value<'a> {
 
     /// Write this value as binary CBOR to a stream.
     ///
+    /// # Errors
+    ///
+    /// Returns any [`io::Error`](std::io::Error) reported by `writer`.
+    ///
     /// ```
     /// use cbor_core::Value;
     /// let mut buf = Vec::new();
@@ -1341,6 +1374,10 @@ impl<'a> Value<'a> {
     ///
     /// Each binary byte is written as two lowercase hex digits. The
     /// adapter encodes on the fly without buffering the full output.
+    ///
+    /// # Errors
+    ///
+    /// Returns any [`io::Error`](std::io::Error) reported by `writer`.
     ///
     /// ```
     /// use cbor_core::Value;
@@ -1534,7 +1571,19 @@ impl<'a> Value<'a> {
 
 /// Scalar accessors
 impl<'a> Value<'a> {
-    /// Extract a boolean. Returns `Err` for non-boolean values.
+    /// Extract a boolean.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::IncompatibleType`] for anything that is not a
+    /// boolean simple value, and [`Error::InvalidSimpleValue`] for
+    /// non-boolean simple values (e.g. `null`).
+    ///
+    /// ```
+    /// # use cbor_core::Value;
+    /// assert_eq!(Value::from(true).to_bool(), Ok(true));
+    /// assert!(Value::null().to_bool().is_err());
+    /// ```
     pub const fn to_bool(&self) -> Result<bool> {
         match self {
             Self::SimpleValue(sv) => sv.to_bool(),
@@ -1544,6 +1593,17 @@ impl<'a> Value<'a> {
     }
 
     /// Extract the raw simple value number (0-255, excluding 24-31).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::IncompatibleType`] for any non-simple-value
+    /// variant.
+    ///
+    /// ```
+    /// # use cbor_core::Value;
+    /// assert_eq!(Value::null().to_simple_value(), Ok(22));
+    /// assert_eq!(Value::from(true).to_simple_value(), Ok(21));
+    /// ```
     pub const fn to_simple_value(&self) -> Result<u8> {
         match self {
             Self::SimpleValue(sv) => Ok(sv.0),
@@ -1570,32 +1630,90 @@ impl<'a> Value<'a> {
         }
     }
 
-    /// Narrow to `u8`. Returns `Err(Overflow)` or `Err(NegativeUnsigned)` on mismatch.
+    /// Narrow to `u8`.
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::Overflow`] if the value does not fit in `u8`.
+    /// * [`Error::NegativeUnsigned`] for a negative value.
+    /// * [`Error::IncompatibleType`] for non-integer values.
+    ///
+    /// ```
+    /// # use cbor_core::Value;
+    /// assert_eq!(Value::from(42).to_u8(), Ok(42));
+    /// assert!(Value::from(300).to_u8().is_err());  // overflow
+    /// assert!(Value::from(-1).to_u8().is_err());   // negative
+    /// ```
     pub fn to_u8(&self) -> Result<u8> {
         self.to_uint()
     }
 
     /// Narrow to `u16`.
+    ///
+    /// # Errors
+    ///
+    /// Same as [`to_u8`](Self::to_u8), with the range adjusted to `u16`.
+    ///
+    /// ```
+    /// # use cbor_core::Value;
+    /// assert_eq!(Value::from(1000).to_u16(), Ok(1000));
+    /// ```
     pub fn to_u16(&self) -> Result<u16> {
         self.to_uint()
     }
 
     /// Narrow to `u32`.
+    ///
+    /// # Errors
+    ///
+    /// Same as [`to_u8`](Self::to_u8), with the range adjusted to `u32`.
+    ///
+    /// ```
+    /// # use cbor_core::Value;
+    /// assert_eq!(Value::from(70_000).to_u32(), Ok(70_000));
+    /// ```
     pub fn to_u32(&self) -> Result<u32> {
         self.to_uint()
     }
 
     /// Narrow to `u64`.
+    ///
+    /// # Errors
+    ///
+    /// Same as [`to_u8`](Self::to_u8), with the range adjusted to `u64`.
+    ///
+    /// ```
+    /// # use cbor_core::Value;
+    /// assert_eq!(Value::from(u64::MAX).to_u64(), Ok(u64::MAX));
+    /// ```
     pub fn to_u64(&self) -> Result<u64> {
         self.to_uint()
     }
 
     /// Narrow to `u128`. Handles big integers (tag 2) transparently.
+    ///
+    /// # Errors
+    ///
+    /// Same as [`to_u8`](Self::to_u8), with the range adjusted to `u128`.
+    ///
+    /// ```
+    /// # use cbor_core::Value;
+    /// assert_eq!(Value::from(u128::MAX).to_u128(), Ok(u128::MAX));
+    /// ```
     pub fn to_u128(&self) -> Result<u128> {
         self.to_uint()
     }
 
     /// Narrow to `usize`.
+    ///
+    /// # Errors
+    ///
+    /// Same as [`to_u8`](Self::to_u8), with the range adjusted to `usize`.
+    ///
+    /// ```
+    /// # use cbor_core::Value;
+    /// assert_eq!(Value::from(42).to_usize(), Ok(42_usize));
+    /// ```
     pub fn to_usize(&self) -> Result<usize> {
         self.to_uint()
     }
@@ -1643,38 +1761,102 @@ impl<'a> Value<'a> {
     }
 
     /// Narrow to `i8`.
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::Overflow`] if the value does not fit in `i8`.
+    /// * [`Error::IncompatibleType`] for non-integer values.
+    ///
+    /// ```
+    /// # use cbor_core::Value;
+    /// assert_eq!(Value::from(-5).to_i8(), Ok(-5));
+    /// assert!(Value::from(200).to_i8().is_err());  // overflow
+    /// ```
     pub fn to_i8(&self) -> Result<i8> {
         self.to_sint()
     }
 
     /// Narrow to `i16`.
+    ///
+    /// # Errors
+    ///
+    /// Same as [`to_i8`](Self::to_i8), with the range adjusted to `i16`.
+    ///
+    /// ```
+    /// # use cbor_core::Value;
+    /// assert_eq!(Value::from(-1000).to_i16(), Ok(-1000));
+    /// ```
     pub fn to_i16(&self) -> Result<i16> {
         self.to_sint()
     }
 
     /// Narrow to `i32`.
+    ///
+    /// # Errors
+    ///
+    /// Same as [`to_i8`](Self::to_i8), with the range adjusted to `i32`.
+    ///
+    /// ```
+    /// # use cbor_core::Value;
+    /// assert_eq!(Value::from(-1_000_000).to_i32(), Ok(-1_000_000));
+    /// ```
     pub fn to_i32(&self) -> Result<i32> {
         self.to_sint()
     }
 
     /// Narrow to `i64`.
+    ///
+    /// # Errors
+    ///
+    /// Same as [`to_i8`](Self::to_i8), with the range adjusted to `i64`.
+    ///
+    /// ```
+    /// # use cbor_core::Value;
+    /// assert_eq!(Value::from(i64::MIN).to_i64(), Ok(i64::MIN));
+    /// ```
     pub fn to_i64(&self) -> Result<i64> {
         self.to_sint()
     }
 
     /// Narrow to `i128`. Handles big integers (tags 2 and 3) transparently.
+    ///
+    /// # Errors
+    ///
+    /// Same as [`to_i8`](Self::to_i8), with the range adjusted to `i128`.
+    ///
+    /// ```
+    /// # use cbor_core::Value;
+    /// assert_eq!(Value::from(i128::MIN).to_i128(), Ok(i128::MIN));
+    /// ```
     pub fn to_i128(&self) -> Result<i128> {
         self.to_sint()
     }
 
     /// Narrow to `isize`.
+    ///
+    /// # Errors
+    ///
+    /// Same as [`to_i8`](Self::to_i8), with the range adjusted to `isize`.
+    ///
+    /// ```
+    /// # use cbor_core::Value;
+    /// assert_eq!(Value::from(-42).to_isize(), Ok(-42_isize));
+    /// ```
     pub fn to_isize(&self) -> Result<isize> {
         self.to_sint()
     }
 
     /// Convert to `f32`.
     ///
-    /// Returns `Err(Precision)` for f64-width values.
+    /// # Errors
+    ///
+    /// * [`Error::Precision`] for f64-width values.
+    /// * [`Error::IncompatibleType`] for non-float values.
+    ///
+    /// ```
+    /// # use cbor_core::Value;
+    /// assert_eq!(Value::from(1.5_f32).to_f32(), Ok(1.5));
+    /// ```
     pub fn to_f32(&self) -> Result<f32> {
         match self {
             Self::Float(float) => float.to_f32(),
@@ -1686,6 +1868,15 @@ impl<'a> Value<'a> {
     /// Convert to `f64`.
     ///
     /// Always succeeds for float values.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::IncompatibleType`] for non-float values.
+    ///
+    /// ```
+    /// # use cbor_core::Value;
+    /// assert_eq!(Value::from(1.5).to_f64(), Ok(1.5));
+    /// ```
     pub fn to_f64(&self) -> Result<f64> {
         match self {
             Self::Float(float) => Ok(float.to_f64()),
@@ -1702,11 +1893,15 @@ impl<'a> Value<'a> {
     /// strings may include a timezone offset, which is converted to
     /// UTC.
     ///
-    /// Returns [`Err(IncompatibleType)`](Error::IncompatibleType) for
-    /// values that are neither numeric nor text, [`Err(InvalidValue)`](Error::InvalidValue)
-    /// if a numeric value is out of range, and [`Err(InvalidFormat)`](Error::InvalidFormat)
-    /// if a text string is not a valid RFC 3339 timestamp. Leap seconds (`:60`) are rejected
-    /// because [`SystemTime`] cannot represent them.
+    /// # Errors
+    ///
+    /// * [`Error::IncompatibleType`] for values that are neither
+    ///   numeric nor text.
+    /// * [`Error::InvalidValue`] if a numeric value is out of range
+    ///   (including negative values).
+    /// * [`Error::InvalidFormat`] if a text string is not a valid
+    ///   RFC 3339 timestamp. Leap seconds (`:60`) are rejected because
+    ///   [`SystemTime`] cannot represent them.
     ///
     /// ```
     /// use std::time::{Duration, UNIX_EPOCH};
@@ -1738,6 +1933,16 @@ impl<'a> Value<'a> {
 /// Bytes and text strings
 impl<'a> Value<'a> {
     /// Borrow the byte string as a slice.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::IncompatibleType`] for non-byte-string values.
+    ///
+    /// ```
+    /// # use cbor_core::Value;
+    /// let v = Value::byte_string(b"abc");
+    /// assert_eq!(v.as_bytes(), Ok([b'a', b'b', b'c'].as_slice()));
+    /// ```
     pub fn as_bytes(&self) -> Result<&[u8]> {
         match self {
             Self::ByteString(bytes) => Ok(bytes.as_ref()),
@@ -1747,6 +1952,17 @@ impl<'a> Value<'a> {
     }
 
     /// Borrow the byte string as a mutable `Vec`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::IncompatibleType`] for non-byte-string values.
+    ///
+    /// ```
+    /// # use cbor_core::Value;
+    /// let mut v = Value::byte_string(vec![1, 2]);
+    /// v.as_bytes_mut().unwrap().push(3);
+    /// assert_eq!(v.as_bytes(), Ok([1, 2, 3].as_slice()));
+    /// ```
     pub fn as_bytes_mut(&mut self) -> Result<&mut Vec<u8>> {
         match self {
             Self::ByteString(bytes) => Ok(bytes.to_mut()),
@@ -1756,6 +1972,16 @@ impl<'a> Value<'a> {
     }
 
     /// Take ownership of the byte string.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::IncompatibleType`] for non-byte-string values.
+    ///
+    /// ```
+    /// # use cbor_core::Value;
+    /// let v = Value::byte_string(vec![1, 2, 3]);
+    /// assert_eq!(v.into_bytes(), Ok(vec![1, 2, 3]));
+    /// ```
     pub fn into_bytes(self) -> Result<Vec<u8>> {
         match self {
             Self::ByteString(bytes) => Ok(bytes.into_owned()),
@@ -1765,6 +1991,15 @@ impl<'a> Value<'a> {
     }
 
     /// Borrow the text string as a `&str`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::IncompatibleType`] for non-text-string values.
+    ///
+    /// ```
+    /// # use cbor_core::Value;
+    /// assert_eq!(Value::from("hello").as_str(), Ok("hello"));
+    /// ```
     pub fn as_str(&self) -> Result<&str> {
         match self {
             Self::TextString(s) => Ok(s.as_ref()),
@@ -1774,6 +2009,17 @@ impl<'a> Value<'a> {
     }
 
     /// Borrow the text string as a mutable `String`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::IncompatibleType`] for non-text-string values.
+    ///
+    /// ```
+    /// # use cbor_core::Value;
+    /// let mut v = Value::from("hello");
+    /// v.as_string_mut().unwrap().push_str(" world");
+    /// assert_eq!(v.as_str(), Ok("hello world"));
+    /// ```
     pub fn as_string_mut(&mut self) -> Result<&mut String> {
         match self {
             Self::TextString(s) => Ok(s.to_mut()),
@@ -1783,6 +2029,16 @@ impl<'a> Value<'a> {
     }
 
     /// Take ownership of the text string.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::IncompatibleType`] for non-text-string values.
+    ///
+    /// ```
+    /// # use cbor_core::Value;
+    /// let v = Value::from("hello");
+    /// assert_eq!(v.into_string(), Ok(String::from("hello")));
+    /// ```
     pub fn into_string(self) -> Result<String> {
         match self {
             Self::TextString(s) => Ok(s.into_owned()),
@@ -1795,6 +2051,16 @@ impl<'a> Value<'a> {
 /// Arrays and maps
 impl<'a> Value<'a> {
     /// Borrow the array elements as a slice.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::IncompatibleType`] for non-array values.
+    ///
+    /// ```
+    /// # use cbor_core::array;
+    /// let v = array![1, 2, 3];
+    /// assert_eq!(v.as_array().unwrap().len(), 3);
+    /// ```
     pub fn as_array(&self) -> Result<&[Value<'a>]> {
         match self {
             Self::Array(v) => Ok(v.as_slice()),
@@ -1804,6 +2070,17 @@ impl<'a> Value<'a> {
     }
 
     /// Borrow the array as a mutable `Vec`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::IncompatibleType`] for non-array values.
+    ///
+    /// ```
+    /// # use cbor_core::{Value, array};
+    /// let mut v = array![1, 2];
+    /// v.as_array_mut().unwrap().push(Value::from(3));
+    /// assert_eq!(v.len(), Some(3));
+    /// ```
     pub const fn as_array_mut(&mut self) -> Result<&mut Vec<Value<'a>>> {
         match self {
             Self::Array(v) => Ok(v),
@@ -1813,6 +2090,17 @@ impl<'a> Value<'a> {
     }
 
     /// Take ownership of the array.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::IncompatibleType`] for non-array values.
+    ///
+    /// ```
+    /// # use cbor_core::{Value, array};
+    /// let v = array![1, 2, 3];
+    /// let vec: Vec<Value> = v.into_array().unwrap();
+    /// assert_eq!(vec.len(), 3);
+    /// ```
     pub fn into_array(self) -> Result<Vec<Value<'a>>> {
         match self {
             Self::Array(v) => Ok(v),
@@ -1822,6 +2110,16 @@ impl<'a> Value<'a> {
     }
 
     /// Borrow the map.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::IncompatibleType`] for non-map values.
+    ///
+    /// ```
+    /// # use cbor_core::map;
+    /// let v = map! { "x" => 10 };
+    /// assert_eq!(v.as_map().unwrap().len(), 1);
+    /// ```
     pub const fn as_map(&self) -> Result<&BTreeMap<Value<'a>, Value<'a>>> {
         match self {
             Self::Map(m) => Ok(m),
@@ -1831,6 +2129,17 @@ impl<'a> Value<'a> {
     }
 
     /// Borrow the map mutably.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::IncompatibleType`] for non-map values.
+    ///
+    /// ```
+    /// # use cbor_core::{Value, map};
+    /// let mut v = map! { "x" => 10 };
+    /// v.as_map_mut().unwrap().insert(Value::from("y"), Value::from(20));
+    /// assert_eq!(v.len(), Some(2));
+    /// ```
     pub const fn as_map_mut(&mut self) -> Result<&mut BTreeMap<Value<'a>, Value<'a>>> {
         match self {
             Self::Map(m) => Ok(m),
@@ -1840,6 +2149,17 @@ impl<'a> Value<'a> {
     }
 
     /// Take ownership of the map.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::IncompatibleType`] for non-map values.
+    ///
+    /// ```
+    /// # use cbor_core::map;
+    /// let v = map! { "x" => 10 };
+    /// let m = v.into_map().unwrap();
+    /// assert_eq!(m.len(), 1);
+    /// ```
     pub fn into_map(self) -> Result<BTreeMap<Value<'a>, Value<'a>>> {
         match self {
             Self::Map(m) => Ok(m),
@@ -1855,7 +2175,7 @@ impl<'a> Value<'a> {
     ///
     /// Accepts anything convertible into [`ValueKey`](crate::ValueKey):
     /// integers for array indices, and `&str`, `&[u8]`, integers, `&Value`,
-    /// etc. for map keys. Transparent through tags.
+    /// etc. for map keys.
     ///
     /// Returns `None` if the value is not an array or map, the index is
     /// out of bounds, the key is missing, or the key type does not match
@@ -1908,7 +2228,7 @@ impl<'a> Value<'a> {
     /// operator `v[i]`.
     ///
     /// For **maps**, removes and returns the entry for the given key,
-    /// or `None` if the key is missing — matching [`BTreeMap::remove`].
+    /// or `None` if the key is missing, matching [`BTreeMap::remove`].
     ///
     /// Transparent through tags, matching [`get`](Self::get).
     ///
@@ -1955,8 +2275,6 @@ impl<'a> Value<'a> {
     /// elements right like [`Vec::insert`] (O(n)). Insertion into an
     /// array **always returns `None`**.
     ///
-    /// Transparent through tags.
-    ///
     /// # Panics
     ///
     /// - If the value is not an array or map.
@@ -1995,8 +2313,6 @@ impl<'a> Value<'a> {
 
     /// Append a value to the end of an array (O(1)), like [`Vec::push`].
     ///
-    /// Transparent through tags.
-    ///
     /// # Panics
     ///
     /// If the value is not an array.
@@ -2021,7 +2337,7 @@ impl<'a> Value<'a> {
     ///
     /// For **arrays**, returns `true` if the key converts to a `usize`
     /// in range `0..len`. For **maps**, returns `true` if the key is
-    /// present. All other types return `false`. Transparent through tags.
+    /// present. All other types return `false`.
     ///
     /// ```
     /// use cbor_core::{Value, array, map};
@@ -2047,9 +2363,8 @@ impl<'a> Value<'a> {
 
     /// Number of elements in an array or map, or `None` for any other type.
     ///
-    /// Transparent through tags. For text and byte strings, use
-    /// [`as_str`](Self::as_str) or [`as_bytes`](Self::as_bytes) and call
-    /// `len()` on the slice.
+    /// For text and byte strings, use [`as_str`](Self::as_str) or
+    /// [`as_bytes`](Self::as_bytes) and call `len()` on the slice.
     ///
     /// ```
     /// use cbor_core::{Value, array, map};
@@ -2072,6 +2387,16 @@ impl<'a> Value<'a> {
 /// Tags
 impl<'a> Value<'a> {
     /// Return the tag number.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::IncompatibleType`] for non-tagged values.
+    ///
+    /// ```
+    /// # use cbor_core::Value;
+    /// let v = Value::tag(32, "https://example.com");
+    /// assert_eq!(v.tag_number(), Ok(32));
+    /// ```
     pub const fn tag_number(&self) -> Result<u64> {
         match self {
             Self::Tag(number, _content) => Ok(*number),
@@ -2080,6 +2405,16 @@ impl<'a> Value<'a> {
     }
 
     /// Borrow the tag content.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::IncompatibleType`] for non-tagged values.
+    ///
+    /// ```
+    /// # use cbor_core::Value;
+    /// let v = Value::tag(32, "https://example.com");
+    /// assert_eq!(v.tag_content().unwrap().as_str(), Ok("https://example.com"));
+    /// ```
     pub const fn tag_content(&self) -> Result<&Self> {
         match self {
             Self::Tag(_tag, content) => Ok(content),
@@ -2088,6 +2423,17 @@ impl<'a> Value<'a> {
     }
 
     /// Mutably borrow the tag content.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::IncompatibleType`] for non-tagged values.
+    ///
+    /// ```
+    /// # use cbor_core::Value;
+    /// let mut v = Value::tag(32, "old");
+    /// *v.tag_content_mut().unwrap() = Value::from("new");
+    /// assert_eq!(v.as_str(), Ok("new"));
+    /// ```
     pub const fn tag_content_mut(&mut self) -> Result<&mut Self> {
         match self {
             Self::Tag(_, value) => Ok(value),
@@ -2096,6 +2442,18 @@ impl<'a> Value<'a> {
     }
 
     /// Borrow tag number and content together.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::IncompatibleType`] for non-tagged values.
+    ///
+    /// ```
+    /// # use cbor_core::Value;
+    /// let v = Value::tag(32, "uri");
+    /// let (n, c) = v.as_tag().unwrap();
+    /// assert_eq!(n, 32);
+    /// assert_eq!(c.as_str(), Ok("uri"));
+    /// ```
     pub fn as_tag(&self) -> Result<(u64, &Value<'a>)> {
         match self {
             Self::Tag(number, content) => Ok((*number, content)),
@@ -2104,6 +2462,19 @@ impl<'a> Value<'a> {
     }
 
     /// Borrow tag number and mutable content together.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::IncompatibleType`] for non-tagged values.
+    ///
+    /// ```
+    /// # use cbor_core::Value;
+    /// let mut v = Value::tag(32, "old");
+    /// let (n, c) = v.as_tag_mut().unwrap();
+    /// assert_eq!(n, 32);
+    /// *c = Value::from("new");
+    /// assert_eq!(v.as_str(), Ok("new"));
+    /// ```
     pub fn as_tag_mut(&mut self) -> Result<(u64, &mut Value<'a>)> {
         match self {
             Self::Tag(number, content) => Ok((*number, content)),
@@ -2112,6 +2483,18 @@ impl<'a> Value<'a> {
     }
 
     /// Consume self and return tag number and content.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::IncompatibleType`] for non-tagged values.
+    ///
+    /// ```
+    /// # use cbor_core::Value;
+    /// let v = Value::tag(32, "uri");
+    /// let (n, c) = v.into_tag().unwrap();
+    /// assert_eq!(n, 32);
+    /// assert_eq!(c.as_str(), Ok("uri"));
+    /// ```
     pub fn into_tag(self) -> Result<(u64, Value<'a>)> {
         match self {
             Self::Tag(number, content) => Ok((number, *content)),
@@ -2121,6 +2504,14 @@ impl<'a> Value<'a> {
 
     /// Remove the outermost tag, returning its number. Returns `None` if
     /// the value is not tagged.
+    ///
+    /// ```
+    /// # use cbor_core::Value;
+    /// let mut v = Value::tag(32, "uri");
+    /// assert_eq!(v.remove_tag(), Some(32));
+    /// assert_eq!(v.as_str(), Ok("uri"));
+    /// assert_eq!(v.remove_tag(), None);
+    /// ```
     pub fn remove_tag(&mut self) -> Option<u64> {
         let mut result = None;
         if let Self::Tag(number, content) = self {
@@ -2132,6 +2523,13 @@ impl<'a> Value<'a> {
 
     /// Remove all nested tags, returning their numbers from outermost to
     /// innermost.
+    ///
+    /// ```
+    /// # use cbor_core::Value;
+    /// let mut v = Value::tag(100, Value::tag(200, "inner"));
+    /// assert_eq!(v.remove_all_tags(), vec![100, 200]);
+    /// assert_eq!(v.as_str(), Ok("inner"));
+    /// ```
     pub fn remove_all_tags(&mut self) -> Vec<u64> {
         let mut tags = Vec::new();
         while let Self::Tag(number, content) = self {
@@ -2155,6 +2553,12 @@ impl<'a> Value<'a> {
     }
 
     /// Borrow the innermost non-tag value, skipping all tag wrappers.
+    ///
+    /// ```
+    /// # use cbor_core::Value;
+    /// let v = Value::tag(100, Value::tag(200, 42));
+    /// assert_eq!(v.untagged().to_u32(), Ok(42));
+    /// ```
     #[must_use]
     pub const fn untagged(&self) -> &Self {
         let mut result = self;
@@ -2165,6 +2569,13 @@ impl<'a> Value<'a> {
     }
 
     /// Mutable version of [`untagged`](Self::untagged).
+    ///
+    /// ```
+    /// # use cbor_core::Value;
+    /// let mut v = Value::tag(100, Value::tag(200, 42));
+    /// *v.untagged_mut() = Value::from(99);
+    /// assert_eq!(v.untagged().to_u32(), Ok(99));
+    /// ```
     pub const fn untagged_mut(&mut self) -> &mut Self {
         let mut result = self;
         while let Self::Tag(_, content) = result {
@@ -2174,6 +2585,12 @@ impl<'a> Value<'a> {
     }
 
     /// Consuming version of [`untagged`](Self::untagged).
+    ///
+    /// ```
+    /// # use cbor_core::Value;
+    /// let v = Value::tag(100, Value::tag(200, 42));
+    /// assert_eq!(v.into_untagged().to_u32(), Ok(42));
+    /// ```
     #[must_use]
     pub fn into_untagged(mut self) -> Self {
         while let Self::Tag(_number, content) = self {

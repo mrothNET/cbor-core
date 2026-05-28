@@ -266,16 +266,20 @@ impl DecodeOptions {
     /// inherits that lifetime; in [`Format::Hex`] and
     /// [`Format::Diagnostic`] the result is owned.
     ///
-    /// The input must contain **exactly one** value: any bytes
-    /// remaining after a successful decode cause
-    /// [`Error::InvalidFormat`]. In [`Format::Diagnostic`] mode
-    /// trailing whitespace and comments are accepted, but nothing
-    /// else. Use [`sequence_decoder`](Self::sequence_decoder) when the input is a CBOR
-    /// sequence.
+    /// The input must contain **exactly one** value. Use
+    /// [`sequence_decoder`](Self::sequence_decoder) when the input is a
+    /// CBOR sequence.
     ///
-    /// An empty buffer (and, for diagnostic notation, one containing
-    /// only whitespace and comments) returns [`Error::UnexpectedEof`].
-    /// A partial value returns [`Error::UnexpectedEof`] too.
+    /// # Errors
+    ///
+    /// * [`Error::InvalidFormat`] if any bytes remain after the value
+    ///   has been read. In [`Format::Diagnostic`] mode trailing
+    ///   whitespace and comments are accepted, but nothing else.
+    /// * [`Error::UnexpectedEof`] for an empty buffer (in diagnostic
+    ///   notation, one containing only whitespace and comments) or a
+    ///   truncated value.
+    /// * Any other [`Error`](crate::Error) variant that the decoder
+    ///   raises for malformed, non-canonical, or oversized input.
     ///
     /// ```
     /// use cbor_core::{DecodeOptions, Format};
@@ -336,16 +340,13 @@ impl DecodeOptions {
     /// needs to outlive it. When the input already lives long enough,
     /// [`decode`](Self::decode) avoids the copies.
     ///
-    /// The input must contain **exactly one** value: any bytes
-    /// remaining after a successful decode cause
-    /// [`Error::InvalidFormat`]. In [`Format::Diagnostic`] mode
-    /// trailing whitespace and comments are accepted, but nothing
-    /// else. Use [`sequence_decoder`](Self::sequence_decoder) when
-    /// the input is a CBOR sequence.
+    /// The input must contain **exactly one** value. Use
+    /// [`sequence_decoder`](Self::sequence_decoder) when the input is a
+    /// CBOR sequence.
     ///
-    /// An empty buffer (and, for diagnostic notation, one containing
-    /// only whitespace and comments) returns [`Error::UnexpectedEof`].
-    /// A partial value returns [`Error::UnexpectedEof`] too.
+    /// # Errors
+    ///
+    /// Same as [`decode`](Self::decode).
     ///
     /// ```
     /// use cbor_core::{DecodeOptions, Format, Value};
@@ -404,8 +405,13 @@ impl DecodeOptions {
     /// zero-copy decoding from a byte slice, use
     /// [`decode`](Self::decode) instead.
     ///
-    /// I/O failures are returned as [`IoError::Io`](crate::IoError::Io);
-    /// malformed or oversized input as [`IoError::Data`](crate::IoError::Data).
+    /// # Errors
+    ///
+    /// * [`IoError::Io`](crate::IoError::Io) wrapping any I/O failure
+    ///   reported by the reader.
+    /// * [`IoError::Data`](crate::IoError::Data) wrapping any
+    ///   [`Error`](crate::Error) variant raised by the decoder for
+    ///   malformed, non-canonical, or oversized input.
     ///
     /// ```
     /// use cbor_core::{DecodeOptions, Format};

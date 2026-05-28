@@ -92,6 +92,10 @@ impl<'a> Array<'a> {
     /// (`E = Error`) and [`SequenceReader`](crate::SequenceReader)
     /// (`E = IoError`).
     ///
+    /// # Errors
+    ///
+    /// Returns the first `Err` yielded by the iterator.
+    ///
     /// ```
     /// # use cbor_core::{Array, DecodeOptions, Error};
     /// // Three concatenated CBOR items: 0x01, 0x02, 0x03.

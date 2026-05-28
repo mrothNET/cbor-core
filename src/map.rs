@@ -102,10 +102,13 @@ impl<'a> Map<'a> {
     /// Build a map from a lazy iterator of key/value pairs, rejecting
     /// duplicate keys.
     ///
-    /// Returns [`Error::NonDeterministic`] on the first duplicate.
     /// Input order does not matter; the returned map is sorted in CBOR
     /// canonical order. For the lenient variant, see
     /// [`from_pairs`](Self::from_pairs).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::NonDeterministic`] on the first duplicate key.
     ///
     /// ```
     /// # use cbor_core::{Map, Error};
@@ -132,18 +135,19 @@ impl<'a> Map<'a> {
 
     /// Build a map from a CBOR sequence of alternating key/value items.
     ///
-    /// Applies the same determinism checks as the binary decoder:
-    ///
-    /// * An odd number of items returns [`Error::UnexpectedEof`]
-    ///   (a key with no following value).
-    /// * A duplicate key returns [`Error::NonDeterministic`].
-    /// * A key that is not strictly greater than the previous key
-    ///   returns [`Error::NonDeterministic`].
+    /// Applies the same determinism checks as the binary decoder.
     ///
     /// For the fallible input produced by
     /// [`SequenceDecoder`](crate::SequenceDecoder) and
     /// [`SequenceReader`](crate::SequenceReader), use
     /// [`try_from_sequence`](Self::try_from_sequence).
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::UnexpectedEof`] if the sequence has an odd number of
+    ///   items (a key with no following value).
+    /// * [`Error::NonDeterministic`] on a duplicate key, or on a key that
+    ///   is not strictly greater than the previous key.
     ///
     /// ```
     /// # use cbor_core::{Map, Value};
@@ -181,6 +185,12 @@ impl<'a> Map<'a> {
     /// Determinism checks are the same as
     /// [`from_sequence`](Self::from_sequence) and are surfaced through
     /// `E`'s `From<Error>` implementation.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first `Err` yielded by the iterator, or any of the
+    /// determinism errors documented on [`from_sequence`](Self::from_sequence)
+    /// (converted via `E: From<Error>`).
     ///
     /// ```
     /// # use cbor_core::{DecodeOptions, Format, Map};

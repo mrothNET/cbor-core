@@ -434,9 +434,12 @@ impl Float {
 
     /// Narrow to `f32` when the value fits exactly.
     ///
-    /// Returns `Err(Error::Precision)` when the underlying storage is f64,
-    /// since f64 values cannot in general be narrowed without loss. f16 and
-    /// f32 values convert losslessly; NaN payloads are preserved.
+    /// f16 and f32 values convert losslessly; NaN payloads are preserved.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Precision`] when the underlying storage is f64,
+    /// since f64 values cannot in general be narrowed without loss.
     pub const fn to_f32(self) -> Result<f32> {
         match self.0 {
             Inner::F16(bits) => Ok(f16_to_f32(bits)),
@@ -447,9 +450,12 @@ impl Float {
 
     /// Retrieve the 53-bit payload of a non-finite value.
     ///
-    /// Returns [`Err(Error::InvalidValue)`](Error::InvalidValue) for finite
-    /// floats. For non-finite values, the payload is reconstructed from the
+    /// For non-finite values, the payload is reconstructed from the
     /// underlying f16/f32/f64 bits by the inverse of [`Float::with_payload`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidValue`] for finite floats.
     ///
     /// ```
     /// use cbor_core::{Float, Error};

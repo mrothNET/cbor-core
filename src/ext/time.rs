@@ -188,8 +188,8 @@ impl<'a> TryFrom<Value<'a>> for UtcDateTime {
 
     /// Extracts a `time::UtcDateTime` from a CBOR time value.
     ///
-    /// Date/time strings (tag 0) preserve the original timezone offset.
-    /// Epoch integers/floats are returned with a UTC offset.
+    /// Both date/time strings (tag 0) and epoch integers/floats are
+    /// normalized to UTC.
     fn try_from(value: Value<'a>) -> Result<Self> {
         value_to_time_utc_data_time(&value)
     }

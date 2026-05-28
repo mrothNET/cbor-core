@@ -74,7 +74,8 @@ pub enum Error {
     NegativeUnsigned,
     /// Float conversion would lose precision.
     Precision,
-    /// Simple value number is in the reserved range 24-31.
+    /// Simple value number is in the reserved range 24-31, or does
+    /// not match the requested target type.
     InvalidSimpleValue,
 
     // --- Validation errors ---
@@ -132,7 +133,7 @@ impl<T> From<Error> for Result<T> {
     }
 }
 
-/// Error type for IO related operations.
+/// Error type for I/O-related operations.
 ///
 /// For streaming CBOR operations that may fail with either
 /// an I/O error or a data-level [`Error`].
