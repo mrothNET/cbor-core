@@ -3,6 +3,15 @@
 A deterministic CBOR::Core encoder and decoder for Rust, tracking
 `draft-rundgren-cbor-core-25`.
 
+## 0.10.0
+
+- The serde integration now identifies itself to other crates
+  as a binary format, so types that adapt their representation
+  to the context (byte buffers, network addresses, identifiers,
+  dates, and similar) serialize in their compact form instead of
+  as text. The encoded output may differ from earlier releases
+  for such types.
+
 ## 0.9.2
 
 - The value type now accepts the date/time, text string, and
