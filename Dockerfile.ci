@@ -1,4 +1,5 @@
-FROM --platform=$TARGETPLATFORM docker.io/library/rust:bookworm
+ARG RUST_IMAGE=docker.io/library/rust:bookworm
+FROM --platform=$TARGETPLATFORM ${RUST_IMAGE}
 
 RUN rustup component add clippy rustfmt
 
