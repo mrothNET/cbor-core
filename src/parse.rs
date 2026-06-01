@@ -39,7 +39,7 @@ impl<'r, R: MyReader<'r>> Parser<R> {
     pub(crate) fn new(inner: R, recursion_limit: u16, strictness: Strictness) -> Self {
         Self {
             reader: inner,
-            buf: [0; _],
+            buf: [0; 16],
             buf_len: 0,
             depth: recursion_limit,
             strictness,

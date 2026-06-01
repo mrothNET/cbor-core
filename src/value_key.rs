@@ -40,7 +40,7 @@ use crate::{
 /// assert_eq!(m["x"].to_u32(), Ok(10));
 /// assert_eq!(m[2].to_u32(), Ok(20));
 ///
-/// let k: [Value; _] = [1,2,3].map(Value::from);
+/// let k: [Value; 3] = [1,2,3].map(Value::from);
 /// let m = map! { k.clone() => "array as key" };
 /// assert_eq!(m[&k].as_str(), Ok("array as key") );
 ///
