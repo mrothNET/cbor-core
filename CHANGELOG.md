@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.1 - 2026-06-01
+
+### Fixed
+
+- Builds again on the declared MSRV (Rust 1.88). Two spots used inferred array length syntax (`[0; _]`), which was only stabilized in Rust 1.89.
+
 ## 0.10.0 - 2026-05-28
 
 ### Changed

@@ -3,6 +3,13 @@
 A deterministic CBOR::Core encoder and decoder for Rust, tracking
 `draft-rundgren-cbor-core-25`.
 
+## 0.10.1
+
+- A maintenance release that restores building on the documented
+  minimum supported Rust version. The previous release had crept
+  past it by relying on a newer language convenience. There are
+  no functional changes.
+
 ## 0.10.0
 
 - The serde integration now identifies itself to other crates
