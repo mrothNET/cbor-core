@@ -2,7 +2,7 @@ use std::{borrow::Cow, collections::BTreeMap};
 
 use crate::{
     Error, Float, Format, IoResult, Result, SequenceDecoder, SequenceReader, SimpleValue, Strictness, Value,
-    codec::{Argument, Head, HeadOrStop, Major},
+    codec::{Argument, Head, HeadOrStop, Indefinite, Major},
     io::{HexReader, HexSliceReader, MyReader, SliceReader},
     limits,
     parse::Parser,
@@ -549,9 +549,9 @@ impl DecodeOptions {
                 .process_head(head, reader, recursion_limit, oom_mitigation)
                 .map(Some),
 
-            HeadOrStop::Indefinite(major) => {
+            HeadOrStop::Indefinite(indefinite) => {
                 if self.strictness.allow_indefinite_length {
-                    self.process_indefinite(major, reader, recursion_limit, oom_mitigation)
+                    self.process_indefinite(indefinite, reader, recursion_limit, oom_mitigation)
                         .map(Some)
                 } else {
                     Err(Error::NonDeterministic.into())
@@ -661,18 +661,26 @@ impl DecodeOptions {
                 // payload must be a byte string longer than 8 bytes
                 // (otherwise the value fits in u64) with no leading
                 // zero byte.
-                match tag_content {
-                    Value::ByteString(bytes) if matches!(tag_number, POS_BIG_INT | NEG_BIG_INT) => {
-                        let canonical = bytes.len() > 8 && bytes[0] != 0;
-                        if canonical {
-                            Value::Tag(tag_number, Box::new(Value::ByteString(bytes)))
-                        } else if self.strictness.allow_oversized_bigints {
-                            normalize_bigint(tag_number, bytes)
-                        } else {
-                            return Err(Error::NonDeterministic.into());
-                        }
+
+                let normalize = match tag_number {
+                    POS_BIG_INT => Some(Normalize::PosBigInt),
+                    NEG_BIG_INT => Some(Normalize::NegBigInt),
+                    _ => None,
+                };
+
+                if let Some(normalize) = normalize
+                    && let Value::ByteString(bytes) = tag_content
+                {
+                    let canonical = bytes.len() > 8 && bytes[0] != 0;
+                    if canonical {
+                        Value::Tag(tag_number, Box::new(Value::ByteString(bytes)))
+                    } else if self.strictness.allow_oversized_bigints {
+                        normalize_bigint(normalize, bytes)
+                    } else {
+                        return Err(Error::NonDeterministic.into());
                     }
-                    other => Value::Tag(tag_number, Box::new(other)),
+                } else {
+                    Value::Tag(tag_number, Box::new(tag_content))
                 }
             }
 
@@ -720,7 +728,7 @@ impl DecodeOptions {
     /// The break code that terminates the container is consumed.
     fn process_indefinite<'a, R>(
         &self,
-        major: Major,
+        major: Indefinite,
         reader: &mut R,
         recursion_limit: u16,
         oom_mitigation: usize,
@@ -730,11 +738,10 @@ impl DecodeOptions {
         R::Error: From<Error>,
     {
         match major {
-            Major::ByteString => self.read_indefinite_bytes(reader, oom_mitigation),
-            Major::TextString => self.read_indefinite_text(reader, oom_mitigation),
-            Major::Array => self.read_indefinite_array(reader, recursion_limit, oom_mitigation),
-            Major::Map => self.read_indefinite_map(reader, recursion_limit, oom_mitigation),
-            _ => unreachable!("process_indefinite: invalid major"),
+            Indefinite::ByteString => self.read_indefinite_bytes(reader, oom_mitigation),
+            Indefinite::TextString => self.read_indefinite_text(reader, oom_mitigation),
+            Indefinite::Array => self.read_indefinite_array(reader, recursion_limit, oom_mitigation),
+            Indefinite::Map => self.read_indefinite_map(reader, recursion_limit, oom_mitigation),
         }
     }
 
@@ -886,18 +893,32 @@ impl DecodeOptions {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+enum Normalize {
+    PosBigInt,
+    NegBigInt,
+}
+
+impl Normalize {
+    fn tag_number(self) -> u64 {
+        match self {
+            Normalize::PosBigInt => POS_BIG_INT,
+            Normalize::NegBigInt => NEG_BIG_INT,
+        }
+    }
+}
+
 /// Normalize a non-canonical big integer payload.
 ///
 /// Strips leading zero bytes and downcasts to
 /// [`Value::Unsigned`] / [`Value::Negative`] when the magnitude fits
 /// in a `u64`. Otherwise returns a tag 2 / tag 3 with a stripped
 /// payload, preserving the [`Cow`] borrow when the input was borrowed.
-fn normalize_bigint(tag_number: u64, bytes: Cow<'_, [u8]>) -> Value<'_> {
-    fn integer<'b>(tag_number: u64, n: u64) -> Value<'b> {
-        match tag_number {
-            POS_BIG_INT => Value::Unsigned(n),
-            NEG_BIG_INT => Value::Negative(n),
-            _other => unreachable!("normalize_bigint: invalid tag"),
+fn normalize_bigint(normalize: Normalize, bytes: Cow<'_, [u8]>) -> Value<'_> {
+    fn integer<'b>(normalize: Normalize, n: u64) -> Value<'b> {
+        match normalize {
+            Normalize::PosBigInt => Value::Unsigned(n),
+            Normalize::NegBigInt => Value::Negative(n),
         }
     }
 
@@ -906,24 +927,24 @@ fn normalize_bigint(tag_number: u64, bytes: Cow<'_, [u8]>) -> Value<'_> {
             let trimmed = trim_leading_zeros(bytes);
 
             if let Ok(n) = u64_from_slice(trimmed) {
-                integer(tag_number, n)
+                integer(normalize, n)
             } else {
                 let bytes = trimmed.into();
-                Value::Tag(tag_number, Box::new(Value::ByteString(bytes)))
+                Value::Tag(normalize.tag_number(), Box::new(Value::ByteString(bytes)))
             }
         }
         Cow::Owned(bytes) => {
             let trimmed = trim_leading_zeros(&bytes);
 
             if let Ok(n) = u64_from_slice(trimmed) {
-                integer(tag_number, n)
+                integer(normalize, n)
             } else {
                 let bytes = if trimmed.len() == bytes.len() {
                     bytes.into()
                 } else {
                     trimmed.to_vec().into()
                 };
-                Value::Tag(tag_number, Box::new(Value::ByteString(bytes)))
+                Value::Tag(normalize.tag_number(), Box::new(Value::ByteString(bytes)))
             }
         }
     }

@@ -23,6 +23,24 @@ impl<'a> FromStr for Value<'a> {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+enum Base {
+    Bin,
+    Oct,
+    Hex,
+}
+
+impl From<Base> for u32 {
+    #[inline]
+    fn from(value: Base) -> Self {
+        match value {
+            Base::Bin => 2,
+            Base::Oct => 8,
+            Base::Hex => 16,
+        }
+    }
+}
+
 // The underlying reader is forward-only, but the parser needs arbitrary
 // lookahead. Bytes pulled for peeking are held in `buf` until consumed,
 // so the stream is never read past the last byte the parser actually
@@ -377,15 +395,15 @@ impl<'r, R: MyReader<'r>> Parser<R> {
             match self.peek_at(1)? {
                 Some(b'b' | b'B') => {
                     self.skip(2)?;
-                    self.parse_integer_base(negative, 2)?
+                    self.parse_integer_base(negative, Base::Bin)?
                 }
                 Some(b'o' | b'O') => {
                     self.skip(2)?;
-                    self.parse_integer_base(negative, 8)?
+                    self.parse_integer_base(negative, Base::Oct)?
                 }
                 Some(b'x' | b'X') => {
                     self.skip(2)?;
-                    self.parse_integer_base(negative, 16)?
+                    self.parse_integer_base(negative, Base::Hex)?
                 }
                 _ => self.parse_decimal(negative)?,
             }
@@ -463,7 +481,7 @@ impl<'r, R: MyReader<'r>> Parser<R> {
         Ok(be_bytes_to_value(&bytes, negative)?)
     }
 
-    fn parse_integer_base<'a>(&mut self, negative: bool, base: u32) -> Result<Value<'a>, R::Error> {
+    fn parse_integer_base<'a>(&mut self, negative: bool, base: Base) -> Result<Value<'a>, R::Error> {
         let mut digits: Vec<u8> = Vec::new();
         let mut last_was_digit = false;
         while let Some(b) = self.peek()? {
@@ -477,10 +495,9 @@ impl<'r, R: MyReader<'r>> Parser<R> {
                 }
             } else {
                 let is_valid = match base {
-                    2 => matches!(b, b'0' | b'1'),
-                    8 => matches!(b, b'0'..=b'7'),
-                    16 => b.is_ascii_hexdigit(),
-                    _ => unreachable!(),
+                    Base::Bin => matches!(b, b'0' | b'1'),
+                    Base::Oct => matches!(b, b'0'..=b'7'),
+                    Base::Hex => b.is_ascii_hexdigit(),
                 };
                 if !is_valid {
                     break;
@@ -493,7 +510,7 @@ impl<'r, R: MyReader<'r>> Parser<R> {
         if digits.is_empty() || !last_was_digit {
             Err(Error::InvalidFormat.into())
         } else {
-            let bytes = digits_to_be_bytes(&digits, base)?;
+            let bytes = digits_to_be_bytes(&digits, base.into())?;
             Ok(be_bytes_to_value(&bytes, negative)?)
         }
     }

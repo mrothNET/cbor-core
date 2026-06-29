@@ -157,9 +157,18 @@ pub(crate) enum HeadOrStop {
     /// A normal definite-length head.
     Definite(Head),
     /// `info == 31` for major 2..=5: an indefinite-length container.
-    Indefinite(Major),
+    Indefinite(Indefinite),
+
     /// `0xff`: the break code that terminates an indefinite container.
     Break,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum Indefinite {
+    ByteString,
+    TextString,
+    Array,
+    Map,
 }
 
 impl HeadOrStop {
@@ -172,10 +181,10 @@ impl HeadOrStop {
 
         if info == 31 {
             match initial_byte.major() {
-                Major::ByteString | Major::TextString | Major::Array | Major::Map => {
-                    let major = initial_byte.major();
-                    Ok(Self::Indefinite(major))
-                }
+                Major::ByteString => Ok(Self::Indefinite(Indefinite::ByteString)),
+                Major::TextString => Ok(Self::Indefinite(Indefinite::TextString)),
+                Major::Array => Ok(Self::Indefinite(Indefinite::Array)),
+                Major::Map => Ok(Self::Indefinite(Indefinite::Map)),
 
                 Major::SimpleOrFloat => Ok(Self::Break),
 
