@@ -11,7 +11,7 @@ use std::{
 use cbor_core::{DecodeOptions, EncodeFormat, Error, Format, SequenceWriter, Value};
 
 const USAGE: &str = "\
-Usage: cbor2diag {-x | -b} [HEX]
+Usage: cbor2diag -x HEX ...
        cbor2diag {-x | -b} < file
 
 Decode CBOR to diagnostic notation.
@@ -33,22 +33,19 @@ fn main() {
         None => usage_error("missing input format: -x or -b"),
     };
 
-    let input = match fmt {
-        Format::Hex => match args.len() {
-            0 => {
-                let mut bytes = read_stdin_bytes();
-                bytes.retain(|b| !b.is_ascii_whitespace());
-                bytes
-            }
-            1 => args.next().unwrap().into_bytes(),
-            _ => usage_error("unexpected extra argument"),
-        },
-        Format::Binary => match args.len() {
-            0 => read_stdin_bytes(),
-            _ => usage_error("binary input must come from stdin"),
-        },
-        _ => unreachable!(),
+    if fmt == Format::Binary && args.len() != 0 {
+        usage_error("binary input must come from stdin");
+    }
+
+    let mut input = if args.len() > 0 {
+        args.flat_map(String::into_bytes).collect()
+    } else {
+        read_stdin_bytes()
     };
+
+    if fmt == Format::Hex {
+        input.retain(|b| !b.is_ascii_whitespace());
+    }
 
     let values: Result<Vec<Value>, Error> = DecodeOptions::new().format(fmt).sequence_decoder(&input).collect();
 

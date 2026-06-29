@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- `cbor2diag` example accepts multiple hex arguments, concatenated into one input before decoding.
+
 ## 0.10.1 - 2026-06-01
 
 ### Fixed
