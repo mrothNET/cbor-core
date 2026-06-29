@@ -652,14 +652,11 @@ impl<'de, 'a> de::Deserializer<'de> for ValueDeserializer<'de, 'a> {
 
     fn deserialize_any<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, SerdeError> {
         let this = self.0.peeled();
-        if let Value::SimpleValue(sv) = this {
-            if sv.data_type().is_null() {
-                visitor.visit_unit()
-            } else if let Ok(v) = sv.to_bool() {
-                visitor.visit_bool(v)
-            } else {
-                visitor.visit_u8(sv.to_u8())
-            }
+
+        if this.untagged().data_type().is_null() {
+            visitor.visit_unit()
+        } else if let Ok(v) = this.to_bool() {
+            visitor.visit_bool(v)
         } else if let Ok(v) = this.to_u64() {
             visitor.visit_u64(v)
         } else if let Ok(v) = this.to_i64() {
@@ -676,15 +673,15 @@ impl<'de, 'a> de::Deserializer<'de> for ValueDeserializer<'de, 'a> {
             visitor.visit_borrowed_bytes(v)
         } else if let Ok(v) = this.as_str() {
             visitor.visit_borrowed_str(v)
+        } else if let Ok(v) = this.as_array() {
+            visitor.visit_seq(SeqAccessImpl(v.iter()))
+        } else if let Ok(v) = this.as_map() {
+            visitor.visit_map(MapAccessImpl {
+                iter: v.iter(),
+                pending_value: None,
+            })
         } else {
-            match this.untagged() {
-                Value::Array(arr) => visitor.visit_seq(SeqAccessImpl(arr.iter())),
-                Value::Map(map) => visitor.visit_map(MapAccessImpl {
-                    iter: map.iter(),
-                    pending_value: None,
-                }),
-                _other => unreachable!(),
-            }
+            Err(SerdeError("incompatible CBOR value".into()))
         }
     }
 
@@ -949,6 +946,7 @@ impl<'de, 'a> de::VariantAccess<'de> for VariantAccessImpl<'de, 'a> {
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
     use crate::{array, map};
 
@@ -1353,6 +1351,100 @@ mod tests {
 
         let probe: ProbeFlag = Value::null().deserialized().unwrap();
         assert!(!probe.0);
+    }
+
+    // --- deserialize_any: Value -> Value drives the self-describing path ---
+
+    #[test]
+    fn deserialize_any_via_value_to_value() {
+        // Deserializing into `Value` calls `deserializer.deserialize_any`
+        let original = map! {
+            "null"    => Value::null(),
+            "bool"    => true,
+            "uint8"   => 42_u8,
+            "uint16"  => 420_u16,
+            "uint32"  => 420_000_u32,
+            "uint64"  => 420_000_000_000_u64,
+            "uint128" => 420_000_000_000_000_000_000_u128,
+            "int8"    => -7_i8,
+            "int16"   => -700_i16,
+            "int32"   => -700_000_i32,
+            "int64"   => -700_000_000_000_i64,
+            "int128"  => -700_000_000_000_000_000_000_i128,
+            "float32" => std::f32::consts::PI,
+            "float64" => std::f64::consts::PI,
+            "text"    => "welcome",
+            "bytes"   => b"\x01\x02",
+            "array"   => array![1, 2, 3],
+            "nested"  => map! { "k" => "v" },
+        };
+
+        let back: Value = original.deserialized().unwrap();
+        assert_eq!(back, original);
+    }
+
+    #[test]
+    fn deserialize_any_via_untagged_enum() {
+        // serde's derive for an untagged enum buffers the input through
+        // `deserialize_any` before trying each variant.
+        #[derive(Deserialize, Debug, PartialEq)]
+        #[serde(untagged)]
+        enum Scalar {
+            Int(i32),
+            Text(String),
+        }
+
+        assert_eq!(Value::from(5_u64).deserialized::<Scalar>().unwrap(), Scalar::Int(5));
+        assert_eq!(
+            Value::from("x").deserialized::<Scalar>().unwrap(),
+            Scalar::Text("x".into())
+        );
+    }
+
+    #[test]
+    fn deserialize_any_into_serde_json_value() {
+        // Feeding `deserialize_any` to a foreign self-describing target
+        // (serde_json::Value) checks the interplay with another serde
+        // implementation, not just our own ValueVisitor.
+        let original = map! {
+            "null"    => Value::null(),
+            "bool"    => true,
+            "uint8"   => 42_u8,
+            "uint16"  => 420_u16,
+            "uint32"  => 420_000_u32,
+            "uint64"  => 420_000_000_000_u64,
+            "int8"    => -7_i8,
+            "int16"   => -700_i16,
+            "int32"   => -700_000_i32,
+            "int64"   => -700_000_000_000_i64,
+            "float32" => 2.5_f32,
+            "float64" => 2.51_f64,
+            "text"    => "welcome",
+            "array"   => array![1, 2, 3],
+            "nested"  => map! { "k" => "v" },
+        };
+
+        let json: serde_json::Value = original.deserialized().unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "null": null,
+                "bool": true,
+                "uint8": 42_u8,
+                "uint16": 420_u16,
+                "uint32": 420_000_u32,
+                "uint64": 420_000_000_000_u64,
+                "int8": -7,
+                "int16": -700_i16,
+                "int32": -700_000_i32,
+                "int64": -700_000_000_000_i64,
+                "float32": 2.5,
+                "float64": 2.51,
+                "text": "welcome",
+                "array": [1, 2, 3],
+                "nested": { "k": "v" },
+            })
+        );
     }
 
     // --- Deserialize Value from JSON (proves Deserialize impl works) ---

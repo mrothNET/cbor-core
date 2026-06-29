@@ -5,6 +5,7 @@
 ### Changed
 
 - `cbor2diag` example accepts multiple hex arguments, concatenated into one input before decoding.
+- The serde `deserialize_any` path no longer maps arbitrary CBOR simple values to a `u8`. Null and booleans are handled as before; any other simple value now reports an incompatible value instead of being silently turned into a number.
 
 ## 0.10.1 - 2026-06-01
 
