@@ -31,14 +31,6 @@ pub(crate) struct Timestamp {
 }
 
 impl Timestamp {
-    #[cfg(test)]
-    fn new(time: SystemTime) -> Timestamp {
-        match Self::try_new(time) {
-            Ok(ts) => ts,
-            Err(_) => panic!("invalid system time"),
-        }
-    }
-
     /// Decomposes a [`SystemTime`] into its [`Timestamp`] components
     ///
     /// Returns [`Error::InvalidValue`] if `time` falls outside the year range 0–9999.
@@ -343,7 +335,7 @@ mod tests {
     }
 
     fn to_string(time: SystemTime) -> String {
-        Timestamp::new(time).to_string()
+        Timestamp::try_new(time).unwrap().to_string()
     }
 
     pub fn parse(s: &str) -> Result<SystemTime, Error> {
@@ -356,7 +348,7 @@ mod tests {
 
     #[test]
     fn new_unix_epoch() {
-        let ts = Timestamp::new(UNIX_EPOCH);
+        let ts = Timestamp::try_new(UNIX_EPOCH).unwrap();
         assert_eq!(ts.year, 1970);
         assert_eq!(ts.month, 1);
         assert_eq!(ts.day, 1);
@@ -368,7 +360,7 @@ mod tests {
 
     #[test]
     fn new_y2k() {
-        let ts = Timestamp::new(from_secs(946_684_800));
+        let ts = Timestamp::try_new(from_secs(946_684_800)).unwrap();
         assert_eq!(ts.year, 2000);
         assert_eq!(ts.month, 1);
         assert_eq!(ts.day, 1);
@@ -376,7 +368,7 @@ mod tests {
 
     #[test]
     fn new_pre_epoch() {
-        let ts = Timestamp::new(UNIX_EPOCH - Duration::from_secs(1));
+        let ts = Timestamp::try_new(UNIX_EPOCH - Duration::from_secs(1)).unwrap();
         assert_eq!(
             ts,
             Timestamp {
@@ -411,13 +403,18 @@ mod tests {
 
     #[test]
     fn display_unix_epoch() {
-        assert_eq!(Timestamp::new(UNIX_EPOCH).to_string(), "1970-01-01T00:00:00Z");
+        assert_eq!(
+            Timestamp::try_new(UNIX_EPOCH).unwrap().to_string(),
+            "1970-01-01T00:00:00Z"
+        );
     }
 
     #[test]
     fn display_with_nanoseconds() {
         assert_eq!(
-            Timestamp::new(from_secs_nanos(946_684_800, 123_456_789)).to_string(),
+            Timestamp::try_new(from_secs_nanos(946_684_800, 123_456_789))
+                .unwrap()
+                .to_string(),
             "2000-01-01T00:00:00.123456789Z"
         );
     }
@@ -428,7 +425,7 @@ mod tests {
 
     #[test]
     fn into_system_time_epoch() {
-        let ts = Timestamp::new(UNIX_EPOCH);
+        let ts = Timestamp::try_new(UNIX_EPOCH).unwrap();
         let t: SystemTime = ts.try_into().unwrap();
         assert_eq!(t, UNIX_EPOCH);
     }
@@ -436,7 +433,7 @@ mod tests {
     #[test]
     fn into_system_time_pre_epoch() {
         let original = UNIX_EPOCH - Duration::new(0, 500_000_000);
-        let ts = Timestamp::new(original);
+        let ts = Timestamp::try_new(original).unwrap();
         let t: SystemTime = ts.try_into().unwrap();
         assert_eq!(t, original);
     }
@@ -444,7 +441,7 @@ mod tests {
     #[test]
     fn into_system_time_round_trip() {
         let original = from_secs_nanos(1_700_000_000, 42);
-        let ts = Timestamp::new(original);
+        let ts = Timestamp::try_new(original).unwrap();
         let t: SystemTime = ts.try_into().unwrap();
         assert_eq!(t, original);
     }
@@ -810,7 +807,7 @@ mod tests {
     #[test]
     fn round_trip_through_datetime() {
         let original = from_secs_nanos(946_684_800, 123_456_789);
-        let ts = Timestamp::new(original);
+        let ts = Timestamp::try_new(original).unwrap();
         let back: SystemTime = ts.try_into().unwrap();
         assert_eq!(back, original);
     }
