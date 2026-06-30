@@ -745,10 +745,7 @@ impl DecodeOptions {
         }
     }
 
-    /// Read a `(_ chunk*)` byte string. Each chunk is itself a
-    /// definite-length byte string; an indefinite-length chunk or a
-    /// chunk of a different major type is malformed even in lenient
-    /// mode.
+    /// Read a `(_ chunk*)` byte string.
     fn read_indefinite_bytes<'a, R>(
         &self,
         reader: &mut R,
@@ -759,31 +756,11 @@ impl DecodeOptions {
         R::Error: From<Error>,
     {
         let mut buf = Vec::new();
-        let mut total: u64 = 0;
 
-        loop {
-            match HeadOrStop::read_from(reader)? {
-                HeadOrStop::Break => break,
-
-                HeadOrStop::Definite(head) if head.initial_byte.major() == Major::ByteString => {
-                    if !head.argument.is_deterministic() && !self.strictness.allow_non_shortest_integers {
-                        return Err(Error::NonDeterministic.into());
-                    }
-
-                    let chunk_len = head.value();
-
-                    total = total.checked_add(chunk_len).ok_or(Error::LengthTooLarge)?;
-                    if total > self.length_limit {
-                        return Err(Error::LengthTooLarge.into());
-                    }
-
-                    let chunk = reader.read_cow(chunk_len, oom_mitigation)?;
-                    buf.extend_from_slice(&chunk);
-                }
-
-                _ => return Err(Error::Malformed.into()),
-            }
-        }
+        self.read_indefinite_chunks(reader, oom_mitigation, Major::ByteString, |chunk| {
+            buf.extend_from_slice(chunk);
+            Ok(())
+        })?;
 
         Ok(Value::ByteString(Cow::Owned(buf)))
     }
@@ -800,13 +777,37 @@ impl DecodeOptions {
         R::Error: From<Error>,
     {
         let mut buf = String::new();
+
+        self.read_indefinite_chunks(reader, oom_mitigation, Major::TextString, |chunk| {
+            buf.push_str(std::str::from_utf8(chunk).map_err(Error::from)?);
+            Ok(())
+        })?;
+
+        Ok(Value::TextString(Cow::Owned(buf)))
+    }
+
+    /// Read `(_ chunk*)` bytes. Each chunk is itself a
+    /// definite-length byte (or text) string; an indefinite-length
+    /// chunk or a chunk of a different major type is malformed
+    /// even in lenient mode.
+    fn read_indefinite_chunks<'a, R>(
+        &self,
+        reader: &mut R,
+        oom_mitigation: usize,
+        major: Major,
+        mut callback: impl FnMut(&[u8]) -> Result<()>,
+    ) -> std::result::Result<(), R::Error>
+    where
+        R: MyReader<'a>,
+        R::Error: From<Error>,
+    {
         let mut total: u64 = 0;
 
         loop {
             match HeadOrStop::read_from(reader)? {
-                HeadOrStop::Break => break,
+                HeadOrStop::Break => return Ok(()),
 
-                HeadOrStop::Definite(head) if head.initial_byte.major() == Major::TextString => {
+                HeadOrStop::Definite(head) if head.initial_byte.major() == major => {
                     if !head.argument.is_deterministic() && !self.strictness.allow_non_shortest_integers {
                         return Err(Error::NonDeterministic.into());
                     }
@@ -819,14 +820,12 @@ impl DecodeOptions {
                     }
 
                     let chunk = reader.read_cow(chunk_len, oom_mitigation)?;
-                    buf.push_str(std::str::from_utf8(&chunk).map_err(Error::from)?);
+                    callback(&chunk)?;
                 }
 
                 _ => return Err(Error::Malformed.into()),
             }
         }
-
-        Ok(Value::TextString(Cow::Owned(buf)))
     }
 
     fn read_indefinite_array<'a, R>(
