@@ -470,23 +470,17 @@ impl Float {
         if self.is_finite() {
             Err(Error::InvalidValue)
         } else {
-            let sign_bit;
-            let sig;
+            let sign_bit = match self.0 {
+                Inner::F16(bits) => ((bits & 0x8000) as u64) << 37,
+                Inner::F32(bits) => ((bits & 0x8000_0000) as u64) << 21,
+                Inner::F64(bits) => (bits & 0x8000_0000_0000_0000) >> 11,
+            };
 
-            match self.0 {
-                Inner::F16(bits) => {
-                    sign_bit = ((bits & 0x8000) as u64) << 37;
-                    sig = (bits.reverse_bits() >> 6) as u64;
-                }
-                Inner::F32(bits) => {
-                    sign_bit = ((bits & 0x8000_0000) as u64) << 21;
-                    sig = (bits.reverse_bits() >> 9) as u64;
-                }
-                Inner::F64(bits) => {
-                    sign_bit = (bits & 0x8000_0000_0000_0000) >> 11;
-                    sig = bits.reverse_bits() >> 12;
-                }
-            }
+            let sig = match self.0 {
+                Inner::F16(bits) => (bits.reverse_bits() >> 6) as u64,
+                Inner::F32(bits) => (bits.reverse_bits() >> 9) as u64,
+                Inner::F64(bits) => bits.reverse_bits() >> 12,
+            };
 
             Ok(sign_bit | sig)
         }
