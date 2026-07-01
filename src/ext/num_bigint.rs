@@ -1,5 +1,7 @@
 use num_bigint::{BigInt, BigUint, Sign};
 
+use super::IntegerBytes;
+
 use crate::{
     Error, Result, Value, ValueKey, tag,
     util::{trim_leading_zeros, u64_from_slice},
@@ -131,11 +133,11 @@ impl<'a> TryFrom<&Value<'a>> for BigUint {
 }
 
 fn to_num_biguint(value: &Value<'_>) -> Result<BigUint> {
-    match value.as_integer_bytes()? {
-        crate::integer::IntegerBytes::UnsignedOwned(bytes) => Ok(BigUint::from(u64::from_be_bytes(bytes))),
-        crate::integer::IntegerBytes::NegativeOwned(_) => Err(Error::NegativeUnsigned),
-        crate::integer::IntegerBytes::UnsignedBorrowed(bytes) => Ok(BigUint::from_bytes_be(bytes)),
-        crate::integer::IntegerBytes::NegativeBorrowed(_) => Err(Error::NegativeUnsigned),
+    match IntegerBytes::new(value)? {
+        IntegerBytes::UnsignedOwned(bytes) => Ok(BigUint::from(u64::from_be_bytes(bytes))),
+        IntegerBytes::NegativeOwned(_) => Err(Error::NegativeUnsigned),
+        IntegerBytes::UnsignedBorrowed(bytes) => Ok(BigUint::from_bytes_be(bytes)),
+        IntegerBytes::NegativeBorrowed(_) => Err(Error::NegativeUnsigned),
     }
 }
 
@@ -166,11 +168,11 @@ impl<'a> TryFrom<&Value<'a>> for BigInt {
 }
 
 fn to_num_bigint(value: &Value<'_>) -> Result<BigInt> {
-    match value.as_integer_bytes()? {
-        crate::integer::IntegerBytes::UnsignedOwned(bytes) => Ok(BigUint::from_bytes_be(&bytes).into()),
-        crate::integer::IntegerBytes::NegativeOwned(bytes) => Ok(BigInt::from(!u64::from_be_bytes(bytes) as i64)),
-        crate::integer::IntegerBytes::UnsignedBorrowed(bytes) => Ok(BigUint::from_bytes_be(bytes).into()),
-        crate::integer::IntegerBytes::NegativeBorrowed(bytes) => {
+    match IntegerBytes::new(value)? {
+        IntegerBytes::UnsignedOwned(bytes) => Ok(BigUint::from_bytes_be(&bytes).into()),
+        IntegerBytes::NegativeOwned(bytes) => Ok(BigInt::from(!u64::from_be_bytes(bytes) as i64)),
+        IntegerBytes::UnsignedBorrowed(bytes) => Ok(BigUint::from_bytes_be(bytes).into()),
+        IntegerBytes::NegativeBorrowed(bytes) => {
             // payload = magnitude - 1, so actual = -(payload + 1)
             let payload = BigUint::from_bytes_be(bytes);
             Ok(-(BigInt::from(payload) + 1_i32))

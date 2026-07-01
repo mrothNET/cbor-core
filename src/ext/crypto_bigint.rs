@@ -1,9 +1,9 @@
 use crypto_bigint::{Choice, Encoding, Int, NonZero, Uint};
 
+use super::IntegerBytes;
+
 use crate::{
-    Error, Result, Value, ValueKey,
-    integer::IntegerBytes,
-    tag,
+    Error, Result, Value, ValueKey, tag,
     util::{trim_leading_zeros, u64_from_slice},
 };
 
@@ -151,7 +151,7 @@ fn to_crypto_uint<const LIMBS: usize>(value: &Value) -> Result<Uint<LIMBS>>
 where
     Uint<LIMBS>: Encoding,
 {
-    match value.as_integer_bytes()? {
+    match IntegerBytes::new(value)? {
         IntegerBytes::UnsignedOwned(bytes) => {
             let mut buf = vec![0_u8; Uint::<LIMBS>::BYTES];
             pad_be_bytes(&bytes, &mut buf)?;
@@ -204,7 +204,7 @@ fn to_crypto_int<const LIMBS: usize>(value: &Value) -> Result<Int<LIMBS>>
 where
     Uint<LIMBS>: Encoding,
 {
-    match value.as_integer_bytes()? {
+    match IntegerBytes::new(value)? {
         IntegerBytes::UnsignedOwned(bytes) => {
             let mut buf = vec![0_u8; Uint::<LIMBS>::BYTES];
             pad_be_bytes(&bytes, &mut buf)?;

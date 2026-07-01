@@ -317,7 +317,6 @@ mod error;
 mod ext;
 mod float;
 mod format;
-mod integer;
 mod io;
 mod iso3339;
 mod limits;
@@ -356,8 +355,6 @@ pub use ext::serde;
 #[cfg(feature = "serde")]
 #[doc(no_inline)]
 pub use serde::SerdeError;
-
-use integer::*;
 
 #[cfg(test)]
 mod tests;

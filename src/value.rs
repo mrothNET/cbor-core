@@ -16,7 +16,7 @@ use std::{
 };
 
 use crate::{
-    Array, ByteString, DataType, DateTime, EpochTime, Error, Float, IntegerBytes, Map, Result, SimpleValue, TextString,
+    Array, ByteString, DataType, DateTime, EpochTime, Error, Float, Map, Result, SimpleValue, TextString,
     codec::{Head, Major},
     tag,
     util::u128_from_slice,
@@ -1536,7 +1536,7 @@ impl<'a> Value<'a> {
     }
 
     // Internal shortcut helper
-    const fn is_bytes(&self) -> bool {
+    pub(crate) const fn is_bytes(&self) -> bool {
         self.data_type().is_bytes()
     }
 
@@ -1716,25 +1716,6 @@ impl<'a> Value<'a> {
     /// ```
     pub fn to_usize(&self) -> Result<usize> {
         self.to_uint()
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn as_integer_bytes(&self) -> Result<IntegerBytes<'_>> {
-        match self {
-            Self::Unsigned(x) => Ok(IntegerBytes::UnsignedOwned(x.to_be_bytes())),
-            Self::Negative(x) => Ok(IntegerBytes::NegativeOwned(x.to_be_bytes())),
-
-            Self::Tag(tag::POS_BIG_INT, content) if content.is_bytes() => {
-                Ok(IntegerBytes::UnsignedBorrowed(content.as_bytes()?))
-            }
-
-            Self::Tag(tag::NEG_BIG_INT, content) if content.is_bytes() => {
-                Ok(IntegerBytes::NegativeBorrowed(content.as_bytes()?))
-            }
-
-            Self::Tag(_other_number, content) => content.peeled().as_integer_bytes(),
-            _ => Err(Error::IncompatibleType(self.data_type())),
-        }
     }
 
     fn to_sint<T>(&self) -> Result<T>

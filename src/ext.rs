@@ -1,3 +1,9 @@
+#[cfg(any(feature = "num-bigint", feature = "crypto-bigint", feature = "rug"))]
+mod integer_bytes;
+
+#[cfg(any(feature = "num-bigint", feature = "crypto-bigint", feature = "rug"))]
+pub(crate) use integer_bytes::IntegerBytes;
+
 #[cfg(feature = "num-bigint")]
 mod num_bigint;
 

@@ -1,10 +1,10 @@
 use rug::Integer;
 use rug::integer::Order;
 
+use super::IntegerBytes;
+
 use crate::{
-    Error, Result, Value, ValueKey,
-    integer::IntegerBytes,
-    tag,
+    Error, Result, Value, ValueKey, tag,
     util::{trim_leading_zeros, u64_from_slice},
 };
 
@@ -99,7 +99,7 @@ impl<'a> TryFrom<&Value<'a>> for Integer {
 }
 
 fn to_rug_integer(value: &Value<'_>) -> Result<Integer> {
-    match value.as_integer_bytes()? {
+    match IntegerBytes::new(value)? {
         IntegerBytes::UnsignedOwned(bytes) => Ok(Integer::from(u64::from_be_bytes(bytes))),
         IntegerBytes::NegativeOwned(bytes) => Ok(Integer::from(!u64::from_be_bytes(bytes) as i64)),
         IntegerBytes::UnsignedBorrowed(bytes) => Ok(Integer::from_digits(bytes, Order::MsfBe)),
